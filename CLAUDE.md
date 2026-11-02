@@ -80,7 +80,8 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 - [x] 1 · En línea (2 nov 2026): https://suyon-crm.storesuyo.workers.dev · R2, Workers Builds desde GitHub, 4 secretos, usuario del sistema `suyon-crm` (Empleado, portafolio Orión), webhook verificado, app de Meta publicada. Primer mensaje real recibido.
 - [x] 1 · Primer envío real desde el CRM (2 nov 15:39).
 - [ ] 1 · Pendiente: nombre «Porte Perú» en revisión; tarjeta en la cuenta Orión `4467572743460773`; volver a pedir verificación del negocio (estaba rejected); probar fotos/audios/notas de voz reales.
-- [ ] 2 · Bot fijo + seguimientos dentro de la ventana gratis.
+- [ ] 2 · Bot fijo + seguimientos dentro de la ventana gratis. Muestra aprobada pendiente: canvas "Suyon CRM · Flujo del bot y Clientes" (https://claude.ai/artifact/5s8ng1dGrAeWZnZNYdxKUd): editor de flujo con bloques (Inicio por anuncio, Enviar texto/foto/audio/video, Esperar respuesta con 3 caminos, Reconocer talla/color sin IA, Guardar dato, Poner etiqueta, Seguimiento, Horario, IA Suyon, Ir a otro paso = bucle, Pasar a asesora) + "datos que guarda el bot" (variables por chat: talla, colores, cantidad, destino, distrito, nombre, celular, dni, sede_shalom, anuncio — NO son etiquetas de asesora). Nuevas secciones en el menú: **Clientes** (tabla con datos guardados y pedidos de cada clienta) y **Pedidos por día** (Lima/Provincia, tira de días, totales, Copiar orden). La IA se llama **IA Suyon**.
+- Etiquetas rápidas ya hechas: barra de colores encima del cuadro de escribir (LIMA PENDIENTE, YAPE PENDIENTE, URGENTE, ✅ LIMA, ✅ PROVINCIA + manuales nuevas).
 - [ ] 3 · IA por etapa, archivos del prompt, tope de gasto.
 - [ ] 4 · Pedidos, editar, copiar orden, Sheet de Shalom, CAPI.
 - [ ] 5 · Control: embudo, CPA real por anuncio, llamadas.
