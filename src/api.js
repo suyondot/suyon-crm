@@ -474,6 +474,7 @@ api.post('/stores/:id/connect', async (c) => {
       if (!subscribed) {
         if (subErr) steps.push(`Cuenta ${st.waba_id || '(vacía)'}: ${subErr.message}`);
         if (rep.error) steps.push(rep.error);
+        if (rep.scopes) steps.push(`Cuenta / permisos del token${rep.tokenType ? ' (' + rep.tokenType + ')' : ''}: ${rep.scopes.join(' · ') || 'ninguno'}`);
         for (const t of rep.tried) {
           steps.push(`Cuenta que ve el token: ${t.id}${t.name ? ' «' + t.name + '»' : ''} → ${t.error ? 'error: ' + t.error : t.phones.length ? 'números: ' + t.phones.join(', ') : 'sin números'}`);
         }

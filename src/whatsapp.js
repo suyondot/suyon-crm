@@ -83,10 +83,13 @@ export async function findWaba(env, store) {
     return report;
   }
   const ids = new Set();
+  if (store.waba_id) ids.add(String(store.waba_id));
   for (const sc of dbg.data?.granular_scopes || []) {
     if (/whatsapp/.test(sc.scope || '')) for (const t of sc.target_ids || []) ids.add(String(t));
   }
-  if (!ids.size) report.error = 'El token no tiene cuentas de WhatsApp asignadas (o se generó antes de asignarlas).';
+  report.scopes = (dbg.data?.granular_scopes || []).map((sc) => `${sc.scope}${sc.target_ids ? ' (' + sc.target_ids.length + ' cuentas)' : ' (todas)'}`);
+  report.tokenType = dbg.data?.type || null;
+  if (!ids.size) report.error = 'El token no muestra cuentas de WhatsApp en sus permisos.';
   for (const id of ids) {
     const item = { id, name: null, phones: [], error: null };
     try {
