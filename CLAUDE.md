@@ -85,4 +85,4 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 - Ventana para responder: 24 h desde el último mensaje de la clienta, o 72 h si llegó por anuncio y se respondió en las primeras 24 h.
 - Notas de voz: Chrome graba WebM; `public/ogg.js` lo pasa a OGG/Opus sin recodificar (WhatsApp lo muestra como nota de voz). Safari graba MP4/AAC.
 - Front sin build (JS módulo + CSS del prototipo). PWA: `public/sw.js` (red primero), notificaciones del navegador si se activan en Mi cuenta.
-- Pruebas: `npm test` levanta `wrangler dev` con base temporal y un Meta falso (42 pruebas).
+- Pruebas: `npm test` levanta `wrangler dev` con base temporal y un Meta falso (44 pruebas).

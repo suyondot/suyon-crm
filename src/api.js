@@ -5,7 +5,7 @@ import {
   ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError,
 } from './util.js';
 import { createSession, destroySession, currentUser, requireUser, checkPassword, loadAccess, storeFor, companyFor, chatFor } from './auth.js';
-import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, kindForMime, SEND_RULES } from './whatsapp.js';
+import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, kindForMime, SEND_RULES } from './whatsapp.js';
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 
 const api = new Hono();
@@ -440,17 +440,36 @@ api.delete('/stores/:id', async (c) => {
 // Prueba el token, guarda el nombre verificado y suscribe la app a la cuenta de WhatsApp
 api.post('/stores/:id/connect', async (c) => {
   const st = await storeFor(c, c.req.param('id'), 'config');
-  if (!st.phone_number_id || !st.waba_id) fail(400, 'Falta el "Identificador del número" o el "Identificador de la cuenta de WhatsApp".');
+  if (!st.phone_number_id) fail(400, 'Falta el "Identificador del número de teléfono".');
   const db = c.env.DB;
   const steps = [];
   try {
     const info = await getPhoneInfo(c.env, st);
     steps.push(`Número encontrado: ${info.display_phone_number} (${info.verified_name || 'sin nombre'})`);
     if (info.quality_rating) steps.push(`Calidad del número: ${info.quality_rating}`);
-    try {
-      await subscribeApp(c.env, st);
-    } catch (e) {
-      throw new HttpError(502, `No se pudo suscribir la app a la cuenta de WhatsApp. Revisa el "Identificador de la cuenta de WhatsApp Business" y que el usuario del sistema tenga esa cuenta asignada. (${e.message})`);
+    let subscribed = false;
+    let subErr = null;
+    if (st.waba_id) {
+      try {
+        await subscribeApp(c.env, st);
+        subscribed = true;
+      } catch (e) {
+        subErr = e;
+      }
+    }
+    if (!subscribed) {
+      // El identificador de la cuenta falta o no es el correcto: se busca solo
+      const found = await findWaba(c.env, st).catch(() => null);
+      if (found && found !== st.waba_id) {
+        st.waba_id = found;
+        await db.prepare('UPDATE stores SET waba_id = ? WHERE id = ?').bind(found, st.id).run();
+        steps.push(`Se encontró la cuenta de WhatsApp correcta: ${found}`);
+        await subscribeApp(c.env, st);
+        subscribed = true;
+      }
+    }
+    if (!subscribed) {
+      throw new HttpError(502, `No se pudo suscribir la app a la cuenta de WhatsApp. Revisa que el usuario del sistema tenga asignada la cuenta de este número con acceso total.${subErr ? ' (' + subErr.message + ')' : ''}`);
     }
     steps.push('La app SUYON CRM quedó suscrita a la cuenta de WhatsApp');
     await db.prepare("UPDATE stores SET status = 'activo', connect_error = NULL, verified_name = ?, phone_display = COALESCE(?, phone_display), rev = rev + 1 WHERE id = ?")

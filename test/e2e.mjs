@@ -34,6 +34,10 @@ const meta = http.createServer(async (req, res) => {
   if (p.startsWith('file/')) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(IMG); }
   if (req.method === 'GET' && p === PHONE_ID) return json(200, { display_phone_number: '+51 924 000 111', verified_name: 'Porte Perú', quality_rating: 'GREEN', id: PHONE_ID });
   if (req.method === 'POST' && p === `${WABA_ID}/subscribed_apps`) return json(200, { success: true });
+  if (req.method === 'POST' && p.endsWith('/subscribed_apps')) return json(400, { error: { code: 100, message: 'Unsupported post request. Object does not exist' } });
+  if (req.method === 'GET' && p === 'debug_token') return json(200, { data: { granular_scopes: [{ scope: 'whatsapp_business_management', target_ids: ['555', WABA_ID] }] } });
+  if (req.method === 'GET' && p === '555/phone_numbers') return json(200, { data: [{ id: '777' }] });
+  if (req.method === 'GET' && p === `${WABA_ID}/phone_numbers`) return json(200, { data: [{ id: PHONE_ID }] });
   if (req.method === 'POST' && p === `${PHONE_ID}/media`) return json(200, { id: 'up_media_' + ++seq });
   if (req.method === 'POST' && p === `${PHONE_ID}/messages`) {
     if (body.status === 'read') return json(200, { success: true });
@@ -145,6 +149,16 @@ try {
     const r = await call('POST', `/api/chats/${pre.id}/messages`, { text: 'hola' });
     assert.equal(r.status, 409);
     assert.match(r.error, /no está conectado/);
+  });
+  await step('no deja guardar dos identificadores iguales', async () => {
+    const r = await call('PATCH', `/api/stores/${store.id}`, { phone_number_id: PHONE_ID, waba_id: PHONE_ID });
+    assert.equal(r.status, 400);
+  });
+  await step('conecta con la cuenta equivocada: la encuentra sola', async () => {
+    await call('PATCH', `/api/stores/${store.id}`, { phone_number_id: PHONE_ID, waba_id: '123456' });
+    const r = await call('POST', `/api/stores/${store.id}/connect`);
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.stores.find((x) => x.id === store.id).waba_id, WABA_ID);
   });
   await step('conecta el número (prueba token + suscribe la app)', async () => {
     const r = await call('POST', `/api/stores/${store.id}/connect`);

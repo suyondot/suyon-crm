@@ -29,7 +29,12 @@ const META_ERRORS = {
 export function friendlyMetaError(err) {
   if (!err) return 'Error desconocido de WhatsApp.';
   const code = err.code;
-  const base = META_ERRORS[code] || err.error_data?.details || err.message || err.title || 'Error de WhatsApp.';
+  let base = META_ERRORS[code] || err.error_data?.details || err.message || err.title || 'Error de WhatsApp.';
+  // Para errores genéricos, se agrega lo que dice Meta para poder entender qué falló
+  if (META_ERRORS[code] && [100, 10, 200].includes(code)) {
+    const detail = err.error_user_msg || err.error_data?.details || err.message;
+    if (detail) base += ` Meta dice: «${String(detail).slice(0, 200)}»`;
+  }
   return code ? `${base} (código ${code})` : base;
 }
 
@@ -63,6 +68,23 @@ async function graph(env, store, path, { method = 'GET', json, form } = {}) {
 
 export async function getPhoneInfo(env, store) {
   return graph(env, store, `${store.phone_number_id}?fields=display_phone_number,verified_name,quality_rating,code_verification_status,platform_type,throughput`);
+}
+
+// Busca a qué cuenta de WhatsApp Business pertenece el número, con los permisos del token
+export async function findWaba(env, store) {
+  const token = tokenFor(env, store);
+  const dbg = await graph(env, store, `debug_token?input_token=${encodeURIComponent(token)}`);
+  const ids = new Set();
+  for (const sc of dbg.data?.granular_scopes || []) {
+    if (/whatsapp/.test(sc.scope || '')) for (const t of sc.target_ids || []) ids.add(String(t));
+  }
+  for (const id of ids) {
+    try {
+      const r = await graph(env, store, `${id}/phone_numbers?fields=id,display_phone_number`);
+      if ((r.data || []).some((p) => String(p.id) === String(store.phone_number_id))) return id;
+    } catch {}
+  }
+  return null;
 }
 
 export async function subscribeApp(env, store) {

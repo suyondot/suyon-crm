@@ -1451,10 +1451,10 @@ function cfgNumero() {
     <div class="card"><h3>Conexión</h3>
       ${st.status === 'activo'
         ? `<p class="sub">Conectado como <b>${esc(st.verified_name || '—')}</b> · <span class="mono">${esc(st.phone_display || '')}</span></p>`
-        : `<p class="sub">Pon los dos identificadores de abajo (los copias de Meta → WhatsApp → Configuración de la API) y toca «Conectar número».</p>`}
+        : `<p class="sub">Pon los identificadores de abajo, toca «Guardar» y luego «Conectar número». Si no sabes el de la cuenta, déjalo vacío: el CRM lo busca solo.</p>`}
       ${st.connect_error ? `<div class="err" style="margin-bottom:12px">${esc(st.connect_error)}</div>` : ''}
       ${S.connSteps ? `<ul class="stlist" style="margin-bottom:12px">${S.connSteps.steps.map((x) => `<li><span class="y">✓</span><span>${esc(x)}</span></li>`).join('')}${S.connSteps.ok ? '' : `<li><span class="n">✗</span><span>${esc(S.connSteps.error)}</span></li>`}</ul>` : ''}
-      <button class="send" data-act="connect" ${st.phone_number_id && st.waba_id ? '' : 'disabled'}>${st.status === 'activo' ? 'Probar conexión otra vez' : 'Conectar número'}</button>
+      <button class="send" data-act="connect" ${st.phone_number_id ? '' : 'disabled'}>${st.status === 'activo' ? 'Probar conexión otra vez' : 'Conectar número'}</button>
     </div>
     <div class="card"><h3>Datos del número</h3><p class="sub">Se guardan solo para esta tienda.</p>
       <form id="sf" class="grid" style="gap:12px">
