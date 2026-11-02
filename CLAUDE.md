@@ -27,7 +27,8 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 - Piloto necesita tráfico: campaña chica de clic a WhatsApp (~S/20–30/día).
 
 ## Número piloto conectado (datos públicos, no son claves)
-- +51 941 010 752 · phone_number_id `1395172913681493` · cuenta de mensajes "Orión - Pancake Singapore" `2306137423565969` (portafolio Orión, business `27970507489211613`).
+- +51 941 010 752 · AHORA (desde 2 nov 15:25) en cuenta de mensajes propia **"Orión" `4467572743460773`** · phone_number_id **`1438552302669955`** (portafolio Orión, business `27970507489211613`). Antes estaba en "Orión - Pancake Singapore" `2306137423565969` (phone id `1395172913681493`), con línea de crédito de Pancake (CAKE COMM PTE. LTD.) → no se podía enviar (código 10). Se borró y se volvió a agregar.
+- Límite Meta sin verificar: 2 números por empresa al agregar desde la app (sube a 20 con verificación).
 - OJO Meta 2026: la "cuenta de WhatsApp" del número (`1434395304770204`, la que sale en Configuración del negocio → Cuentas de WhatsApp) NO sirve para `subscribed_apps` ("This API is not supported for this WhatsApp Business Account"). Hay que usar la **cuenta de mensajes** (Messaging accounts → Linked accounts) y asignársela al usuario del sistema con acceso total.
 - Recibir funciona; ENVIAR falla con código 10 aunque el token tiene whatsapp_business_messaging para todas. Pancake sí puede enviar → probable causa: la cuenta usa la línea de crédito (billetera) de Pancake. Plan: quitar socio Pancake Singapore SOLO de +51 941 010 752 y poner tarjeta propia en el Administrador de WhatsApp.
 - Hay DOS cuentas llamadas "Orión - Pancake Singapore": no quitar Pancake de la equivocada (la otra puede tener Orión Perú).
