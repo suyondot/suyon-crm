@@ -1,0 +1,1073 @@
+<title>Suyon CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: app shell — nav rail (marca + selector de tienda) | área de trabajo. Chats = lista | conversación | ficha. Celular = pestañas abajo, un panel a la vez. */
+:root{
+  --bg:#F4F2F3; --surface:#FFFFFF; --surface-2:#EEEAEC; --line:#E1DADE; --fg:#1F1A1D; --muted:#6D6469;
+  --accent:#7A1F35; --accent-fg:#FFFFFF; --accent-soft:#F4E4E9; --mine:#F7EDF0;
+  --ok:#1E7A4C; --ok-soft:#E3F3EA; --warn:#A35F00; --warn-soft:#FBEFD9; --bad:#B42318; --bad-soft:#FBE6E3; --info:#2D5BA8; --info-soft:#E4ECF8;
+  --t-yellow:#E8B530; --t-orange:#E9773E; --t-green:#2E9E5E; --t-blue:#4A74D9; --t-wine:#7A1F35; --t-grey:#8A8186;
+  --scrim:rgba(20,8,14,.45); --shadow:0 12px 32px rgba(40,10,20,.14);
+  --f-display:"Bricolage Grotesque", "Figtree", system-ui, sans-serif;
+  --f-body:"Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#141113; --surface:#1C181A; --surface-2:#262124; --line:#352E32; --fg:#EFE9EC; --muted:#A79DA2;
+  --accent:#E07A93; --accent-fg:#1A0E12; --accent-soft:#3A1F28; --mine:#2E1C23;
+  --ok:#5CC98D; --ok-soft:#173326; --warn:#E9A94A; --warn-soft:#3A2A12; --bad:#F07A6E; --bad-soft:#3D1C19; --info:#86A9EE; --info-soft:#1C2A42;
+  --t-wine:#E07A93; --t-grey:#9A9196; --scrim:rgba(0,0,0,.6); --shadow:0 12px 32px rgba(0,0,0,.5); color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#141113; --surface:#1C181A; --surface-2:#262124; --line:#352E32; --fg:#EFE9EC; --muted:#A79DA2;
+  --accent:#E07A93; --accent-fg:#1A0E12; --accent-soft:#3A1F28; --mine:#2E1C23;
+  --ok:#5CC98D; --ok-soft:#173326; --warn:#E9A94A; --warn-soft:#3A2A12; --bad:#F07A6E; --bad-soft:#3D1C19; --info:#86A9EE; --info-soft:#1C2A42;
+  --t-wine:#E07A93; --t-grey:#9A9196; --scrim:rgba(0,0,0,.6); --shadow:0 12px 32px rgba(0,0,0,.5); color-scheme:dark }
+
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.45;overflow:hidden}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.num,.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+
+.app{display:grid;grid-template-columns:220px minmax(0,1fr);height:100%}
+.side{background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:2px;padding:14px 10px}
+.brand{display:flex;align-items:center;gap:10px;padding:8px;margin-bottom:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);text-align:left;width:100%}
+.brand:hover{background:var(--surface-2)}
+.brand-mark{width:32px;height:32px;border-radius:8px;background:var(--accent);color:var(--accent-fg);display:grid;place-items:center;font-family:var(--f-display);font-weight:700;font-size:16px;flex:none}
+.brand .bt{min-width:0;flex:1}
+.brand b{display:block;font-family:var(--f-display);font-size:16px;font-weight:700;letter-spacing:-.01em}
+.brand small{display:block;color:var(--muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.caret{color:var(--muted);font-size:12px}
+.navbtn{display:flex;align-items:center;gap:10px;border:0;background:none;padding:9px 10px;border-radius:8px;color:var(--muted);font-weight:600;text-align:left;width:100%}
+.navbtn svg{width:19px;height:19px;flex:none}
+.navbtn:hover{background:var(--surface-2);color:var(--fg)}
+.navbtn[aria-current="page"]{background:var(--accent-soft);color:var(--accent)}
+.navbtn .cnt{margin-left:auto;background:var(--accent);color:var(--accent-fg);border-radius:10px;font-size:11px;padding:0 6px;font-family:var(--f-mono)}
+.side-foot{margin-top:auto;padding:10px 8px;color:var(--muted);font-size:12px}
+
+.main{min-width:0;display:flex;flex-direction:column;height:100%;overflow:hidden}
+.topbar{display:flex;align-items:center;gap:10px 12px;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--surface);flex-wrap:wrap}
+.topbar h1{font-family:var(--f-display);font-size:20px;font-weight:700;margin:0;letter-spacing:-.01em}
+.topbar .grow{flex:1}
+.store-top{display:none;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 9px;font-weight:600;font-size:13px;max-width:100%;min-width:0}
+.store-top span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill-demo{font-size:11px;font-weight:600;color:var(--warn);background:var(--warn-soft);padding:3px 8px;border-radius:20px;white-space:nowrap}
+.seg{display:inline-flex;background:var(--surface-2);border-radius:9px;padding:3px;gap:2px;max-width:100%;overflow-x:auto}
+.seg button{border:0;background:none;padding:5px 11px;border-radius:7px;font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.content{flex:1;min-height:0;overflow:auto;position:relative}
+.page{padding:20px 24px 40px;max-width:1180px}
+
+/* selector de tienda */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:30}
+.storepanel{position:fixed;top:calc(14px + env(safe-area-inset-top,0px));left:calc(10px + env(safe-area-inset-left,0px));width:min(330px,calc(100% - 32px));background:var(--surface);border-radius:14px;box-shadow:var(--shadow);z-index:31;padding:10px;display:grid;gap:4px;max-height:calc(100% - 28px);overflow:auto}
+.storepanel h4{margin:8px 8px 2px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.storeopt{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:10px;align-items:center;border:0;background:none;border-radius:9px;padding:8px;text-align:left;width:100%}
+.storeopt:hover{background:var(--surface-2)}
+.storeopt[aria-current="true"]{background:var(--accent-soft)}
+.storeopt .sm{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:12px;color:#fff}
+.storeopt b{display:block;font-size:13.5px}
+.storeopt span{display:block;font-size:12px;color:var(--muted)}
+.storeopt .st{font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px}
+.st-on{background:var(--ok-soft);color:var(--ok)} .st-off{background:var(--surface-2);color:var(--muted)}
+.addstore{border:1px dashed var(--line);background:none;border-radius:9px;padding:9px;font-weight:600;color:var(--muted);margin-top:6px}
+
+/* chats */
+.chats{display:grid;grid-template-columns:330px minmax(0,1fr) 310px;height:100%;position:relative}
+.chats.no-ficha{grid-template-columns:330px minmax(0,1fr)}
+.chats.no-ficha .ficha{display:none}
+.list{border-right:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;min-height:0}
+.list-head{padding:12px;display:grid;gap:10px;border-bottom:1px solid var(--line);position:relative}
+.searchrow{display:flex;gap:6px}
+.search{display:flex;align-items:center;gap:8px;background:var(--surface-2);border-radius:8px;padding:7px 10px;flex:1;min-width:0}
+.search input{border:0;background:none;outline:none;flex:1;min-width:0}
+.filterbtn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 10px;font-weight:600;font-size:13px;white-space:nowrap;display:inline-flex;gap:6px;align-items:center}
+.filterbtn[aria-expanded="true"],.filterbtn.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tagmenu{position:absolute;left:12px;right:12px;top:52px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);z-index:8;padding:6px;display:grid;gap:2px;max-height:340px;overflow:auto}
+.tagmenu button{display:flex;justify-content:space-between;align-items:center;border:0;background:none;padding:7px 8px;border-radius:7px;text-align:left}
+.tagmenu button:hover{background:var(--surface-2)}
+.tagmenu .n{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.activef{display:flex;gap:6px;flex-wrap:wrap}
+.activef button{border:0;background:var(--accent-soft);color:var(--accent);border-radius:20px;padding:3px 10px;font-weight:700;font-size:12px}
+.callstrip{display:flex;align-items:center;gap:10px;width:100%;border:0;border-radius:10px;padding:9px 11px;background:var(--warn-soft);color:var(--warn);font-weight:600;font-size:13px;text-align:left}
+.callstrip svg{width:18px;height:18px;flex:none}
+.callstrip b{font-family:var(--f-mono)}
+.callstrip .go{margin-left:auto;white-space:nowrap}
+.callstrip.on{background:var(--fg);color:var(--bg)}
+.callrow{padding:12px;border-bottom:1px solid var(--line);display:grid;gap:8px}
+.callrow .top{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:10px;align-items:center}
+.callrow .top b{display:block}
+.callrow .top span{font-size:12.5px;color:var(--muted)}
+.callrow .tel{display:flex;align-items:center;gap:8px;font-family:var(--f-mono);font-size:13px}
+.callrow .res{display:flex;gap:6px;flex-wrap:wrap}
+.callrow .res button{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:5px 9px;font-size:12.5px;font-weight:600}
+.callrow .res .win{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.callrow .log{font-size:12px;color:var(--muted)}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:20px;padding:4px 10px;font-size:12.5px;font-weight:600;color:var(--muted);white-space:nowrap;display:inline-flex;gap:6px;align-items:center}
+.chip[aria-pressed="true"]{background:var(--fg);border-color:var(--fg);color:var(--bg)}
+.chip .n{font-family:var(--f-mono);font-size:11px;opacity:.8}
+.items{overflow:auto;flex:1}
+.item{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:10px;padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer;background:none;border-left:0;border-right:0;border-top:0;width:100%;text-align:left}
+.item:hover{background:var(--surface-2)}
+.item[aria-current="true"]{background:var(--accent-soft)}
+.av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:14px;color:#fff;flex:none}
+.item .nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.item .lm{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.item .meta{display:flex;flex-direction:column;align-items:flex-end;gap:5px;font-size:11.5px;color:var(--muted)}
+.item .row{display:flex;gap:5px;align-items:center;margin-top:4px;flex-wrap:wrap}
+.unread{background:var(--accent);color:var(--accent-fg);border-radius:10px;font-size:11px;padding:0 6px;font-family:var(--f-mono);font-weight:500}
+.who{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:4px}
+.who.asesora{background:var(--bad-soft);color:var(--bad)}
+.who.ia{background:var(--info-soft);color:var(--info)}
+.who.bot,.who.cerrado{background:var(--surface-2);color:var(--muted)}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:2px 8px 2px 6px;border-radius:5px;background:var(--surface-2);white-space:nowrap}
+.tag i{width:8px;height:8px;border-radius:2px;display:inline-block}
+.tag.sys{outline:1px dashed var(--muted);outline-offset:-1px}
+.empty{display:grid;place-items:center;text-align:center;gap:6px;padding:40px 20px;color:var(--muted)}
+.empty b{color:var(--fg);font-size:15px}
+
+.conv{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg)}
+.conv-head{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.conv-head .t{min-width:0}
+.conv-head .t b{display:block;font-size:15px}
+.conv-head .t span{font-size:12px;color:var(--muted)}
+.iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:600;display:inline-flex;gap:6px;align-items:center;justify-content:center}
+.iconbtn:hover{background:var(--surface-2)}
+.iconbtn svg{width:18px;height:18px}
+.back{display:none}
+.window{font-size:12px;color:var(--ok);background:var(--ok-soft);padding:3px 8px;border-radius:20px;font-weight:600;white-space:nowrap}
+.window.off{color:var(--muted);background:var(--surface-2)}
+.banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;background:var(--bad-soft);color:var(--bad);font-weight:600;font-size:13px;border-bottom:1px solid var(--line)}
+.banner.ia{background:var(--info-soft);color:var(--info)}
+.banner .grow{flex:1;min-width:180px}
+.banner button{border:0;border-radius:7px;padding:6px 12px;font-weight:700;font-size:12.5px}
+.btn-solid{background:var(--accent);color:var(--accent-fg);border:0}
+.btn-ghost{background:var(--surface);color:var(--fg);border:1px solid var(--line)!important}
+.msgs{flex:1;overflow:auto;padding:18px 16px;display:flex;flex-direction:column;gap:6px}
+.m{max-width:min(78%,520px);display:flex;flex-direction:column;gap:3px}
+.m.out{align-self:flex-end;align-items:flex-end}
+.m .by{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:0 4px}
+.m .by.ia{color:var(--info)} .m .by.ase{color:var(--ok)}
+.bub{background:var(--surface);border:1px solid var(--line);padding:8px 11px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.m.out .bub{background:var(--mine);border-color:transparent}
+.bub small{display:block;text-align:right;color:var(--muted);font-size:10.5px;margin-top:3px;font-family:var(--f-mono)}
+.media{display:flex;align-items:center;gap:10px;padding:10px 12px;min-width:200px;border-radius:12px;background:var(--surface-2);font-weight:600;font-size:13px;color:var(--muted)}
+.media svg{width:22px;height:22px;flex:none}
+.photo{border-radius:12px;overflow:hidden;max-width:260px;border:1px solid var(--line);background:var(--surface)}
+.photo img,.photo video{display:block;width:100%;max-height:300px;object-fit:cover}
+.m audio{max-width:260px}
+.form{font-family:var(--f-mono);font-size:12.5px;line-height:1.55}
+.sysm{align-self:center;font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:4px 12px;margin:6px 0;text-align:center;max-width:92%}
+.closed{padding:8px 14px;background:var(--warn-soft);color:var(--warn);font-size:12.5px;font-weight:600;border-top:1px solid var(--line)}
+.composer{border-top:1px solid var(--line);background:var(--surface);padding:10px 12px;display:flex;gap:6px;align-items:flex-end;position:relative}
+.composer textarea{flex:1;min-width:0;resize:none;border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--bg);min-height:40px;max-height:120px;outline:none}
+.composer textarea:focus{border-color:var(--accent)}
+.composer .iconbtn{height:40px;min-width:40px;padding:0 9px}
+.send{background:var(--accent);color:var(--accent-fg);border:0;border-radius:10px;padding:9px 14px;font-weight:700;height:40px}
+.qrmenu{position:absolute;left:12px;right:12px;bottom:calc(100% + 6px);background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);max-height:300px;overflow:auto;z-index:5}
+.qrmenu button{display:block;width:100%;text-align:left;border:0;background:none;padding:9px 12px;border-bottom:1px solid var(--line)}
+.qrmenu button:hover{background:var(--surface-2)}
+.qrmenu b{font-family:var(--f-mono);font-size:12px;color:var(--accent)}
+.qrmenu span{display:block;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.ficha{border-left:1px solid var(--line);background:var(--surface);overflow:auto;padding:16px;display:grid;gap:18px;align-content:start}
+.sec h3{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
+.sec h3 button{border:0;background:none;color:var(--accent);font-weight:700;font-size:12px;letter-spacing:0;text-transform:none;padding:0}
+.kv{display:grid;grid-template-columns:96px minmax(0,1fr);gap:5px 10px;font-size:13px}
+.kv dt{color:var(--muted)} .kv dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.steps{display:flex;flex-wrap:wrap;gap:4px}
+.steps span{font-size:11.5px;padding:3px 8px;border-radius:5px;background:var(--surface-2);color:var(--muted);font-weight:600}
+.steps span.done{background:var(--ok-soft);color:var(--ok)}
+.steps span.now{background:var(--accent);color:var(--accent-fg)}
+.tagbox{display:flex;flex-wrap:wrap;gap:6px}
+.tagbox button{border:0;cursor:pointer;background:none;padding:0}
+.tagbox .off{opacity:.42}
+.wide{width:100%;padding:10px;border-radius:10px;font-weight:700;display:flex;justify-content:center;gap:6px}
+.btnrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.note{font-size:12.5px;color:var(--muted)}
+.cost{display:flex;justify-content:space-between;align-items:baseline;font-size:13px}
+.ordbadge{display:flex;justify-content:space-between;align-items:center;background:var(--ok-soft);color:var(--ok);border-radius:10px;padding:9px 12px;font-weight:700;font-size:13px;margin-top:12px}
+.edit{display:grid;gap:8px}
+.edit .field input,.edit .field select{padding:6px 8px}
+.irow{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr) 30px;gap:6px;align-items:center}
+.irow select{border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--bg);min-width:0}
+.irow button{border:0;background:var(--surface-2);border-radius:7px;height:30px}
+
+/* pages */
+.ph{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.ph h2{font-family:var(--f-display);font-size:24px;margin:0;letter-spacing:-.015em;text-wrap:balance}
+.ph p{margin:4px 0 0;color:var(--muted);max-width:62ch}
+.ph .grow{flex:1}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;min-width:0}
+.grid{display:grid;gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px}
+.kpi .l{font-size:12px;color:var(--muted);font-weight:600}
+.kpi .v{font-family:var(--f-display);font-size:28px;font-weight:700;letter-spacing:-.02em;margin-top:2px;font-variant-numeric:tabular-nums}
+.kpi .s{font-size:12px;color:var(--muted);margin-top:2px}
+.kpi .s b{color:var(--ok)}
+.two{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}
+.card h3{margin:0 0 4px;font-size:15px}
+.card .sub{color:var(--muted);font-size:12.5px;margin:0 0 14px}
+.funnel{display:grid;gap:8px}
+.fr{display:grid;grid-template-columns:130px minmax(0,1fr) 92px;gap:10px;align-items:center;font-size:13px}
+.fr .bar{height:22px;background:var(--surface-2);border-radius:5px;overflow:hidden}
+.fr .bar i{display:block;height:100%;background:var(--accent);border-radius:5px}
+.fr .val{text-align:right;font-family:var(--f-mono);font-size:12.5px}
+.fr .val em{font-style:normal;color:var(--muted)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td.r,th.r{text-align:right}
+tr:last-child td{border-bottom:0}
+.good{color:var(--ok);font-weight:700} .badv{color:var(--bad);font-weight:700}
+
+.orders{display:grid;gap:8px}
+.ord{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;grid-template-columns:minmax(150px,1.2fr) minmax(170px,1.5fr) minmax(150px,1fr) 170px auto;gap:10px 16px;align-items:center}
+.ord.owner{grid-template-columns:minmax(150px,1.2fr) minmax(170px,1.5fr) minmax(150px,1fr) 80px 170px auto}
+.ord .id{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.ord .c b{display:block}
+.ord .c span,.ord .d span{font-size:12.5px;color:var(--muted);display:block}
+.ord .money{font-family:var(--f-mono);font-size:12.5px}
+.ord select{width:100%;border-radius:8px;padding:6px 8px;font-weight:700;font-size:12.5px;border:1px solid transparent}
+.ord .acts{display:flex;gap:6px}
+.st-new{background:var(--info-soft);color:var(--info)}
+.st-mid{background:var(--warn-soft);color:var(--warn)}
+.st-ok{background:var(--ok-soft);color:var(--ok)}
+.st-bad{background:var(--bad-soft);color:var(--bad)}
+.ord-head{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+
+/* config */
+.cfg{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}
+.cfgnav{display:grid;gap:2px;position:sticky;top:0}
+.cfgnav button{border:0;background:none;text-align:left;padding:8px 10px;border-radius:8px;font-weight:600;color:var(--muted)}
+.cfgnav button[aria-current="true"]{background:var(--surface);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
+.cfgnote{font-size:12px;color:var(--muted);padding:8px 10px;border-top:1px solid var(--line);margin-top:8px}
+.tagrow{display:grid;grid-template-columns:170px minmax(0,1fr) minmax(0,1fr);gap:14px;padding:12px 0;border-bottom:1px solid var(--line);font-size:13px;align-items:start}
+.tagrow:last-child{border-bottom:0}
+.tagrow .h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.flow{display:grid}
+.fstep{display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px}
+.fstep .dot{display:flex;flex-direction:column;align-items:center}
+.fstep .dot b{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-family:var(--f-mono);background:var(--surface-2);color:var(--muted)}
+.fstep .dot b.ia{background:var(--info-soft);color:var(--info)}
+.fstep .dot b.bot{background:var(--accent-soft);color:var(--accent)}
+.fstep .dot i{flex:1;width:2px;background:var(--line);min-height:14px}
+.fstep .body{padding-bottom:16px;min-width:0}
+.fstep .body b{display:block}
+.fstep .body p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.kw{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.kw span{font-family:var(--f-mono);font-size:11.5px;background:var(--surface-2);padding:2px 6px;border-radius:4px}
+.toggle{width:36px;height:20px;border-radius:12px;background:var(--line);border:0;position:relative;flex:none}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+.toggle[aria-pressed="true"]{background:var(--ok)}
+.toggle[aria-pressed="true"]::after{left:18px}
+.seqrow{display:grid;grid-template-columns:110px minmax(0,1fr) 36px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+.seqrow:last-child{border-bottom:0}
+.alert{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:600}
+.assets{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.asset{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface);display:flex;flex-direction:column}
+.asset .th{aspect-ratio:4/3;max-width:100%;background:var(--surface-2);display:grid;place-items:center;color:var(--muted)}
+.asset .th svg{width:30px;height:30px}
+.asset .th img{width:100%;height:100%;object-fit:cover}
+.asset .ab{padding:8px 10px;display:grid;gap:2px}
+.asset .ab b{font-size:12.5px}
+.asset .ab span{font-size:11.5px;color:var(--muted)}
+.asset .key{font-family:var(--f-mono);font-size:10.5px;color:var(--accent)}
+.upload{border:1px dashed var(--line);border-radius:10px;display:grid;place-items:center;text-align:center;padding:16px;color:var(--muted);font-weight:600;cursor:pointer;min-height:150px}
+.upload:hover{background:var(--surface-2)}
+.wallet{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 16px;align-items:center}
+.wallet .big{font-family:var(--f-display);font-size:30px;font-weight:700;letter-spacing:-.02em}
+.meter{height:8px;border-radius:5px;background:var(--surface-2);overflow:hidden;grid-column:1/-1}
+.meter i{display:block;height:100%;background:var(--ok)}
+.stock{overflow-x:auto}
+.stock td input{width:58px;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--bg);text-align:right;font-family:var(--f-mono)}
+.stock td.low input{border-color:var(--bad);color:var(--bad);background:var(--bad-soft)}
+.stock td.na{color:var(--muted);text-align:center}
+.field{display:grid;gap:5px;font-size:13px;min-width:0}
+.field label{font-weight:600;font-size:12.5px;color:var(--muted)}
+.field input,.field select,.field textarea{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg);width:100%;min-width:0}
+.field textarea{min-height:90px;resize:vertical;font-size:13px}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.zones{display:flex;flex-wrap:wrap;gap:6px}
+.zones span{background:var(--bad-soft);color:var(--bad);font-size:12.5px;padding:3px 9px;border-radius:20px;font-weight:600}
+.qrl > div{display:grid;grid-template-columns:120px minmax(0,1fr);gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+.qrl b{font-family:var(--f-mono);color:var(--accent);font-size:12.5px}
+.qrl span{color:var(--muted);white-space:pre-wrap}
+
+/* modal */
+.mwrap{position:fixed;inset:0;display:grid;place-items:center;z-index:32;padding:16px}
+.modal{background:var(--surface);border-radius:14px;box-shadow:var(--shadow);width:min(560px,100%);max-height:calc(100% - 32px);overflow:auto;padding:20px;display:grid;gap:14px;position:relative}
+.modal h3{font-family:var(--f-display);font-size:20px;margin:0}
+.modal pre{margin:0;background:var(--surface-2);border-radius:10px;padding:12px;font-family:var(--f-mono);font-size:12.5px;white-space:pre-wrap}
+.modal textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:10px;padding:12px;font-family:var(--f-mono);font-size:12.5px;background:var(--bg)}
+.total{display:flex;justify-content:space-between;background:var(--surface-2);border-radius:10px;padding:10px 12px;font-weight:700}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:13px;z-index:40;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
+.bar-svg text{fill:var(--muted);font-size:11px;font-family:var(--f-mono)}
+
+@media (max-width:1180px){
+  .chats{grid-template-columns:300px minmax(0,1fr)}
+  .chats .ficha{display:none}
+  .chats.ficha-open .ficha{display:grid;position:absolute;right:0;top:0;bottom:0;width:min(340px,92vw);z-index:6;box-shadow:var(--shadow)}
+  .two{grid-template-columns:minmax(0,1fr)}
+  .ord,.ord.owner{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+}
+@media (max-width:860px){
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}
+  .side{grid-row:2;flex-direction:row;padding:4px 6px calc(4px + env(safe-area-inset-bottom,0px));border-right:0;border-top:1px solid var(--line);justify-content:space-around}
+  .side .brand,.side-foot{display:none}
+  .store-top{display:inline-flex}
+  .topbar h1{display:none}
+  .navbtn{flex-direction:column;gap:2px;font-size:11px;padding:6px 4px;align-items:center;position:relative}
+  .navbtn .cnt{position:absolute;top:2px;left:calc(50% + 6px);margin:0}
+  .main{grid-row:1}
+  .topbar{padding:8px 16px}
+  .chats{grid-template-columns:minmax(0,1fr)}
+  .chats .conv{display:none}
+  .chats.open .list{display:none}
+  .chats.open .conv{display:flex}
+  .back{display:inline-flex}
+  .page{padding:16px 16px 32px}
+  .cfg{grid-template-columns:minmax(0,1fr)}
+  .cfgnav{display:flex;overflow-x:auto;position:static}
+  .cfgnav button{white-space:nowrap}
+  .cfgnote{display:none}
+  .tagrow{grid-template-columns:minmax(0,1fr)}
+  .fr{grid-template-columns:100px minmax(0,1fr) 80px}
+  .m{max-width:88%}
+  .conv-head .window{order:5}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app" id="app"></div>
+<div id="layer"></div>
+<input type="file" id="fileup" accept="image/*,audio/*,video/*" hidden>
+<input type="file" id="assetup" accept="image/*,video/*" hidden>
+
+<script>
+const ICON={
+ chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>',
+ box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>',
+ chart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20h16"/><path d="M7 16v-5"/><path d="M12 16V6"/><path d="M17 16v-8"/></svg>',
+ gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg>',
+ img:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>',
+ video:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>',
+ audio:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/></svg>',
+ clip:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/></svg>',
+ mic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+ copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>',
+ filter:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M4 5h16l-6 8v5l-4 2v-7z"/></svg>'
+};
+
+const STORES=[
+ {id:'pf',brand:'Porte Perú',n:'Pantalón formal',phone:'+51 924 ••• 705',color:'#7A1F35',on:true},
+ {id:'lc',brand:'Porte Perú',n:'Leggings cargo',phone:'Chip nuevo',color:'#2D5BA8',on:true},
+ {id:'or',brand:'Orión',n:'Polos y pijamas',phone:'Por conectar',color:'#6B4FA3',on:false}
+];
+const store=()=>STORES.find(s=>s.id===S.store);
+
+const TAGS={
+ 'Talla XS':{c:'--t-grey',sys:1},'Talla S':{c:'--t-grey',sys:1},'Talla M':{c:'--t-grey',sys:1},'Talla L':{c:'--t-grey',sys:1},'Talla XL':{c:'--t-grey',sys:1},
+ 'ASESOR':{c:'--bad',sys:1},'COMPRÓ':{c:'--t-green',sys:1},'YAPE PENDIENTE':{c:'--t-orange',sys:1},
+ 'LIMA PENDIENTE':{c:'--t-yellow'},'✅ LIMA':{c:'--t-green'},'✅ PROVINCIA':{c:'--t-blue'},'🔥 URGENTE':{c:'--t-wine'}
+};
+const PROD={pf:{n:'Pantalón formal',f:'Pantalón Formal',sizes:['XS','S','M','L','XL'],colors:['Negro','Gris claro','Gris oscuro','Perla','Vino','Azul noche','Beige'],price:[0,89,139,175,219],cost:20},
+            lc:{n:'Leggings cargo',f:'Leggings Cargo',sizes:['S','M','L'],colors:['Negro','Azul noche','Beige','Celeste bebé'],price:[0,109,169,209,265],cost:24.5}};
+const price=(p,n)=>n<=0?0:n<5?PROD[p].price[n]:(p==='pf'?55*n:66*n);
+const AVC=['#7A1F35','#2D5BA8','#1E7A4C','#A35F00','#6B4FA3','#B0413E','#2F7F86','#8A5A2B'];
+
+const chats=[
+ {id:1,n:'Rosa Quispe',store:'pf',h:'asesora',why:'Mandó la captura del Yape y su sede',stage:'Sede',tags:['Talla M','ASESOR','COMPRÓ'],ad:'IA media silueta v12',adid:'1202…9620',t:'01:00',un:2,win:61,ia:0.021,order:null,
+  f:{tipo:'Provincia',nombre:'Rosa Quispe Mamani',dni:'47123456',cel:'964 512 307',dir:'Shalom Chilca, Huancayo',items:[['M','Negro'],['M','Vino'],['M','Perla']]},
+  msgs:[
+  {w:'cli',x:'Hola, quiero más información',t:'00:12'},
+  {w:'sys',x:'Llegó desde el anuncio «IA media silueta v12» · ventana gratis de 72 h abierta'},
+  {w:'bot',k:'img',x:'Pantalón Formal Stretch · imagen de precios',t:'00:12'},
+  {w:'bot',x:'✨ Pantalón Formal Stretch ✨\n1 pantalón: S/89 · 2 pantalones: S/139 → S/69.50 c/u · 3 pantalones: S/175 → ¡solo S/58.33 c/u! ⭐ La más elegida',t:'00:12'},
+  {w:'bot',x:'¿Qué talla usamos normalmente? 🤗 (XS, S, M, L, XL o tu talla de jean)',t:'00:12'},
+  {w:'cli',x:'32',t:'00:14'},
+  {w:'sys',x:'Talla reconocida sin IA: 32 → M · etiqueta «Talla M»'},
+  {w:'bot',k:'img',x:'Colores disponibles · talla M',t:'00:14'},
+  {w:'bot',x:'¡Perfecto! 😍 Estos son los colores disponibles en tu talla M 👇 ¿Cuáles te gustan más? Llevando 3 te sale a solo S/58.33 c/u 🔥',t:'00:14'},
+  {w:'cli',x:'el negro, el vino y el blanco',t:'00:19'},
+  {w:'ia',x:'¡Lindos, preciosa! 😍 3 pantalones talla M: Negro, Vino y Perla. Total S/175 🔥',t:'00:19'},
+  {w:'ia',x:'¿A qué ciudad o distrito te lo enviamos? 😊',t:'00:19'},
+  {w:'cli',x:'a Huancayo',t:'00:23'},
+  {w:'ia',x:'¡Te lo enviamos GRATIS por agencia Shalom, totalmente seguro! 🚚 Llega en 1 a 2 días.',t:'00:23'},
+  {w:'ia',k:'video',x:'Video de envíos Shalom',t:'00:23'},
+  {w:'ia',x:'Separas con S/30 y el resto lo pagas al recoger 😊 Compárteme estos datos, linda 👇\nNombre y apellido:\nDNI:\nCelular:',t:'00:23'},
+  {w:'cli',x:'Rosa Quispe Mamani\n47123456\n964 512 307',t:'00:31'},
+  {w:'ia',k:'form',x:'Shalom: 🚚📦\n\n➡️ Nombre: Rosa Quispe Mamani\n➡️ DNI: 47123456\n➡️ CEL: 964 512 307\n➡️ Sede: por confirmar\n\nPedido: Pantalón Formal ✨\n✅ Cantidad: 3\n✅ Talla: M, M, M\n✅ Color: Negro, Vino, Perla\n\nMonto total: S/175\nAdelanto: S/30\nMonto restante: S/145',t:'00:31'},
+  {w:'ia',x:'Separa solo con S/30 y mañana a primera hora enviamos tu pedido 🚚💕\n👉 Yape / Plin: [número del negocio]\nEnvíame la captura para separarlo 📦',t:'00:31'},
+  {w:'cli',k:'img',x:'Captura de Yape · S/30',t:'00:52'},
+  {w:'ia',x:'¡Gracias, preciosa! 💕 Estamos validando tu pago. ¿En qué sede de Shalom te gustaría recoger? 😊',t:'00:52'},
+  {w:'cli',x:'en la de chilca',t:'00:58'},
+  {w:'ia',x:'¡Perfecto! 📦 Sede: Shalom Chilca, Huancayo. Mi compañera valida tu pago y te envía tu guía de seguimiento 💕',t:'00:58'},
+  {w:'sys',x:'El bot pasó el chat a asesora · mandó la captura del Yape y su sede · puso ASESOR + COMPRÓ'},
+  {w:'cli',x:'oye mejor cámbiame el vino por el azul noche porfa',t:'01:00'}]},
+ {id:2,n:'Milagros Torres',store:'pf',h:'asesora',why:'Lima con cobertura: confirmó sus datos',stage:'Confirmó',tags:['Talla S','ASESOR','COMPRÓ','✅ LIMA'],ad:'IA media silueta v9',adid:'1202…4471',t:'00:47',un:1,win:68,ia:0.016,order:null,
+  f:{tipo:'Lima',nombre:'Milagros Torres',dni:'',cel:'987 220 145',dir:'Jr. Las Begonias 412, San Juan de Lurigancho',items:[['S','Negro'],['S','Azul noche']]},
+  msgs:[
+  {w:'sys',x:'Llegó desde el anuncio «IA media silueta v9»'},
+  {w:'bot',x:'¿Qué talla usamos normalmente? 🤗 (XS, S, M, L, XL o tu talla de jean)',t:'00:20'},
+  {w:'cli',x:'talla s',t:'00:24'},
+  {w:'bot',k:'img',x:'Colores disponibles · talla S',t:'00:24'},
+  {w:'cli',x:'negro y azul, a sjl',t:'00:30'},
+  {w:'ia',x:'¡Genial! 🛵 A San Juan de Lurigancho te lo llevamos MAÑANA con nuestro motorizado, entre 2 y 8 p.m. Delivery GRATIS y pagas recién al recibir. Compárteme estos datos, linda 👇\nNombre y apellido:\nCelular:\nDirección:',t:'00:30'},
+  {w:'cli',x:'Milagros Torres 987220145 Jr. Las Begonias 412',t:'00:41'},
+  {w:'ia',k:'form',x:'Envío para: Lima 📦\n\n➡️ Nombre: Milagros Torres\n➡️ CEL: 987 220 145\n➡️ Dirección: Jr. Las Begonias 412, San Juan de Lurigancho\n\nPedido: Pantalón Formal ✨\n✅ Cantidad: 2\n✅ Talla: S, S\n✅ Color: Negro, Azul noche\n\nMonto total: S/139',t:'00:41'},
+  {w:'cli',x:'sí, todo correcto',t:'00:47'},
+  {w:'sys',x:'El bot pasó el chat a asesora · Lima confirmó sus datos · puso ASESOR + COMPRÓ'}]},
+ {id:4,n:'Pamela Huamán',store:'pf',h:'asesora',why:'Pide un horario de entrega especial',stage:'Datos',tags:['Talla L','ASESOR','🔥 URGENTE'],ad:'IA media silueta v12',adid:'1202…9620',t:'00:37',un:2,win:66,ia:0.012,order:null,
+  f:{tipo:'Lima',nombre:'Pamela Huamán',dni:'',cel:'',dir:'Surco',items:[['L','Negro'],['L','Gris claro'],['L','Vino']]},
+  msgs:[
+  {w:'cli',x:'quiero los 3: negro, gris claro y vino en L',t:'00:33'},
+  {w:'ia',x:'¡Perfecto, preciosa! 3 pantalones talla L: Negro, Gris claro y Vino. Total S/175 🔥 ¿A qué distrito te lo enviamos? 😊',t:'00:33'},
+  {w:'cli',x:'surco, pero solo puedo recibir a las 9 de la mañana',t:'00:37'},
+  {w:'ia',x:'Te paso con mi compañera para coordinar tu horario 😊',t:'00:37'},
+  {w:'sys',x:'El bot pasó el chat a asesora · pide horario especial · puso ASESOR'}]},
+ {id:5,n:'Lucía Fernández',store:'pf',h:'ia',stage:'Pago',tags:['Talla XS','YAPE PENDIENTE','✅ PROVINCIA'],ad:'IA media silueta v12',adid:'1202…9620',t:'00:31',un:0,win:58,ia:0.019,order:null,wait:'2 h',
+  f:{tipo:'Provincia',nombre:'Lucía Fernández',dni:'71234568',cel:'951 334 820',dir:'Shalom Trujillo · por confirmar',items:[['XS','Negro'],['XS','Perla']]},
+  msgs:[
+  {w:'ia',k:'form',x:'Shalom: 🚚📦\n\n➡️ Nombre: Lucía Fernández\n➡️ DNI: 71234568\n➡️ CEL: 951 334 820\n➡️ Sede: por confirmar\n\nPedido: Pantalón Formal ✨\n✅ Cantidad: 2\n✅ Talla: XS, XS\n✅ Color: Negro, Perla\n\nMonto total: S/139\nAdelanto: S/30\nMonto restante: S/109',t:'00:28'},
+  {w:'cli',x:'te yapeo en un rato que estoy recargando',t:'00:31'},
+  {w:'ia',x:'¡Claro, preciosa! 💕 Si me envías tu captura hoy, te llevas un regalito sorpresa 🎁 con tu pedido. Aquí te espero 🙌',t:'00:31'},
+  {w:'sys',x:'El bot puso YAPE PENDIENTE · recordatorio Yape 1 de 2 en 2 h (gratis, dentro de la ventana)'}]},
+ {id:10,n:'Carmen Rojas',store:'pf',h:'ia',stage:'Pago',tags:['Talla M','YAPE PENDIENTE','✅ PROVINCIA'],ad:'IA media silueta v12',adid:'1202…9620',t:'21:40',un:0,win:44,ia:0.017,order:null,wait:'5 h',
+  f:{tipo:'Provincia',nombre:'Carmen Rojas',dni:'44507731',cel:'962 448 019',dir:'Shalom Huánuco · por confirmar',items:[['M','Negro'],['M','Gris oscuro']]},
+  msgs:[
+  {w:'ia',x:'Separa solo con S/30 y mañana a primera hora enviamos tu pedido 🚚💕\n👉 Yape / Plin: [número del negocio]\nEnvíame la captura para separarlo 📦',t:'21:35'},
+  {w:'cli',x:'ya mañana temprano te yapeo',t:'21:40'},
+  {w:'ia',x:'¡Claro, preciosa! 💕 Si me envías tu captura hoy, te llevas un regalito sorpresa 🎁 con tu pedido. Aquí te espero 🙌',t:'21:40'},
+  {w:'sys',x:'El bot puso YAPE PENDIENTE · recordatorio 1 enviado, sin respuesta'}]},
+ {id:11,n:'Rocío Paz',store:'pf',h:'ia',stage:'Pago',tags:['Talla S','YAPE PENDIENTE','✅ PROVINCIA'],ad:'IA media silueta v9',adid:'1202…4471',t:'ayer',un:0,win:30,ia:0.015,order:null,wait:'1 día',calls:[{r:'No contestó',t:'ayer 6:10 p.m.'}],
+  f:{tipo:'Provincia',nombre:'Rocío Paz Huerta',dni:'72045118',cel:'947 310 552',dir:'Shalom Tacna · por confirmar',items:[['S','Vino'],['S','Perla'],['S','Negro']]},
+  msgs:[
+  {w:'cli',x:'en la noche te yapeo',t:'ayer'},
+  {w:'ia',x:'¡Claro, preciosa! 💕 Aquí te espero 🙌',t:'ayer'},
+  {w:'sys',x:'Recordatorios Yape 1 y 2 enviados, sin respuesta'}]},
+ {id:12,n:'Natalia Cárdenas',store:'pf',h:'ia',stage:'Datos',tags:['Talla L','LIMA PENDIENTE'],ad:'IA media silueta v12',adid:'1202…9620',t:'23:05',un:0,win:52,ia:0.011,order:null,wait:'3 h',
+  f:{tipo:'Lima',nombre:'Natalia Cárdenas',dni:'',cel:'986 552 174',dir:'Independencia',items:[['L','Azul noche'],['L','Negro']]},
+  msgs:[
+  {w:'ia',x:'¡Genial! 🛵 A Independencia te lo llevamos MAÑANA con nuestro motorizado, entre 2 y 8 p.m. Delivery GRATIS y pagas recién al recibir. Compárteme estos datos, linda 👇\nNombre y apellido:\nCelular:\nDirección:',t:'23:05'},
+  {w:'sys',x:'Pidió datos hace 3 h · sin respuesta'}]},
+ {id:6,n:'Diana Salazar',store:'pf',h:'bot',stage:'Talla',tags:[],ad:'IA media silueta v9',adid:'1202…4471',t:'00:29',un:0,win:71,ia:0,order:null,
+  f:{tipo:'',nombre:'Diana Salazar',dni:'',cel:'',dir:'',items:[]},
+  msgs:[
+  {w:'cli',x:'Hola',t:'00:28'},
+  {w:'bot',k:'img',x:'Pantalón Formal Stretch · imagen de precios',t:'00:28'},
+  {w:'bot',x:'¿Qué talla usamos normalmente? 🤗 (XS, S, M, L, XL o tu talla de jean)',t:'00:28'},
+  {w:'bot',x:'Preciosa, para mostrarte los colores que te quedan, solo respóndeme con tu talla de jean 👇 (por ejemplo: 28, 30, 32…)\n\nSi no la sabes, escríbeme TABLA y te ayudo 😊',t:'00:43'},
+  {w:'sys',x:'Seguimiento 2 de 4 programado en 40 min · audio'}]},
+ {id:8,n:'Silvia Paredes',store:'pf',h:'cerrado',stage:'Sin respuesta',tags:[],ad:'IA media silueta v9',adid:'1202…4471',t:'ayer',un:0,win:0,ia:0,order:null,
+  f:{tipo:'',nombre:'Silvia Paredes',dni:'',cel:'',dir:'',items:[]},
+  msgs:[
+  {w:'bot',x:'¿Qué talla usamos normalmente? 🤗',t:'Sáb'},
+  {w:'bot',k:'audio',x:'Audio · seguimiento 40 min',t:'Sáb'},
+  {w:'bot',k:'video',x:'Video «Así se ve puesto»',t:'Sáb'},
+  {w:'bot',x:'¿Sigues buscando tu pantalón? Te guardo tus colores hoy 💕',t:'Dom'},
+  {w:'sys',x:'Terminaron los 4 seguimientos sin respuesta · ventana gratis cerrada'}]},
+ {id:3,n:'Karen Ríos',store:'lc',h:'ia',stage:'Colores',tags:['Talla M'],ad:'Cargo · 4 bolsillos',adid:'1202…7302',t:'00:44',un:0,win:70,ia:0.008,order:null,
+  f:{tipo:'',nombre:'Karen Ríos',dni:'',cel:'',dir:'',items:[['M','Celeste bebé']]},
+  msgs:[
+  {w:'sys',x:'Llegó desde el anuncio «Cargo · 4 bolsillos»'},
+  {w:'bot',k:'img',x:'Colores disponibles · talla M',t:'00:40'},
+  {w:'cli',x:'el celeste bebé es muy claro? se transparenta?',t:'00:43'},
+  {w:'ia',x:'Para nada, preciosa 🙌 Es suplex colombiano de gramaje intermedio, no transparenta y es súper cómodo 💕',t:'00:44'},
+  {w:'ia',x:'¿Con cuáles te quedas? 😍',t:'00:44'}]},
+ {id:7,n:'Gabriela Ramos',store:'lc',h:'asesora',why:'Zona de cobertura dudosa: Carabayllo km 21',stage:'Destino',tags:['Talla S','ASESOR','LIMA PENDIENTE'],ad:'Cargo · outfit gym',adid:'1202…1188',t:'00:22',un:1,win:63,ia:0.010,order:null,
+  wait:'2 h',f:{tipo:'Lima',nombre:'Gabriela Ramos',dni:'',cel:'915 007 342',dir:'Carabayllo km 21',items:[['S','Negro'],['S','Beige']]},
+  msgs:[
+  {w:'cli',x:'negro y beige en S, vivo en carabayllo km 21',t:'00:21'},
+  {w:'ia',x:'Déjame confirmar si llegamos a tu zona 😊',t:'00:22'},
+  {w:'sys',x:'El bot pasó el chat a asesora · zona dudosa · puso ASESOR'}]},
+ {id:9,n:'Yolanda Vera',store:'lc',h:'asesora',why:'Mandó la captura del Yape y su sede',stage:'Sede',tags:['Talla L','ASESOR','COMPRÓ','✅ PROVINCIA'],ad:'Cargo · 4 bolsillos',adid:'1202…7302',t:'00:18',un:0,win:64,ia:0.018,order:318,
+  f:{tipo:'Provincia',nombre:'Yolanda Vera Soto',dni:'45120987',cel:'978 650 214',dir:'Shalom Chiclayo · Centro',items:[['L','Azul noche'],['L','Negro']]},
+  msgs:[
+  {w:'cli',k:'img',x:'Captura de Yape · S/30',t:'00:12'},
+  {w:'ia',x:'¡Gracias, preciosa! 💕 ¿En qué sede de Shalom te gustaría recoger? 😊',t:'00:12'},
+  {w:'cli',x:'chiclayo centro',t:'00:16'},
+  {w:'ia',x:'¡Perfecto! 📦 Sede: Shalom Chiclayo · Centro. Mi compañera valida tu pago y te envía tu guía de seguimiento 💕',t:'00:16'},
+  {w:'sys',x:'El bot pasó el chat a asesora · puso ASESOR + COMPRÓ'},
+  {w:'sys',x:'Pedido #318 creado · S/169'}]}
+];
+
+let orders=[
+ {id:309,store:'pf',tipo:'Lima',cli:'Andrea Vílchez',cel:'912 004 118',dni:'',items:[['M','Negro'],['M','Azul noche']],estado:'Entregado',dest:'Av. Universitaria 2210, Los Olivos',ad:'IA media silueta v12'},
+ {id:311,store:'pf',tipo:'Lima',cli:'Katherine Ávila',cel:'955 210 337',dni:'',items:[['S','Perla']],estado:'Rechazado',dest:'Calle Los Pinos 118, Ate',ad:'IA media silueta v9'},
+ {id:312,store:'pf',tipo:'Lima',cli:'Fiorella Medina',cel:'934 771 209',dni:'',items:[['L','Negro'],['L','Vino'],['L','Gris claro']],estado:'Confirmado',dest:'Jr. Monte Rosa 255, Surco',ad:'IA media silueta v12'},
+ {id:314,store:'pf',tipo:'Provincia',cli:'Elena Choque',cel:'951 662 004',dni:'42210876',items:[['XL','Negro'],['XL','Beige']],estado:'Recogido',dest:'Shalom Arequipa · Cayma',guia:'SH-4482190',ad:'IA media silueta v12'},
+ {id:316,store:'pf',tipo:'Provincia',cli:'Patricia León',cel:'956 300 121',dni:'40981223',items:[['M','Perla']],estado:'No recogido',dest:'Shalom Ica · Centro',guia:'SH-4479015',ad:'IA media silueta v9'},
+ {id:317,store:'pf',tipo:'Provincia',cli:'Roxana Mendoza',cel:'984 117 552',dni:'46330218',items:[['S','Negro'],['S','Vino'],['S','Azul noche']],estado:'Enviado',dest:'Shalom Cusco · Wanchaq',guia:'SH-4483302',ad:'IA media silueta v12'},
+ {id:319,store:'pf',tipo:'Provincia',cli:'Carmen Rojas',cel:'962 448 019',dni:'44507731',items:[['M','Negro'],['M','Gris oscuro']],estado:'Yape por validar',dest:'Shalom Huánuco · por confirmar',guia:'',ad:'IA media silueta v12'},
+ {id:310,store:'lc',tipo:'Lima',cli:'Yesenia Cruz',cel:'923 588 140',dni:'',items:[['M','Negro'],['M','Beige'],['M','Azul noche']],estado:'En ruta',dest:'Av. Túpac Amaru 4150, Comas',ad:'Cargo · 4 bolsillos'},
+ {id:313,store:'lc',tipo:'Lima',cli:'Mónica Herrera',cel:'941 225 803',dni:'',items:[['S','Celeste bebé'],['S','Negro']],estado:'Nuevo',dest:'Av. Faucett 1290, Callao',ad:'Cargo · outfit gym'},
+ {id:315,store:'lc',tipo:'Provincia',cli:'Noemí Gutiérrez',cel:'969 004 517',dni:'43218876',items:[['M','Negro'],['M','Beige'],['M','Celeste bebé']],estado:'En agencia',dest:'Shalom Piura · Centro',guia:'SH-4482771',ad:'Cargo · 4 bolsillos'},
+ {id:318,store:'lc',tipo:'Provincia',cli:'Yolanda Vera Soto',cel:'978 650 214',dni:'45120987',items:[['L','Azul noche'],['L','Negro']],estado:'Validado',dest:'Shalom Chiclayo · Centro',guia:'',ad:'Cargo · 4 bolsillos',chat:9}
+];
+let nextOrder=320;
+const ST={Lima:['Nuevo','Confirmado','En ruta','Entregado','Rechazado'],Provincia:['Yape por validar','Validado','Enviado','En agencia','Recogido','No recogido']};
+const stClass=s=>({'Nuevo':'st-new','Yape por validar':'st-new','Confirmado':'st-mid','Validado':'st-mid','En ruta':'st-mid','Enviado':'st-mid','En agencia':'st-mid','Entregado':'st-ok','Recogido':'st-ok','Rechazado':'st-bad','No recogido':'st-bad'})[s];
+const omonto=o=>price(o.store,o.items.length);
+const oadel=o=>o.tipo==='Provincia'?30:0;
+
+const QR={pf:[
+ ['/adelanto','✅ Adelanto: S/30 para confirmar tu pedido linda 💖🚚💨\n✅ Lo restante lo pagas cuando tu pedido esté listo para recoger 📦\n➡️ Yape: [número del negocio]'],
+ ['/listomañana','PEDIDO LISTO 🛍️ 🚚 Delivery GRATIS + CONTRA ENTREGA ⏰ Entrega MAÑANA: 2:00 a 8:00 pm 💳 Yape, Plin, efectivo, transferencia 🔴 MAÑANA LLEGA SU PEDIDO'],
+ ['/listolimahoy','✅ PEDIDO LISTO 🛍️ 🚚 Delivery GRATIS + CONTRA ENTREGA ⏰ Entrega HOY: 2:00 a 8:00 pm 💳 Yape, Plin, efectivo, transferencia 🔴 HOY LLEGA SU PEDIDO'],
+ ['/clave','¡LISTO! ✨ • Indica el recojo de tu pedido • Entrega tu DNI CLAVE: ** Toma una foto de tu compra para nuestras redes sociales 🤳🏼📦'],
+ ['/listoshalom','💁🏻‍♂️ Tu pedido fue enviado correctamente 🔔 Te notificamos en cuánto llegue para que puedas recogerlo ⌛ Tiempo referencial de llegada: 1 a 2 días. Atte: PORTE PERÚ 💖'],
+ ['/perfecto','¡AGENDA! 🧑🏻‍💻✅ • Tu pedido será enviado a la Agencia de 4pm a 7pm 📦 • La guía de seguimiento es dada el mismo día hábil 📃 • Llegará a tu localidad en 1 o 2 días como máximo 🚚💨'],
+ ['/metodo','📦 MÉTODO DE ENVÍO: realizamos nuestros envíos mediante Shalom 🚚 Para confirmar el pedido solicitamos un adelanto único de S/30… (texto completo)'],
+ ['/uno','✨ Pantalón Formal Stretch ✨ Se ve de oficina, se siente como legging 🙌 💰 1 unid: S/89 · 2 unid: S/139 · 🔥 3 unid: S/175 ¿En qué distrito o ciudad estás y qué talla sueles usar? 😊'],
+ ['/tela','✨ Trabajamos con tela scuba, linda 💖 No es ni muy delgada ni muy gruesa: caída hermosa, comodidad y buen ajuste 🌷👖'],
+ ['/entrega','Si agendas hoy 😉 el ENVÍO sale GRATIS 🚚'],
+ ['/proporcionar','Los pedidos para provincia son totalmente seguros y por la agencia Shalom 💕 El envío es gratuito'],
+ ['/providos','Tu pedido quedaría así 👇 ✨ Pantalones Formal Stretch: … 💰 Total: S/… (envío gratis). Para separarlo solo necesitas un adelanto de S/30 😊'],
+ ['/provitres','Para preparar tu envío, ¿me ayudas con estos datos? 👇 👤 Nombre y apellido 🪪 DNI 📱 Celular 📍 Sede de Shalom'],
+ ['/polo','🛍️ ¡Agrega a tu compra un polo suplex cuello cuadrado! ✨ 1 por S/25 ⚡ ¡OFERTA FLASH! 2 por S/35 🌈 Tallas S, M y L 💬 ¿Te agregamos uno o aprovechas el dúo?']],
+ lc:[
+ ['/dos','✨ Leggings Cargo ✨ Comodidad de legging con estilo cargo 🔥 💰 1 unid: S/109 · 2 unid: S/169 · 🔥 3 unid: S/209 ¿En qué distrito o ciudad estás y qué talla sueles usar? 😊'],
+ ['/adelanto','✅ Adelanto: S/30 para confirmar tu pedido linda 💖🚚💨\n✅ Lo restante lo pagas cuando tu pedido esté listo para recoger 📦\n➡️ Yape: [número del negocio]'],
+ ['/listoshalom','💁🏻‍♂️ Tu pedido fue enviado correctamente 🔔 Te notificamos en cuánto llegue para que puedas recogerlo ⌛ Tiempo referencial de llegada: 1 a 2 días. Atte: PORTE PERÚ 💖'],
+ ['/polo','🛍️ ¡Agrega a tu compra un polo suplex cuello cuadrado! ✨ 1 por S/25 ⚡ ¡OFERTA FLASH! 2 por S/35 🌈 Tallas S, M y L 💬 ¿Te agregamos uno o aprovechas el dúo?']]};
+
+const STOCK={pf:{XS:{Negro:24,'Gris claro':18,'Gris oscuro':9,Perla:14,Beige:3},S:{Negro:31,'Gris claro':22,'Gris oscuro':11,Perla:19,Vino:16,'Azul noche':4},M:{Negro:38,'Gris claro':27,'Gris oscuro':12,Perla:5,Vino:21},L:{Negro:4,'Gris claro':19,'Gris oscuro':10,Perla:13,Vino:15},XL:{Negro:12,'Gris claro':9,'Gris oscuro':6,Perla:8,Vino:7,'Azul noche':3,Beige:2}},
+ lc:{S:{Negro:22,'Azul noche':14,Beige:11,'Celeste bebé':9},M:{Negro:28,'Azul noche':17,Beige:15,'Celeste bebé':12},L:{Negro:19,'Azul noche':10,Beige:8,'Celeste bebé':4}}};
+
+const ASSETS={pf:[
+ {k:'img',n:'Tabla de tallas',key:'TABLA DE TALLAS',when:'Si no sabe su talla'},
+ {k:'img',n:'Colores XS',key:'COLORES XS',when:'Al decir talla XS'},
+ {k:'img',n:'Colores S',key:'COLORES S',when:'Al decir talla S'},
+ {k:'img',n:'Colores M',key:'COLORES M',when:'Al decir talla M'},
+ {k:'img',n:'Colores L',key:'COLORES L',when:'Al decir talla L'},
+ {k:'img',n:'Colores XL',key:'COLORES XL',when:'Al decir talla XL'},
+ {k:'video',n:'Video de envíos',key:'VIDEO DE ENVÍOS',when:'Provincia, mensaje 2'},
+ {k:'img',n:'Foto Lima',key:'FOTO LIMA',when:'Desconfía y es de Lima'},
+ {k:'video',n:'Video confianza',key:'VIDEO CONFIANZA',when:'Desconfía y va por Shalom'}],
+ lc:[
+ {k:'img',n:'Tabla de tallas cargo',key:'TABLA DE TALLAS',when:'Si no sabe su talla'},
+ {k:'img',n:'Colores S',key:'COLORES S',when:'Al decir talla S'},
+ {k:'img',n:'Colores M',key:'COLORES M',when:'Al decir talla M'},
+ {k:'img',n:'Colores L',key:'COLORES L',when:'Al decir talla L'},
+ {k:'video',n:'Video de envíos',key:'VIDEO DE ENVÍOS',when:'Provincia, mensaje 2'},
+ {k:'video',n:'Reseñas cargo',key:'VIDEO CONFIANZA',when:'Desconfía'}]};
+const WALLET={pf:{saldo:23.4,hoy:1.9,tope:4,mes:48.6},lc:{saldo:11.8,hoy:0.9,tope:3,mes:21.2}};
+
+const S={view:'chats',role:'dueno',store:'pf',filter:'asesora',tagf:[],tagMenu:false,storeMenu:false,q:'',open:null,ficha:true,edit:null,otab:'Lima',ostate:'Todos',ctab:'etiquetas',qr:false,draft:''};
+if(window.innerWidth>860) S.open=1;
+
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=s=>document.querySelector(s);
+const soles=n=>'S/'+(Math.round(n*100)/100).toLocaleString('es-PE',{minimumFractionDigits:n%1?2:0,maximumFractionDigits:2});
+const initials=n=>n.split(' ').slice(0,2).map(w=>w[0]).join('');
+const owner=()=>S.role==='dueno';
+const tagHTML=t=>{const d=TAGS[t]||{c:'--t-grey'};return `<span class="tag${d.sys?' sys':''}"><i style="background:var(${d.c})"></i>${esc(t)}</span>`};
+const whoLabel={asesora:'Asesora',ia:'IA',bot:'Bot',cerrado:'Cerrado'};
+const storeChats=()=>chats.filter(c=>c.store===S.store);
+const me=()=>owner()?'Jordan':'Jade';
+
+function toast(msg){const el=document.createElement('div');el.className='toast';el.setAttribute('role','status');el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),3400)}
+
+/* formulario para el grupo de reporte */
+function orderText(o){
+  const p=PROD[o.store],n=o.items.length,tot=omonto(o);
+  const tallas=o.items.map(i=>i[0]).join(', '),colores=o.items.map(i=>i[1]).join(', ');
+  if(o.tipo==='Lima') return `✅ AGENDADO · Pedido #${o.id}\n\nEnvío para: Lima 📦\n\n➡️ Nombre: ${o.cli}\n➡️ CEL: ${o.cel||'—'}\n➡️ Dirección: ${o.dest}\n\nPedido: ${p.f} ✨\n\n✅ Cantidad: ${n}\n✅ Talla: ${tallas}\n✅ Color: ${colores}\n\nMonto total: S/${tot}`;
+  return `✅ AGENDADO · Pedido #${o.id}\n\nShalom: 🚚📦\n\n➡️ Nombre: ${o.cli}\n➡️ DNI: ${o.dni||'—'}\n➡️ CEL: ${o.cel||'—'}\n➡️ Sede: ${o.dest}\n\nPedido: ${p.f} ✨\n\n✅ Cantidad: ${n}\n✅ Talla: ${tallas}\n✅ Color: ${colores}\n\nMonto total: S/${tot}\nAdelanto: S/30\nMonto restante: S/${tot-30}`;
+}
+function copyOrder(o){
+  const txt=orderText(o);
+  const done=()=>toast(`Orden #${o.id} copiada. Pégala en el grupo de reporte.`);
+  try{navigator.clipboard.writeText(txt).then(done,()=>showCopy(txt))}catch(e){showCopy(txt)}
+}
+function showCopy(txt){
+  $('#layer').innerHTML=`<div class="scrim" data-act="closem"></div><div class="mwrap" data-act="closem"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="ct"><h3 id="ct">Copia la orden</h3><p class="note" style="margin:0">Tu navegador no dejó copiar solo. El texto ya está seleccionado: cópialo.</p><textarea id="copytxt" readonly>${esc(txt)}</textarea><div style="display:flex;justify-content:flex-end"><button class="iconbtn" data-act="closem">Listo</button></div></div></div>`;
+  const t=$('#copytxt');t.focus();t.select();
+}
+
+function render(){
+  if(!owner()&&S.view==='config') S.view='chats';
+  const sc=storeChats(),pend=sc.filter(c=>c.h==='asesora').length,st=store();
+  const titles={chats:'Chats',pedidos:'Pedidos',control:'Control',config:'Configuración'};
+  const nav=[['chats','Chats',ICON.chat,pend],['pedidos','Pedidos',ICON.box],['control','Control',ICON.chart]];
+  if(owner()) nav.push(['config','Configuración',ICON.gear]);
+  $('#app').innerHTML=`
+  <nav class="side" aria-label="Principal">
+    <button class="brand" data-act="stores" aria-haspopup="true" aria-label="Cambiar tienda"><span class="brand-mark">S</span><span class="bt"><b>Suyon CRM</b><small>${st.brand} · ${st.n}</small></span><span class="caret">▾</span></button>
+    ${nav.map(([v,l,ic,c])=>`<button class="navbtn" data-nav="${v}" ${S.view===v?'aria-current="page"':''}>${ic}<span>${l}</span>${c?`<span class="cnt">${c}</span>`:''}</button>`).join('')}
+    <div class="side-foot">${owner()?'Jordan · Dueño':'Jade · Asesora'}</div>
+  </nav>
+  <main class="main">
+    <header class="topbar">
+      <button class="store-top" data-act="stores" aria-label="Cambiar tienda"><span>${st.brand} · ${st.n}</span><span class="caret">▾</span></button>
+      <h1>${titles[S.view]}</h1>
+      <span class="pill-demo">Prototipo · datos de ejemplo</span>
+      <span class="grow"></span>
+      <div class="seg" role="group" aria-label="Ver como">
+        <button data-role="dueno" aria-pressed="${owner()}">Dueño</button>
+        <button data-role="asesora" aria-pressed="${!owner()}">Asesora</button>
+      </div>
+    </header>
+    <div class="content" id="content">${st.on?({chats:vChats,pedidos:vOrders,control:vControl,config:vConfig})[S.view]():vOff()}</div>
+  </main>`;
+  const m=$('.msgs'); if(m) m.scrollTop=m.scrollHeight;
+  drawStoreMenu();
+}
+function vOff(){const st=store();return `<div class="empty" style="height:100%"><b>${st.brand} · ${st.n}</b><span>Este número todavía no está conectado.</span><span class="note">Cada tienda tiene sus propios chats, pedidos, bot, IA, saldo de OpenAI y configuración.</span>${owner()?'<button class="send" data-toast="Aquí empieza la conexión del número a la API de WhatsApp">Conectar número</button>':''}</div>`}
+function drawStoreMenu(){
+  let el=$('#storelayer'); if(!el){el=document.createElement('div');el.id='storelayer';document.body.appendChild(el)}
+  if(!S.storeMenu){el.innerHTML='';return}
+  const brands=[...new Set(STORES.map(s=>s.brand))];
+  el.innerHTML=`<div class="scrim" data-act="closestores"></div><div class="storepanel" role="dialog" aria-label="Tiendas">
+   ${brands.map(b=>`<h4>${b}</h4>${STORES.filter(s=>s.brand===b).map(s=>`<button class="storeopt" data-store="${s.id}" aria-current="${s.id===S.store}"><span class="sm" style="background:${s.color}">${s.n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</span><span><b>${s.n}</b><span class="mono">${s.phone}</span></span><span class="st ${s.on?'st-on':'st-off'}">${s.on?'Activo':'Pendiente'}</span></button>`).join('')}`).join('')}
+   ${owner()?'<button class="addstore" data-toast="Aquí agregarás una tienda o un número nuevo">+ Agregar tienda o número</button>':''}
+  </div>`;
+}
+
+/* ---------- CHATS ---------- */
+const statusMatch=(c,f)=>f==='todos'?true:f==='yape'?c.tags.includes('YAPE PENDIENTE'):c.h===f;
+function visibleChats(){
+  return storeChats().filter(c=>statusMatch(c,S.filter)&&S.tagf.every(t=>c.tags.includes(t))&&(!S.q||c.n.toLowerCase().includes(S.q.toLowerCase())));
+}
+const PHONE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>';
+const toCall=()=>storeChats().filter(c=>c.tags.includes('YAPE PENDIENTE')||c.tags.includes('LIMA PENDIENTE'));
+function callStrip(){
+  const l=toCall(),y=l.filter(c=>c.tags.includes('YAPE PENDIENTE')).length,lp=l.length-y;
+  if(!l.length&&!S.callMode) return '';
+  const parts=[y?`<b>${y}</b> Yape pendiente`:'',lp?`<b>${lp}</b> Lima pendiente`:''].filter(Boolean).join(' · ');
+  return `<button class="callstrip ${S.callMode?'on':''}" data-act="calls">${PHONE}<span>${S.callMode?'Volver a los chats':(l.length===1?'1 persona para llamar':l.length+' personas para llamar')+(parts?': '+parts:'')}</span>${S.callMode?'':'<span class="go">Ver →</span>'}</button>`;
+}
+function vCalls(){
+  const l=toCall();
+  if(!l.length) return `<div class="empty"><b>Nadie pendiente de llamada</b><span>Aquí aparecen las clientas con Yape pendiente o Lima pendiente.</span></div>`;
+  return l.map(c=>{const calls=c.calls||[];const yape=c.tags.includes('YAPE PENDIENTE');return `<div class="callrow">
+   <div class="top"><span class="av" style="background:${AVC[c.id%AVC.length]};width:36px;height:36px;font-size:12px">${initials(c.n)}</span>
+    <span style="min-width:0"><b>${esc(c.n)}</b><span>${yape?'Dijo que yapearía':'Faltan sus datos de Lima'} · espera hace ${c.wait||'—'} · ${c.f.items.length} ${c.f.items.length===1?'prenda':'prendas'} ${soles(price(c.store,c.f.items.length))}</span></span>
+    ${tagHTML(yape?'YAPE PENDIENTE':'LIMA PENDIENTE')}</div>
+   <div class="tel"><span>${esc(c.f.cel||'Sin celular')}</span>${c.f.cel?`<button class="iconbtn" data-copytel="${esc(c.f.cel)}" aria-label="Copiar celular" style="padding:3px 7px">${ICON.copy.replace('<svg','<svg width="14" height="14"')}</button>`:''}<span class="note">${calls.length?calls.length+(calls.length===1?' intento':' intentos'):'sin llamar'}</span></div>
+   <div class="res"><button class="win" data-callr="${c.id}|Cerró">Cerró</button><button data-callr="${c.id}|Contestó, lo piensa">Contestó, lo piensa</button><button data-callr="${c.id}|No contestó">No contestó</button><button data-open="${c.id}">Abrir chat</button></div>
+   ${calls.length?`<div class="log">Último: ${esc(calls[calls.length-1].r)} · ${esc(calls[calls.length-1].t)}</div>`:''}
+  </div>`}).join('');
+}
+function vChats(){
+  const sc=storeChats(),list=visibleChats(),c=chats.find(x=>x.id===S.open&&x.store===S.store);
+  if(!c) S.open=null;
+  return `<div class="chats ${S.ficha?'ficha-open':'no-ficha'} ${c?'open':''}">
+   <section class="list" aria-label="Lista de chats">
+    <div class="list-head">
+      ${callStrip()}
+      ${S.callMode?'':`
+      <div class="searchrow">
+        <div class="search"><span aria-hidden="true">⌕</span><input id="q" placeholder="Buscar por nombre" value="${esc(S.q)}" aria-label="Buscar chats"></div>
+        <button class="filterbtn ${S.tagf.length?'on':''}" data-act="tagmenu" aria-expanded="${S.tagMenu}">${ICON.filter}Etiqueta${S.tagf.length?` · ${S.tagf.length}`:''}</button>
+      </div>
+      ${S.tagMenu?`<div class="tagmenu" role="menu">${Object.keys(TAGS).map(t=>{const n=sc.filter(x=>x.tags.includes(t)).length;return `<button role="menuitemcheckbox" aria-checked="${S.tagf.includes(t)}" data-tagf="${esc(t)}">${tagHTML(t)}<span class="n">${S.tagf.includes(t)?'✓ ':''}${n}</span></button>`}).join('')}</div>`:''}
+      ${S.tagf.length?`<div class="activef">${S.tagf.map(t=>`<button data-tagf="${esc(t)}" aria-label="Quitar filtro ${esc(t)}">${esc(t)} ×</button>`).join('')}</div>`:''}
+      <div class="chips" role="group" aria-label="Estado">
+        ${[['asesora','Para asesora'],['ia','IA atendiendo'],['bot','Esperando respuesta'],['yape','Yape pendiente'],['todos','Todos']].map(([k,l])=>`<button class="chip" data-filter="${k}" aria-pressed="${S.filter===k}">${l}<span class="n">${sc.filter(x=>statusMatch(x,k)).length}</span></button>`).join('')}
+      </div>`}
+    </div>
+    <div class="items">
+      ${S.callMode?vCalls():list.length?list.map(x=>`<button class="item" data-open="${x.id}" aria-current="${x.id===S.open}">
+        <span class="av" style="background:${AVC[x.id%AVC.length]}">${initials(x.n)}</span>
+        <span style="min-width:0"><span class="nm">${esc(x.n)}</span>
+          <span class="lm">${esc(x.why||lastText(x))}</span>
+          <span class="row"><span class="who ${x.h}">${whoLabel[x.h]}</span>${x.tags.filter(t=>!t.startsWith('Talla')&&t!=='ASESOR').slice(0,2).map(tagHTML).join('')}</span></span>
+        <span class="meta"><span>${x.t}</span>${x.un?`<span class="unread">${x.un}</span>`:''}</span>
+      </button>`).join(''):`<div class="empty"><b>Sin chats aquí</b><span>Prueba con otro estado o quita el filtro de etiqueta.</span></div>`}
+    </div>
+   </section>
+   ${c?vConv(c):`<section class="conv"><div class="empty" style="height:100%"><b>Elige un chat</b><span>Los que necesitan asesora salen primero.</span></div></section>`}
+   ${c?vFicha(c):''}
+  </div>`;
+}
+function lastText(c){for(let i=c.msgs.length-1;i>=0;i--){const m=c.msgs[i];if(m.w!=='sys')return (m.k&&m.k!=='form'?'['+m.x+']':m.x).split('\n')[0]}return''}
+function vConv(c){
+  const banner=c.h==='asesora'?`<div class="banner"><span class="grow">Necesita asesora · ${esc(c.why)}</span><button class="btn-solid" data-act="take">Tomar chat</button><button class="btn-ghost" data-act="toia">Devolver a la IA</button></div>`
+   :c.h==='ia'?`<div class="banner ia"><span class="grow">La IA está atendiendo este chat</span><button class="btn-ghost" data-act="take">Tomar chat</button></div>`:'';
+  const byName={bot:'Bot',ia:'IA',ase:c.by||me()};
+  return `<section class="conv" aria-label="Conversación">
+   <div class="conv-head">
+     <button class="iconbtn back" data-act="back" aria-label="Volver a la lista">← Chats</button>
+     <span class="av" style="background:${AVC[c.id%AVC.length]};width:34px;height:34px;font-size:12px">${initials(c.n)}</span>
+     <div class="t"><b>${esc(c.n)}</b><span>Etapa: ${esc(c.stage)}</span></div>
+     <span style="flex:1"></span>
+     <span class="window ${c.win?'':'off'}" title="Mensajes gratis por llegar desde un anuncio">${c.win?'Gratis por '+c.win+' h':'Ventana cerrada'}</span>
+     <button class="iconbtn" data-act="ficha">${S.ficha?'Ocultar ficha':'Ficha'}</button>
+   </div>
+   ${banner}
+   <div class="msgs">
+    ${c.msgs.map(m=>{
+      if(m.w==='sys') return `<div class="sysm">${esc(m.x)}</div>`;
+      const out=m.w!=='cli';let body;
+      if(m.src&&m.k==='img') body=`<div class="photo"><img src="${m.src}" alt="${esc(m.x)}"></div>`;
+      else if(m.src&&m.k==='video') body=`<div class="photo"><video src="${m.src}" controls></video></div>`;
+      else if(m.src&&m.k==='audio') body=`<audio src="${m.src}" controls></audio>`;
+      else if(m.k==='img'||m.k==='video'||m.k==='audio') body=`<div class="media">${ICON[m.k]}<span>${esc(m.x)}</span></div>`;
+      else body=`<div class="bub ${m.k==='form'?'form':''}">${esc(m.x)}${m.t?`<small>${m.t}</small>`:''}</div>`;
+      return `<div class="m ${out?'out':''}">${out?`<span class="by ${m.w}">${m.w==='ase'?esc(m.by||me()):byName[m.w]}</span>`:''}${body}</div>`;
+    }).join('')}
+   </div>
+   ${c.win?'':`<div class="closed">Pasaron más de 24 h desde su último mensaje. Solo puedes enviar una plantilla aprobada (tiene costo).</div>`}
+   <div class="composer">
+     ${S.qr?qrMenu():''}
+     <button class="iconbtn" data-act="qr" aria-label="Respuestas rápidas" title="Respuestas rápidas">/</button>
+     <button class="iconbtn" data-act="attach" aria-label="Enviar foto, video o audio" title="Foto, video o audio">${ICON.clip}</button>
+     <button class="iconbtn" data-act="mic" aria-label="Grabar audio" title="Grabar audio">${ICON.mic}</button>
+     <textarea id="draft" rows="1" placeholder="${c.win?'Escribe un mensaje o / para respuestas rápidas':'Elige una plantilla'}">${esc(S.draft)}</textarea>
+     <button class="send" data-act="send">Enviar</button>
+   </div>
+  </section>`;
+}
+function qrMenu(){
+  const f=S.draft.startsWith('/')?S.draft.slice(1).toLowerCase():'';
+  const l=(QR[S.store]||[]).map((q,i)=>[...q,i]).filter(([k])=>k.slice(1).toLowerCase().startsWith(f));
+  return `<div class="qrmenu" role="listbox" aria-label="Respuestas rápidas">${l.map(([k,v,i])=>`<button data-qr="${i}"><b>${k}</b><span>${esc(v)}</span></button>`).join('')||'<p class="note" style="padding:10px 12px;margin:0">Sin coincidencias</p>'}</div>`;
+}
+function vFicha(c){
+  const path=c.f.tipo==='Lima'?['Talla','Colores','Destino','Datos','Confirmó']:['Talla','Colores','Destino','Datos','Pago','Sede'];
+  const idx=Math.max(path.indexOf(c.stage),0),n=c.f.items.length,o=c.order?orders.find(x=>x.id===c.order):null;
+  const E=S.edit,p=PROD[c.store];
+  const pedido=E?`<div class="edit">
+     <div class="seg" role="group" aria-label="Tipo de envío">${['Lima','Provincia'].map(t=>`<button data-etipo="${t}" aria-pressed="${E.tipo===t}">${t}</button>`).join('')}</div>
+     <div class="field"><label for="e-n">Nombre</label><input id="e-n" data-e="nombre" value="${esc(E.nombre)}"></div>
+     <div class="field"><label for="e-c">Celular</label><input id="e-c" data-e="cel" value="${esc(E.cel)}"></div>
+     ${E.tipo==='Provincia'?`<div class="field"><label for="e-d">DNI</label><input id="e-d" data-e="dni" value="${esc(E.dni)}"></div>`:''}
+     <div class="field"><label for="e-a">${E.tipo==='Lima'?'Dirección y distrito':'Sede de Shalom'}</label><input id="e-a" data-e="dir" value="${esc(E.dir)}"></div>
+     <div class="field"><label>Prendas</label>
+      ${E.items.map((it,i)=>`<div class="irow"><select data-ei="${i}|0" aria-label="Talla ${i+1}">${p.sizes.map(s=>`<option ${s===it[0]?'selected':''}>${s}</option>`).join('')}</select><select data-ei="${i}|1" aria-label="Color ${i+1}">${p.colors.map(s=>`<option ${s===it[1]?'selected':''}>${s}</option>`).join('')}</select><button data-erm="${i}" aria-label="Quitar prenda ${i+1}">×</button></div>`).join('')}
+      <button class="iconbtn" data-act="eadd" style="justify-self:start">+ Prenda</button></div>
+     <div class="total"><span>${E.items.length} ${E.items.length===1?'prenda':'prendas'}</span><span class="num">${soles(price(c.store,E.items.length))}</span></div>
+     <div class="btnrow"><button class="iconbtn" data-act="ecancel">Cancelar</button><button class="send" data-act="esave">Guardar</button></div>
+    </div>`
+   :`<dl class="kv"><dt>Nombre</dt><dd>${esc(c.f.nombre||'—')}</dd>
+    <dt>Celular</dt><dd class="mono">${esc(c.f.cel||'—')}</dd>
+    ${c.f.tipo==='Provincia'?`<dt>DNI</dt><dd class="mono">${esc(c.f.dni||'—')}</dd>`:''}
+    <dt>${c.f.tipo==='Provincia'?'Sede':'Dirección'}</dt><dd>${esc(c.f.dir||'—')}</dd>
+    <dt>Prendas</dt><dd>${n?c.f.items.map(i=>i[1]+' '+i[0]).join(', '):'—'}</dd>
+    <dt>Monto</dt><dd class="num">${n?soles(price(c.store,n))+(c.f.tipo==='Provincia'?' · adelanto S/30':''):'—'}</dd></dl>
+    ${o?`<div class="ordbadge"><span>Pedido #${o.id}</span><span>${o.estado}</span></div><div class="btnrow"><button class="iconbtn" data-act="edit">Editar</button><button class="send" data-act="copy" style="display:flex;gap:6px;justify-content:center;align-items:center">${ICON.copy.replace('<svg','<svg width="16" height="16"')}Copiar orden</button></div>`
+     :n?`<button class="wide btn-solid" data-act="create" style="margin-top:12px">Crear pedido</button>`:''}`;
+  return `<aside class="ficha" aria-label="Ficha de la clienta">
+   ${S.ficha&&window.innerWidth<=1180?'<button class="iconbtn" data-act="ficha" style="justify-self:end">Cerrar ficha</button>':''}
+   <div class="sec"><h3>Etapa</h3><div class="steps">${path.map((s,i)=>`<span class="${c.h==='cerrado'?'':i<idx?'done':i===idx?'now':''}">${s}</span>`).join('')}</div></div>
+   <div class="sec"><h3>${o?'Pedido':'Pedido en curso'} ${!E&&n&&!o?'<button data-act="edit">Editar</button>':''}</h3>${pedido}
+    ${!E&&!o&&n?`<p class="note" style="margin:8px 0 0">Lo llenó la IA con lo que dijo la clienta. Si cambió algo, edítalo antes de crear el pedido.</p>`:''}
+    ${o&&!E?`<p class="note" style="margin:8px 0 0">«Copiar orden» copia el formulario de ${o.tipo==='Lima'?'Lima':'Shalom'} para tu grupo de reporte.</p>`:''}
+   </div>
+   <div class="sec"><h3>Etiquetas</h3><div class="tagbox">${Object.keys(TAGS).map(t=>`<button data-tag="${esc(t)}" class="${c.tags.includes(t)?'':'off'}" aria-pressed="${c.tags.includes(t)}">${tagHTML(t)}</button>`).join('')}</div>
+    <p class="note" style="margin:8px 0 0">Borde punteado: las pone el bot solo. Las demás las pones tú con un toque.</p></div>
+   <div class="sec"><h3>De dónde vino</h3><dl class="kv"><dt>Anuncio</dt><dd>${esc(c.ad)}</dd><dt>ID anuncio</dt><dd class="mono">${c.adid}</dd></dl></div>
+   ${owner()?`<div class="sec"><h3>Costo de este chat</h3><div class="cost"><span>IA (GPT-5 mini)</span><b class="num">US$${c.ia.toFixed(3)}</b></div><div class="cost"><span>Mensajes de WhatsApp</span><b class="num">US$0.000</b></div><p class="note" style="margin:6px 0 0">Gratis: llegó por anuncio y se respondió dentro de la ventana.</p></div>`:''}
+  </aside>`;
+}
+
+/* ---------- PEDIDOS ---------- */
+function vOrders(){
+  const tipo=S.otab,states=ST[tipo];
+  const base=orders.filter(o=>o.store===S.store&&o.tipo===tipo);
+  const list=S.ostate==='Todos'?base:base.filter(o=>o.estado===S.ostate);
+  const cost=o=>o.items.length*PROD[o.store].cost+1+(o.tipo==='Lima'?12:13);
+  const lost=s=>s==='Rechazado'||s==='No recogido';
+  return `<div class="page">
+   <div class="ph"><div><h2>Pedidos · ${store().n}</h2><p>Lima y provincia tienen su propio camino. Cambia el estado aquí y el control de entregas sale solo.</p></div></div>
+   <div class="ord-head">
+     <div class="seg" role="group" aria-label="Tipo de pedido">${['Lima','Provincia'].map(t=>`<button data-otab="${t}" aria-pressed="${S.otab===t}">${t} <span class="num" style="opacity:.7">${orders.filter(o=>o.store===S.store&&o.tipo===t).length}</span></button>`).join('')}</div>
+     <div class="chips">${['Todos',...states].map(s=>`<button class="chip" data-ostate="${s}" aria-pressed="${S.ostate===s}">${s}<span class="n">${s==='Todos'?base.length:base.filter(o=>o.estado===s).length}</span></button>`).join('')}</div>
+   </div>
+   <div class="orders">
+   ${list.length?list.map(o=>{const m=omonto(o),a=oadel(o);return `<div class="ord ${owner()?'owner':''}">
+     <div class="c"><span class="id">#${o.id}</span><b>${esc(o.cli)}</b><span>${esc(o.dest)}</span></div>
+     <div class="d"><b style="font-weight:600">${o.items.length} ${o.items.length>1?'prendas':'prenda'}</b><span>${o.items.map(i=>i[1]+' '+i[0]).join(', ')}</span>${o.guia?`<span class="mono">Guía ${o.guia}</span>`:''}</div>
+     <div class="money">Total ${soles(m)}${a?`<br>Adelanto ${soles(a)} · cobrar ${soles(m-a)}`:'<br>Contra entrega'}</div>
+     ${owner()?`<div class="money" title="Utilidad estimada sin publicidad">${lost(o.estado)?`<span class="badv">−${soles(o.tipo==='Lima'?0:13)}</span>`:`<span class="good">${soles(m-cost(o))}</span>`}<br><span class="note">utilidad</span></div>`:''}
+     <select data-ord="${o.id}" class="${stClass(o.estado)}" aria-label="Estado del pedido ${o.id}">${ST[o.tipo].map(s=>`<option ${s===o.estado?'selected':''}>${s}</option>`).join('')}</select>
+     <div class="acts"><button class="iconbtn" data-copyo="${o.id}" aria-label="Copiar orden ${o.id}" title="Copiar orden">${ICON.copy}</button><button class="iconbtn" data-edito="${o.id}">Editar</button></div>
+   </div>`}).join(''):`<div class="empty"><b>No hay pedidos en este estado</b></div>`}
+   </div>
+   ${owner()?`<p class="note" style="margin-top:14px">La columna de utilidad solo la ves tú.</p>`:''}
+  </div>`;
+}
+function openOrderEdit(o){
+  S.oedit={id:o.id,tipo:o.tipo,cli:o.cli,cel:o.cel,dni:o.dni,dest:o.dest,items:o.items.map(i=>[...i])};drawOrderModal();
+}
+function drawOrderModal(){
+  const E=S.oedit;if(!E){$('#layer').innerHTML='';return}
+  const o=orders.find(x=>x.id===E.id),p=PROD[o.store],tot=price(o.store,E.items.length);
+  $('#layer').innerHTML=`<div class="scrim"></div><div class="mwrap" data-act="closem"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt">
+   <div><h3 id="mt">Editar pedido #${E.id}</h3><p class="note" style="margin:4px 0 0">${p.n} · ${E.tipo}</p></div>
+   <div class="fields">
+    <div class="field"><label for="m-n">Nombre</label><input id="m-n" data-o="cli" value="${esc(E.cli)}"></div>
+    <div class="field"><label for="m-c">Celular</label><input id="m-c" data-o="cel" value="${esc(E.cel)}"></div>
+    ${E.tipo==='Provincia'?`<div class="field"><label for="m-d">DNI</label><input id="m-d" data-o="dni" value="${esc(E.dni)}"></div>`:''}
+    <div class="field"><label for="m-a">${E.tipo==='Lima'?'Dirección y distrito':'Sede de Shalom'}</label><input id="m-a" data-o="dest" value="${esc(E.dest)}"></div>
+   </div>
+   <div class="grid" style="gap:8px"><b style="font-size:13px">Prendas</b>
+    ${E.items.map((it,i)=>`<div class="irow"><select data-oi="${i}|0" aria-label="Talla ${i+1}">${p.sizes.map(s=>`<option ${s===it[0]?'selected':''}>${s}</option>`).join('')}</select><select data-oi="${i}|1" aria-label="Color ${i+1}">${p.colors.map(s=>`<option ${s===it[1]?'selected':''}>${s}</option>`).join('')}</select><button data-orm="${i}" aria-label="Quitar prenda ${i+1}">×</button></div>`).join('')}
+    <button class="iconbtn" data-act="oadd" style="justify-self:start">+ Prenda</button></div>
+   <div class="total"><span>${E.items.length} ${E.items.length===1?'prenda':'prendas'} · total</span><span class="num">${soles(tot)}</span></div>
+   <div style="display:flex;gap:8px;justify-content:flex-end"><button class="iconbtn" data-act="closem">Cancelar</button><button class="send" data-act="osave">Guardar cambios</button></div>
+  </div></div>`;
+}
+
+/* ---------- CONTROL ---------- */
+const CTRL={
+ pf:{fun:[813,316,191,108,67,47],resolved:58,ads:[['IA media silueta v12',1240,512,46,34],['IA media silueta v9',880,301,21,13]],days:[8,10,10,12,9,11,7],ia:11.2,resp:4580,rules:2190},
+ lc:{fun:[471,182,111,63,37,27],resolved:34,ads:[['Cargo · 4 bolsillos',760,318,27,20],['Cargo · outfit gym',440,153,10,7]],days:[4,6,5,6,5,6,5],ia:6.2,resp:2540,rules:1220}};
+function vControl(){
+  const d=CTRL[S.store],gasto=d.ads.reduce((a,b)=>a+b[1],0),[ch,,, ,ped,ent]=d.fun;
+  if(!owner()) return `<div class="page"><div class="ph"><div><h2>Tu semana · ${store().n}</h2><p>Lo que ve la asesora: su trabajo, sin gastos ni utilidades.</p></div></div>
+   <div class="kpis">${[['Chats atendidos',S.store==='pf'?'121':'65','27 oct – 2 nov'],['Pedidos creados',ped,'esta semana'],['Respuesta mediana','6 min','desde que pasa a asesora'],['Entregados / recogidos',ent,'de '+d.resolved+' resueltos']].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('')}</div>
+   <div class="card empty"><span>Gastos, CPA y utilidades solo los ve el dueño.</span></div></div>`;
+  const labels=['Chats nuevos','Dijeron su talla','Eligieron colores','Dieron sus datos','Pedido creado','Entregado / recogido'];
+  const dn=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'],W=420,H=150,pad=24,bw=36,max=Math.max(...d.days)*1.25;
+  const bars=d.days.map((v,i)=>{const x=pad+i*((W-pad*2)/7)+((W-pad*2)/7-bw)/2,h=(v/max)*(H-40),y=H-22-h;return `<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="4" fill="var(--accent)" opacity="${i===6?1:.55}"/><text x="${x+bw/2}" y="${y-5}" text-anchor="middle">${v}</text><text x="${x+bw/2}" y="${H-6}" text-anchor="middle">${dn[i]}</text>`}).join('');
+  const all=['pf','lc'].map(k=>{const x=CTRL[k],g=x.ads.reduce((a,b)=>a+b[1],0);return [STORES.find(s=>s.id===k).n,x.fun[0],x.fun[4],x.fun[4]/x.fun[0]*100,x.fun[5],g/x.fun[5],x.ia]});
+  return `<div class="page">
+   <div class="ph"><div><h2>${store().n} · 27 oct al 2 nov</h2><p>Medido desde el chat hasta la entrega, por anuncio.</p></div><span class="grow"></span><div class="seg"><button aria-pressed="false">Hoy</button><button aria-pressed="true">7 días</button><button aria-pressed="false">30 días</button></div></div>
+   <div class="kpis">
+    <div class="kpi"><div class="l">Pedidos</div><div class="v">${ped}</div><div class="s">cierre <b>${(ped/ch*100).toFixed(1)}%</b> de ${ch.toLocaleString('es-PE')} chats</div></div>
+    <div class="kpi"><div class="l">Entregados / recogidos</div><div class="v">${ent}</div><div class="s">${Math.round(ent/d.resolved*100)}% de ${d.resolved} resueltos</div></div>
+    <div class="kpi"><div class="l">CPA real por entregado</div><div class="v">${soles(Math.round(gasto/ent*10)/10)}</div><div class="s">${soles(gasto)} en anuncios</div></div>
+    <div class="kpi"><div class="l">Gasto en IA</div><div class="v">US$${d.ia.toFixed(1)}</div><div class="s">US$${(d.ia/ped).toFixed(2)} por pedido</div></div>
+   </div>
+   <div class="two" style="margin-bottom:14px">
+    <div class="card"><h3>Embudo del chat</h3><p class="sub">Dónde se quedan las clientas</p><div class="funnel">
+     ${d.fun.map((v,i)=>`<div class="fr"><span>${labels[i]}</span><span class="bar"><i style="width:${v/d.fun[0]*100}%;opacity:${1-i*0.1}"></i></span><span class="val">${v.toLocaleString('es-PE')} <em>${i?Math.round(v/d.fun[i-1]*100)+'%':''}</em></span></div>`).join('')}
+    </div><p class="note" style="margin:12px 0 0">El salto más grande es de chat nuevo a decir la talla (${Math.round(d.fun[1]/d.fun[0]*100)}%). Ahí trabajan los seguimientos.</p></div>
+    <div class="card"><h3>Pedidos por día</h3><p class="sub">Domingo resaltado</p>
+     <svg class="bar-svg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Pedidos por día: ${d.days.map((v,i)=>dn[i]+' '+v).join(', ')}">${bars}</svg></div>
+   </div>
+   <div class="card" style="margin-bottom:14px"><h3>Por anuncio</h3><p class="sub">El gasto lo cargas a mano por ahora; luego lo jalamos de Meta</p>
+    <div class="tbl"><table><thead><tr><th>Anuncio</th><th class="r">Gasto</th><th class="r">Chats</th><th class="r">Pedidos</th><th class="r">Entregados</th><th class="r">CPA por entregado</th></tr></thead><tbody>
+    ${d.ads.map(a=>{const cpa=a[1]/a[4];return `<tr><td>${a[0]}</td><td class="r num">${soles(a[1])}</td><td class="r num">${a[2]}</td><td class="r num">${a[3]}</td><td class="r num">${a[4]}</td><td class="r num ${cpa<45?'good':'badv'}">${soles(Math.round(cpa*10)/10)}</td></tr>`}).join('')}
+    </tbody></table></div></div>
+   <div class="card"><h3>Todas tus tiendas</h3><p class="sub">Solo el dueño ve esta comparación</p>
+    <div class="tbl"><table><thead><tr><th>Tienda</th><th class="r">Chats</th><th class="r">Pedidos</th><th class="r">Cierre</th><th class="r">Entregados</th><th class="r">CPA entregado</th><th class="r">IA</th></tr></thead><tbody>
+    ${all.map(r=>`<tr><td>${r[0]}</td><td class="r num">${r[1]}</td><td class="r num">${r[2]}</td><td class="r num">${r[3].toFixed(1)}%</td><td class="r num">${r[4]}</td><td class="r num">${soles(Math.round(r[5]*10)/10)}</td><td class="r num">US$${r[6].toFixed(1)}</td></tr>`).join('')}
+    <tr><td class="note">Orión · Polos y pijamas</td><td class="r note" colspan="6">por conectar</td></tr></tbody></table></div></div>
+  </div>`;
+}
+
+/* ---------- CONFIG ---------- */
+const CFG=[['etiquetas','Etiquetas'],['flujo','Flujo del bot'],['ia','IA y archivos'],['saldo','Saldo OpenAI'],['rapidas','Respuestas rápidas'],['stock','Productos y stock'],['cobertura','Cobertura y horarios'],['equipo','Equipo'],['numero','Número de WhatsApp'],['integra','Integraciones']];
+function vConfig(){
+  const body={etiquetas:cTags,flujo:cFlow,ia:cIA,saldo:cWallet,rapidas:cQR,stock:cStock,cobertura:cCov,equipo:cTeam,numero:cNum,integra:cInt}[S.ctab]();
+  return `<div class="page"><div class="cfg"><nav class="cfgnav" aria-label="Secciones">${CFG.map(([k,l])=>`<button data-ctab="${k}" aria-current="${S.ctab===k}">${l}</button>`).join('')}<p class="cfgnote">Esta configuración es solo de <b>${store().n}</b>. Cambia de tienda arriba a la izquierda.</p></nav><div style="min-width:0">${body}</div></div></div>`;
+}
+function cTags(){
+  const sys=[['Talla XS · S · M · L · XL','El bot reconoce la talla o el número de jean','Manda la imagen de colores de esa talla. La IA ya no vuelve a preguntar la talla.'],
+   ['ASESOR','La IA detecta: pide una persona, reclamo, zona dudosa, o terminó (Yape + sede, o Lima confirmó)','Pausa la IA, asigna el chat a la asesora y lo marca como no leído.'],
+   ['COMPRÓ','Lima confirmó sus datos o provincia mandó captura y sede','Saca a la clienta de los seguimientos y activa «Crear pedido».'],
+   ['YAPE PENDIENTE','Dice que yapeará más tarde','Programa el recordatorio Yape (2 mensajes, dentro de la ventana gratis).']];
+  const man=['LIMA PENDIENTE','✅ LIMA','✅ PROVINCIA','🔥 URGENTE'];
+  return `<div class="ph"><div><h2>Etiquetas</h2><p>Las automáticas las pone el bot solo y hacen algo al ponerse. Las manuales son para que el equipo se organice.</p></div><span class="grow"></span><button class="iconbtn" data-toast="Aquí se abrirá el formulario para crear una etiqueta">+ Nueva etiqueta</button></div>
+   <div class="card" style="margin-bottom:14px"><h3>Automáticas (las pone el bot)</h3><p class="sub">Qué la activa y qué pasa después</p>
+   <div class="tagrow"><span class="h">Etiqueta</span><span class="h">Se pone cuando</span><span class="h">Qué hace</span></div>
+   ${sys.map(s=>`<div class="tagrow"><span>${s[0].startsWith('Talla')?`<span class="tag sys"><i style="background:var(--t-grey)"></i>${s[0]}</span>`:tagHTML(s[0])}</span><span>${s[1]}</span><span>${s[2]}</span></div>`).join('')}</div>
+   <div class="card"><h3>Manuales (las pone el equipo)</h3><p class="sub">Vienen de tu Pancake</p><div class="tagbox">${man.map(tagHTML).join('')}</div></div>`;
+}
+function cFlow(){
+  const p=PROD[S.store];
+  const kw=S.store==='pf'?{XS:'xs, 26, 27',S:'s, talla s, 28, 29, 30',M:'m, talla m, mediano, soy m, 31, 32, 33',L:'l, talla l, 34, 35, 36, 37',XL:'xl, xxl, 38, 39, 40'}:{S:'s, talla s, 28, 29, 30, 31',M:'m, talla m, mediano, 32, 33, 34',L:'l, talla l, 35, 36, 37'};
+  const st=[['bot','Arranca con el anuncio','Por ID del anuncio: cada anuncio puede tener su propio flujo.'],
+   ['bot','Imagen del producto y precios',[1,2,3].map(n=>n+' × '+soles(price(S.store,n))).join(' · ')],
+   ['bot','Pregunta la talla','«¿Qué talla usamos normalmente? (tallas o tu talla de jean)»'],
+   ['bot','Reconoce la talla sin IA','Palabras y números de jean por talla:',kw],
+   ['bot','Imagen de colores de su talla','Pone la etiqueta de talla.'],
+   ['ia','Entra la IA cuando la clienta responde','Colores → destino → datos → formulario → (provincia) pago → sede. Usa los archivos de «IA y archivos».'],
+   ['','Pasa a asesora','Yape + sede · Lima confirmó · pide persona o reclamo · zona dudosa. Si dice «yapeo más tarde»: recordatorio Yape.']];
+  const seq=[['15 min','Texto: «solo respóndeme con tu talla de jean…»'],['40 min','Audio'],['3 h (8 a.m.–10 p.m.)','Video «Así se ve puesto» + «¿Qué talla usas?»'],['15 h (8 a.m.–10 p.m.)','Texto de cierre']];
+  return `<div class="ph"><div><h2>Flujo del bot · ${p.n}</h2><p>${S.store==='pf'?'Tu flujo «ventas pantalón» de Botcake, paso por paso.':'Mismo esquema, con las tallas y colores del cargo.'}</p></div></div>
+   <div class="card" style="margin-bottom:14px"><div class="flow">${st.map((s,i)=>`<div class="fstep"><div class="dot"><b class="${s[0]}">${i+1}</b>${i<st.length-1?'<i></i>':''}</div><div class="body"><b>${s[1]} ${s[0]==='ia'?'<span class="who ia">IA</span>':s[0]==='bot'?'<span class="who bot">Bot gratis</span>':'<span class="who asesora">Asesora</span>'}</b><p>${s[2]}</p>${s[3]?Object.entries(s[3]).map(([k,v])=>`<div class="kw"><span style="background:var(--accent-soft);color:var(--accent)">${k}</span>${v.split(', ').map(w=>`<span>${w}</span>`).join('')}</div>`).join(''):''}</div></div>`).join('')}</div></div>
+   <div class="card"><h3>Seguimiento si no responde la talla</h3><p class="sub">Todo dentro de las 72 h gratis del anuncio</p>
+    ${S.store==='pf'?'<div class="alert" style="margin-bottom:10px">En Botcake el de 15 minutos fallaba: 0 enviados de 6,285 intentos. Aquí se revisa al configurarlo.</div>':''}
+    ${seq.map((s,i)=>`<div class="seqrow"><span class="num">${s[0]}</span><span>${s[1]}</span><button class="toggle" data-toggle aria-pressed="true" aria-label="Activar seguimiento ${i+1}"></button></div>`).join('')}
+    <h3 style="margin-top:16px">Recordatorio Yape</h3><p class="sub">Cuando dice que yapeará más tarde</p>
+    <div class="seqrow"><span class="num">2 h</span><span>«¿Pudiste yapear, preciosa? Tus prendas siguen separadas 💕»</span><button class="toggle" data-toggle aria-pressed="true" aria-label="Activar recordatorio 1"></button></div>
+    <div class="seqrow"><span class="num">20 h</span><span>«Hoy sale el último envío a las 4 p.m. 🚚 ¿Te lo mando?»</span><button class="toggle" data-toggle aria-pressed="true" aria-label="Activar recordatorio 2"></button></div>
+   </div>`;
+}
+function cIA(){
+  const stages=[['Colores','Acepta solo colores del stock de su talla. Confirma cantidad, colores y total. Pregunta el destino si aún no lo dijo.'],
+   ['Destino','Lima con cobertura: cierre con urgencia y pide nombre, celular y dirección. Provincia: 3 mensajes (Shalom gratis, adjunta VIDEO DE ENVÍOS, pide nombre, DNI y celular).'],
+   ['Datos y formulario','Con los datos completos, manda el formulario exacto. Provincia: después el adelanto de S/30.'],
+   ['Desconfianza','3 mensajes: empresa 100% formal y seguidores; adjunta FOTO LIMA o VIDEO CONFIANZA; retoma pidiendo los datos.'],
+   ['Pago y sede','Con la captura, pregunta la sede de Shalom. Con la sede, pasa a asesora.']];
+  return `<div class="ph"><div><h2>IA y archivos · ${PROD[S.store].n}</h2><p>El prompt y sus archivos son lo que da confianza y cierra la venta. La IA recibe solo las instrucciones de la etapa en la que va la clienta.</p></div></div>
+   <div class="card" style="margin-bottom:14px"><h3>Archivos del prompt</h3><p class="sub">La IA los adjunta cuando el prompt nombra su clave. Cada uno se envía una sola vez por chat.</p>
+    <div class="assets">${ASSETS[S.store].map(a=>`<div class="asset"><div class="th">${a.src?`<img src="${a.src}" alt="${esc(a.n)}">`:ICON[a.k]}</div><div class="ab"><b>${esc(a.n)}</b><span class="key">${esc(a.key)}</span><span>${esc(a.when)}</span></div></div>`).join('')}
+    <button class="upload" data-act="assetup">+ Subir imagen o video</button></div></div>
+   <div class="kpis"><div class="kpi"><div class="l">Hoy en Botcake</div><div class="v">15,000</div><div class="s">caracteres en cada respuesta</div></div><div class="kpi"><div class="l">Aquí</div><div class="v">~3,000</div><div class="s">base corta + etapa actual</div></div><div class="kpi"><div class="l">Costo estimado</div><div class="v">US$0.0024</div><div class="s">por respuesta</div></div></div>
+   <div class="card" style="margin-bottom:14px"><div class="fields">
+    <div class="field"><label for="ia-model">Modelo</label><select id="ia-model"><option>GPT-5 mini</option><option>GPT-5 nano</option></select></div>
+    <div class="field"><label for="ia-r">Razonamiento</label><select id="ia-r"><option>Mínimo (más barato)</option><option>Bajo</option></select></div>
+   </div></div>
+   <div class="card" style="margin-bottom:14px"><h3>Resuelto con reglas (sin IA)</h3><p class="sub">Datos que editas en Configuración y el sistema responde solo</p>
+    <div class="tagbox">${['Talla por número de jean','Sinónimos de colores (rojo → Vino, blanco → Perla)','Stock por talla','Precios por promo','Cobertura de Lima','Corte de entrega HOY/MAÑANA','Formularios Lima y Shalom','Tienda física · envío · forma de pago'].map(t=>`<span class="tag">${t}</span>`).join('')}</div></div>
+   <div class="card"><h3>Instrucciones por etapa</h3><p class="sub">Tono base: cálido y cercano, 2–4 líneas, una pregunta de elección por mensaje</p>
+    <div class="grid">${stages.map((s,i)=>`<div class="field"><label for="st${i}">${s[0]}</label><textarea id="st${i}">${s[1]}</textarea></div>`).join('')}</div></div>`;
+}
+function cWallet(){
+  const w=WALLET[S.store];
+  return `<div class="ph"><div><h2>Saldo OpenAI · ${PROD[S.store].n}</h2><p>Cada tienda usa su propia clave de OpenAI y recargas directo en OpenAI, a precio de costo.</p></div></div>
+   <div class="kpis"><div class="kpi"><div class="l">Saldo disponible</div><div class="v">US$${w.saldo.toFixed(2)}</div><div class="s">≈ ${Math.round(w.saldo/(w.mes/30))} días al ritmo actual</div></div>
+   <div class="kpi"><div class="l">Gastado hoy</div><div class="v">US$${w.hoy.toFixed(2)}</div><div class="s">tope US$${w.tope}</div></div>
+   <div class="kpi"><div class="l">Últimos 30 días</div><div class="v">US$${w.mes.toFixed(1)}</div><div class="s">solo esta tienda</div></div></div>
+   <div class="card" style="margin-bottom:14px"><div class="wallet"><span><b>Tope de hoy</b><br><span class="note">Al llegar, la IA se detiene y los chats pasan a asesora</span></span><span class="num">US$${w.hoy.toFixed(2)} / ${w.tope}</span><span class="meter"><i style="width:${w.hoy/w.tope*100}%"></i></span></div></div>
+   <div class="card"><div class="fields">
+    <div class="field"><label for="ok">Clave de OpenAI</label><input id="ok" value="sk-••••••••••••${S.store==='pf'?'7Q2a':'K9xe'}" readonly></div>
+    <div class="field"><label for="cap">Tope diario (US$)</label><input id="cap" type="number" min="0" value="${w.tope}"></div>
+    <div class="field"><label for="al">Avisarme cuando el saldo baje de</label><input id="al" type="number" min="0" value="5"></div>
+   </div><p class="note" style="margin:12px 0 0">Para recargar entras a tu cuenta de OpenAI. Aquí solo ves cuánto gastas y pones límites.</p></div>`;
+}
+function cQR(){return `<div class="ph"><div><h2>Respuestas rápidas</h2><p>En el chat escribe / y el atajo.</p></div><span class="grow"></span><button class="iconbtn" data-toast="Aquí se abrirá el editor de respuestas">+ Nueva</button></div>
+  <div class="card"><div class="qrl">${(QR[S.store]||[]).map(q=>`<div><b>${q[0]}</b><span>${esc(q[1])}</span></div>`).join('')}</div></div>`}
+function cStock(){
+  const p=PROD[S.store],st=STOCK[S.store];
+  return `<div class="ph"><div><h2>Productos y stock · ${p.n}</h2><p>La IA solo ofrece lo que hay. En rojo, 5 o menos: la IA dice «¡Quedan pocos!».</p></div></div>
+  <div class="card" style="margin-bottom:14px"><div class="stock"><table><thead><tr><th>Talla</th>${p.colors.map(c=>`<th class="r">${c}</th>`).join('')}<th class="r">Total</th></tr></thead><tbody>
+  ${p.sizes.map(s=>{const row=st[s]||{};const tot=Object.values(row).reduce((a,b)=>a+b,0);return `<tr><td><b>${s}</b></td>${p.colors.map(c=>row[c]===undefined?`<td class="na">—</td>`:`<td class="r ${row[c]<=5?'low':''}"><input type="number" min="0" value="${row[c]}" data-stock="${s}|${c}" aria-label="Stock ${s} ${c}"></td>`).join('')}<td class="r num"><b>${tot}</b></td></tr>`}).join('')}
+  </tbody></table></div></div>
+  <div class="card"><h3>Precios por promo</h3><p class="sub">Envío gratis incluido</p><div class="tagbox">${[1,2,3,4].map(n=>`<span class="tag"><b class="num">${n} × ${soles(price(S.store,n))}</b></span>`).join('')}${S.store==='pf'?'<span class="tag">Por mayor: desde 5 a S/55 c/u</span>':''}</div></div>`;
+}
+function cCov(){return `<div class="ph"><div><h2>Cobertura y horarios</h2><p>Con esto la IA decide sola si es contra entrega o Shalom.</p></div></div>
+  <div class="card" style="margin-bottom:14px"><h3>Sin cobertura de motorizado (van por Shalom)</h3><p class="sub">El resto de Lima y Callao sí tiene contra entrega</p><div class="zones">${['Ancón','Santa Rosa','Carabayllo después del km 22','Ate después del Real Plaza Puruchuco','Jicamarca','Manchay','Chosica','Chaclacayo','Cieneguilla','Pachacámac','Lurín','Punta Hermosa','Punta Negra','San Bartolo','Santa María del Mar','Pucusana'].map(z=>`<span>${z}</span>`).join('')}</div></div>
+  <div class="card"><h3>Horarios</h3><div class="fields" style="margin-top:10px">
+   <div class="field"><label for="cut">Corte para entrega el mismo día</label><input id="cut" value="1:00 p.m."></div>
+   <div class="field"><label for="win">Entregas en Lima</label><input id="win" value="2:00 a 8:00 p.m."></div>
+   <div class="field"><label for="shal">Despacho a provincia</label><input id="shal" value="4:00 p.m."></div>
+   <div class="field"><label for="sat">Sábado</label><input id="sat" value="Hasta 1 p.m.; después, lunes"></div></div></div>`}
+function cTeam(){return `<div class="ph"><div><h2>Equipo</h2><p>Cada persona entra con su correo y ve solo lo de su rol y las tiendas que le asignes.</p></div></div>
+  <div class="card" style="margin-bottom:14px"><div class="tbl"><table><thead><tr><th>Persona</th><th>Rol</th><th>Ve</th></tr></thead><tbody>
+  <tr><td><b>Jordan</b></td><td>Dueño</td><td>Todo, en todas las tiendas</td></tr>
+  <tr><td><b>Jade</b></td><td>Asesora</td><td>Chats, pedidos y sus métricas. Sin configuración, gastos ni utilidades</td></tr>
+  <tr><td><b>Nicole</b></td><td>Despacho</td><td>Pedidos para empacar y confirmar</td></tr>
+  <tr><td><b>Angelo</b></td><td>Despacho provincia</td><td>Pedidos de provincia y guías Shalom</td></tr></tbody></table></div></div>
+  <div class="card"><h3>Invitar</h3><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><input id="inv" type="email" placeholder="correo@ejemplo.com" aria-label="Correo" style="flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg)"><select aria-label="Rol" style="border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg)"><option>Asesora</option><option>Despacho</option></select><button class="send" data-toast="La invitación se enviará cuando el sistema esté conectado">Invitar</button></div></div>`}
+function cNum(){const st=store();return `<div class="ph"><div><h2>Número de WhatsApp</h2><p>Este número es la tienda. Para agregar otro, usa el selector de tiendas.</p></div></div>
+  <div class="card" style="margin-bottom:14px"><h3>${st.n}</h3><p class="sub mono">${st.phone}</p><dl class="kv"><dt>Nombre visible</dt><dd>${st.brand}</dd><dt>Conexión</dt><dd>${S.store==='pf'?'Hoy en Botcake · pasa a la API oficial':'Por conectar a la API oficial'}</dd><dt>Ventana gratis</dt><dd>72 h por anuncio</dd><dt>Costo por número</dt><dd>US$0</dd></dl></div>
+  <div class="card"><div style="display:flex;gap:12px;align-items:flex-start"><div style="flex:1;min-width:0"><h3>También en la app WhatsApp Business del celular</h3><p class="sub" style="margin:0">Coexistencia oficial de Meta: el mismo número funciona en el CRM y en el celular. Lo que envías desde la app (por ejemplo, las guías) no tiene costo y aparece aquí en el chat.</p></div><button class="toggle" data-toggle aria-pressed="true" aria-label="Usar también en la app del celular"></button></div></div>`}
+function cInt(){
+  const it=[['Google Sheets · Shalom','Conectado','st-on','Cada pedido de provincia agrega una fila a tu hoja de Shalom: nombre, DNI, celular, sede, prendas, monto, adelanto y saldo. Tú solo completas la guía.'],
+   ['Meta · Conversiones (CAPI)','Conectado','st-on','Manda «Compra» a Meta al crear el pedido, con el anuncio de origen.'],
+   ['Meta Ads · gasto por anuncio','Por conectar','st-off','Jala el gasto de cada anuncio para calcular el CPA real sin escribirlo a mano.'],
+   ['Shalom · guías','Si Shalom da acceso','st-off','Bajar las guías y enviarlas a todas las clientas de una sola vez.']];
+  return `<div class="ph"><div><h2>Integraciones</h2><p>Otras herramientas conectadas a esta tienda.</p></div></div>
+  <div class="grid">${it.map(i=>`<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">${i[0]}</h3><span class="st ${i[2]}" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">${i[1]}</span></div><p class="note" style="margin:6px 0 0">${i[3]}</p></div>`).join('')}</div>`}
+
+/* ---------- EVENTOS ---------- */
+let pendingFile=null;
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-nav],[data-role],[data-filter],[data-open],[data-act],[data-tag],[data-tagf],[data-qr],[data-otab],[data-ostate],[data-ctab],[data-toggle],[data-toast],[data-store],[data-etipo],[data-erm],[data-orm],[data-copyo],[data-edito],[data-callr],[data-copytel]');
+  if(!t) return;
+  const d=t.dataset;
+  if(d.copytel){try{navigator.clipboard.writeText(d.copytel).then(()=>toast('Celular copiado'),()=>toast(d.copytel))}catch(err){toast(d.copytel)}return}
+  if(d.callr){
+    const [id,r]=d.callr.split('|'),c=chats.find(x=>x.id===+id),now=new Date().toTimeString().slice(0,5);
+    c.calls=c.calls||[];c.calls.push({r,t:'hoy '+now});
+    c.msgs.push({w:'sys',x:`Llamada de ${me()}: ${r}`});
+    if(r==='Cerró'){c.tags=c.tags.filter(x=>x!=='YAPE PENDIENTE'&&x!=='LIMA PENDIENTE');if(!c.tags.includes('COMPRÓ'))c.tags.push('COMPRÓ');if(!c.tags.includes('ASESOR'))c.tags.push('ASESOR');c.h='asesora';c.why='Cerró por llamada: crear pedido';toast(c.n+' cerró. Crea su pedido desde el chat.')}
+    else toast(`${c.n}: ${r}`);
+    render();return}
+  if(d.nav){S.view=d.nav;S.qr=false;S.edit=null;render();return}
+  if(d.role){S.role=d.role;render();return}
+  if(d.store){S.store=d.store;S.storeMenu=false;S.open=null;S.callMode=false;S.edit=null;S.tagf=[];if(window.innerWidth>860){const f=storeChats().find(c=>c.h==='asesora');S.open=f?f.id:null}render();toast('Ahora estás en '+store().brand+' · '+store().n);return}
+  if(d.filter){S.filter=d.filter;render();return}
+  if(d.tagf){const i=S.tagf.indexOf(d.tagf);i>=0?S.tagf.splice(i,1):S.tagf.push(d.tagf);render();return}
+  if(d.open){S.open=+d.open;S.qr=false;S.draft='';S.edit=null;S.tagMenu=false;const c=chats.find(x=>x.id===S.open);c.un=0;if(window.innerWidth<=1180)S.ficha=false;render();return}
+  if(d.tag){const c=chats.find(x=>x.id===S.open);const i=c.tags.indexOf(d.tag);i>=0?c.tags.splice(i,1):c.tags.push(d.tag);render();return}
+  if(d.qr!==undefined){S.draft=QR[S.store][+d.qr][1];S.qr=false;render();const ta=$('#draft');ta&&ta.focus();return}
+  if(d.otab){S.otab=d.otab;S.ostate='Todos';render();return}
+  if(d.ostate){S.ostate=d.ostate;render();return}
+  if(d.ctab){S.ctab=d.ctab;render();return}
+  if(d.toggle!==undefined){t.setAttribute('aria-pressed',t.getAttribute('aria-pressed')!=='true');return}
+  if(d.toast){toast(d.toast);return}
+  if(d.etipo){S.edit.tipo=d.etipo;render();return}
+  if(d.erm!==undefined){S.edit.items.splice(+d.erm,1);render();return}
+  if(d.orm!==undefined){S.oedit.items.splice(+d.orm,1);drawOrderModal();return}
+  if(d.copyo){copyOrder(orders.find(o=>o.id===+d.copyo));return}
+  if(d.edito){openOrderEdit(orders.find(o=>o.id===+d.edito));return}
+  const c=chats.find(x=>x.id===S.open);
+  switch(d.act){
+    case 'stores':S.storeMenu=true;drawStoreMenu();break;
+    case 'closestores':S.storeMenu=false;drawStoreMenu();break;
+    case 'tagmenu':S.tagMenu=!S.tagMenu;render();break;
+    case 'calls':S.callMode=!S.callMode;S.tagMenu=false;render();break;
+    case 'back':S.open=null;render();break;
+    case 'ficha':S.ficha=!S.ficha;render();break;
+    case 'qr':S.qr=!S.qr;render();break;
+    case 'attach':$('#fileup').click();break;
+    case 'assetup':$('#assetup').click();break;
+    case 'mic':toast('Grabar audio se activa en la versión conectada. Por ahora puedes adjuntar un audio con el clip.');break;
+    case 'take':c.h='asesora';c.why=c.why||'Tomado por '+me();c.msgs.push({w:'sys',x:me()+' tomó el chat · la IA queda en pausa'});render();toast('Chat asignado a ti. La IA está en pausa.');break;
+    case 'toia':c.h='ia';c.tags=c.tags.filter(x=>x!=='ASESOR');c.why='';c.msgs.push({w:'sys',x:'Devuelto a la IA'});render();toast('La IA retoma el chat.');break;
+    case 'send':{const v=($('#draft')||{}).value||'';if(!v.trim())return;if(!c.win){toast('Ventana cerrada: elige una plantilla aprobada.');return}c.msgs.push({w:'ase',by:me(),x:v.trim(),t:new Date().toTimeString().slice(0,5)});S.draft='';S.qr=false;render();break}
+    case 'edit':{
+      const o=c.order?orders.find(x=>x.id===c.order):null;
+      S.edit={tipo:c.f.tipo||'Lima',nombre:c.f.nombre,cel:c.f.cel,dni:c.f.dni,dir:c.f.dir,items:c.f.items.map(i=>[...i])};
+      if(!S.ficha)S.ficha=true;render();break}
+    case 'ecancel':S.edit=null;render();break;
+    case 'eadd':S.edit.items.push([PROD[c.store].sizes[1],'Negro']);render();break;
+    case 'esave':{
+      if(!S.edit.items.length){toast('Agrega al menos una prenda.');return}
+      Object.assign(c.f,{tipo:S.edit.tipo,nombre:S.edit.nombre,cel:S.edit.cel,dni:S.edit.dni,dir:S.edit.dir,items:S.edit.items});
+      let msg='Pedido en curso actualizado';
+      if(c.order){const o=orders.find(x=>x.id===c.order);Object.assign(o,{tipo:c.f.tipo,cli:c.f.nombre,cel:c.f.cel,dni:c.f.dni,dest:c.f.dir,items:c.f.items.map(i=>[...i])});if(!ST[o.tipo].includes(o.estado))o.estado=ST[o.tipo][0];msg=`Pedido #${o.id} actualizado`}
+      c.msgs.push({w:'sys',x:me()+' editó el pedido: '+c.f.items.map(i=>i[1]+' '+i[0]).join(', ')});
+      S.edit=null;render();toast(msg);break}
+    case 'create':{
+      const id=nextOrder++;
+      orders.unshift({id,store:c.store,tipo:c.f.tipo||'Lima',cli:c.f.nombre||c.n,cel:c.f.cel,dni:c.f.dni,items:c.f.items.map(i=>[...i]),estado:(c.f.tipo==='Provincia'?'Yape por validar':'Nuevo'),dest:c.f.dir||'—',guia:'',ad:c.ad,chat:c.id});
+      c.order=id;if(!c.tags.includes('COMPRÓ'))c.tags.push('COMPRÓ');
+      c.msgs.push({w:'sys',x:`Pedido #${id} creado · ${soles(price(c.store,c.f.items.length))} · Compra enviada a Meta`});
+      render();toast(`Pedido #${id} creado${c.f.tipo==='Provincia'?' y agregado a tu Sheet de Shalom':''}. Ya puedes copiar la orden.`);break}
+    case 'copy':copyOrder(orders.find(o=>o.id===c.order));break;
+    case 'oadd':{const o=orders.find(x=>x.id===S.oedit.id);S.oedit.items.push([PROD[o.store].sizes[1],'Negro']);drawOrderModal();break}
+    case 'osave':{
+      const E=S.oedit;if(!E.items.length){toast('Agrega al menos una prenda.');return}
+      const o=orders.find(x=>x.id===E.id);Object.assign(o,{cli:E.cli,cel:E.cel,dni:E.dni,dest:E.dest,items:E.items});
+      const ch=chats.find(x=>x.order===o.id);if(ch)Object.assign(ch.f,{nombre:E.cli,cel:E.cel,dni:E.dni,dir:E.dest,items:E.items.map(i=>[...i])});
+      S.oedit=null;drawOrderModal();render();toast(`Pedido #${o.id} actualizado`);break}
+    case 'closem':if(e.target===t){S.oedit=null;$('#layer').innerHTML=''}break;
+  }
+});
+document.addEventListener('input',e=>{
+  const t=e.target;
+  if(t.id==='q'){S.q=t.value;const pos=t.selectionStart;render();const n=$('#q');n.focus();n.setSelectionRange(pos,pos);return}
+  if(t.id==='draft'){const was=S.qr;S.draft=t.value;const want=t.value.startsWith('/');if(want||want!==was){S.qr=want;const pos=t.selectionStart;render();const n=$('#draft');n.focus();n.setSelectionRange(pos,pos)}return}
+  if(t.dataset.e&&S.edit){S.edit[t.dataset.e]=t.value;return}
+  if(t.dataset.o&&S.oedit){S.oedit[t.dataset.o]=t.value;return}
+  if(t.dataset.stock){const [s,c]=t.dataset.stock.split('|');STOCK[S.store][s][c]=Math.max(0,+t.value||0);t.parentElement.classList.toggle('low',STOCK[S.store][s][c]<=5);return}
+});
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.dataset.ord){const o=orders.find(x=>x.id===+t.dataset.ord);o.estado=t.value;render();toast(`Pedido #${o.id}: ${o.estado}`);return}
+  if(t.dataset.ei&&S.edit){const [i,k]=t.dataset.ei.split('|');S.edit.items[+i][+k]=t.value;return}
+  if(t.dataset.oi&&S.oedit){const [i,k]=t.dataset.oi.split('|');S.oedit.items[+i][+k]=t.value;return}
+  if(t.dataset.stock){render();return}
+  if(t.id==='fileup'&&t.files[0]){
+    const f=t.files[0],c=chats.find(x=>x.id===S.open);t.value='';if(!c)return;
+    if(!c.win){toast('Ventana cerrada: solo plantillas.');return}
+    const k=f.type.startsWith('image')?'img':f.type.startsWith('video')?'video':f.type.startsWith('audio')?'audio':null;
+    if(!k){toast('Solo fotos, videos o audios.');return}
+    const r=new FileReader();r.onload=()=>{c.msgs.push({w:'ase',by:me(),k,x:f.name,src:r.result,t:new Date().toTimeString().slice(0,5)});render();toast((k==='img'?'Foto':k==='video'?'Video':'Audio')+' enviado')};r.readAsDataURL(f);return}
+  if(t.id==='assetup'&&t.files[0]){
+    const f=t.files[0];t.value='';const k=f.type.startsWith('video')?'video':'img';
+    const add=src=>{ASSETS[S.store].push({k,n:f.name.replace(/\.[^.]+$/,''),key:f.name.replace(/\.[^.]+$/,'').toUpperCase(),when:'Define cuándo se envía',src});render();toast('Archivo agregado al prompt')};
+    if(k==='img'){const r=new FileReader();r.onload=()=>add(r.result);r.readAsDataURL(f)}else add(null);return}
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){if(S.storeMenu){S.storeMenu=false;drawStoreMenu()}else if(S.oedit){S.oedit=null;$('#layer').innerHTML=''}else if(S.tagMenu){S.tagMenu=false;render()}else if(S.qr){S.qr=false;render()}}
+  if(e.key==='Enter'&&!e.shiftKey&&e.target.id==='draft'){e.preventDefault();const b=document.querySelector('[data-act="send"]');b&&b.click()}
+});
+render();
+</script>
