@@ -1,0 +1,331 @@
+// API de Bot Suyon AI (Configuración → Herramientas) y de Avisos
+import { Hono } from 'hono';
+import { now, fail, clip, windowOpen } from './util.js';
+import { storeFor, chatFor } from './auth.js';
+import { kindForMime, SEND_RULES } from './whatsapp.js';
+import {
+  NODE_TYPES, IA_MODELS, loadSettings, loadFlow, flowStats, startFlow, cancelJobs, testIA,
+} from './bot.js';
+import { flowPantalon, PROMPT_PANTALON, KNOWLEDGE_PANTALON, TEMPLATE_ASSETS } from './bot-template.js';
+
+const r = new Hono();
+const body = async (c) => {
+  try {
+    return await c.req.json();
+  } catch {
+    return {};
+  }
+};
+const bump = (env, storeId) => env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE id = ?').bind(storeId).run();
+const inList = (n) => Array(n).fill('?').join(',');
+const today = () => new Date(now() - 5 * 3600e3).toISOString().slice(0, 10);
+
+/* ---------- Ajustes ---------- */
+
+const SETTING_RULES = {
+  bot_on: (v) => (v ? 1 : 0),
+  audience: (v) => (v === 'todas' ? 'todas' : 'equipo'),
+  test_numbers: (v) => clip(String(v || '').replace(/[^\d,;\s+]/g, ''), 400),
+  ia_model: (v) => (IA_MODELS[v] ? v : fail(400, 'Ese modelo no existe.')),
+  ia_secret: (v) => (/^[A-Z][A-Z0-9_]{2,40}$/.test(String(v || '')) ? v : fail(400, 'Nombre de secreto inválido (solo MAYÚSCULAS, números y _).')),
+  ia_daily_cap: (v) => Math.min(Math.max(Number(v) || 0, 0), 500),
+  ia_prompt: (v) => (v == null || v === '' ? null : String(v).slice(0, 40000)),
+  ia_knowledge: (v) => (v == null ? null : String(v).slice(0, 40000)),
+  ia_delay_s: (v) => Math.min(Math.max(Math.round(Number(v) || 0), 0), 20),
+  ia_history: (v) => Math.min(Math.max(Math.round(Number(v) || 50), 4), 100),
+  ia_follow_min: (v) => Math.min(Math.max(Math.round(Number(v) || 0), 0), 1440),
+  ia_follow_text: (v) => clip(String(v || ''), 1000),
+  pay_yape: (v) => clip(String(v || '').trim(), 40),
+  pay_titular: (v) => clip(String(v || '').trim(), 80),
+  pay_bcp: (v) => clip(String(v || '').trim(), 40),
+  pay_cci: (v) => clip(String(v || '').trim(), 40),
+};
+
+async function saveSettings(env, storeId, patch) {
+  const cur = await loadSettings(env, storeId);
+  const next = { ...cur };
+  for (const [k, fn] of Object.entries(SETTING_RULES)) if (k in patch) next[k] = fn(patch[k]);
+  // Si cambia de proveedor y el secreto era el de por defecto, se cambia también
+  if ('ia_model' in patch && !('ia_secret' in patch) && ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'].includes(cur.ia_secret)) {
+    next.ia_secret = IA_MODELS[next.ia_model].provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY';
+  }
+  const keys = Object.keys(SETTING_RULES);
+  await env.DB.prepare(
+    `INSERT INTO bot_settings (store_id, ${keys.join(', ')}, updated_at) VALUES (?, ${inList(keys.length)}, ?)
+     ON CONFLICT (store_id) DO UPDATE SET ${keys.map((k) => `${k} = excluded.${k}`).join(', ')}, updated_at = excluded.updated_at`
+  ).bind(storeId, ...keys.map((k) => next[k] ?? null), now()).run();
+  return next;
+}
+
+r.get('/stores/:id/bot', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const db = c.env.DB;
+  const settings = await loadSettings(c.env, st.id);
+  const { results: flows } = await db.prepare('SELECT id, name, active, updated_at FROM bot_flows WHERE store_id = ? ORDER BY id').bind(st.id).all();
+  const { results: assets } = await db.prepare('SELECT id, key, name, mime, size, created_at FROM bot_assets WHERE store_id = ? ORDER BY key').bind(st.id).all();
+  const { results: usage } = await db.prepare('SELECT day, calls, in_tokens, out_tokens, cost FROM ia_usage WHERE store_id = ? ORDER BY day DESC LIMIT 7').bind(st.id).all();
+  const secretNames = [...new Set(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', settings.ia_secret])];
+  return c.json({
+    settings: { ...settings, ia_prompt: settings.ia_prompt ?? PROMPT_PANTALON, ia_knowledge: settings.ia_knowledge ?? KNOWLEDGE_PANTALON },
+    flows,
+    assets,
+    template_assets: TEMPLATE_ASSETS.map(([key, desc]) => ({ key, desc, ok: assets.some((a) => a.key === key) })),
+    secrets: Object.fromEntries(secretNames.map((n) => [n, !!c.env[n]])),
+    usage,
+    today: today(),
+    models: Object.entries(IA_MODELS).map(([id, m]) => ({ id, ...m })),
+  });
+});
+
+r.patch('/stores/:id/bot/settings', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const b = await body(c);
+  if ('ia_prompt' in b && String(b.ia_prompt || '').trim() === PROMPT_PANTALON.trim()) b.ia_prompt = null;
+  if ('ia_knowledge' in b && String(b.ia_knowledge || '').trim() === KNOWLEDGE_PANTALON.trim()) b.ia_knowledge = null;
+  const s = await saveSettings(c.env, st.id, b);
+  await bump(c.env, st.id);
+  return c.json({ settings: { ...s, ia_prompt: s.ia_prompt ?? PROMPT_PANTALON, ia_knowledge: s.ia_knowledge ?? KNOWLEDGE_PANTALON } });
+});
+
+/* ---------- Flujos ---------- */
+
+const ID_RE = /^[\w-]{1,40}$/;
+const str = (v, n = 4000) => clip(String(v ?? ''), n);
+
+function cleanItems(items) {
+  return (Array.isArray(items) ? items : []).slice(0, 10).map((it) =>
+    it?.kind === 'text' ? { kind: 'text', text: str(it.text, 4096) } : { kind: ['image', 'video', 'audio', 'document', 'file'].includes(it?.kind) ? it.kind : 'file', asset: str(it?.asset, 60), ...(it?.caption ? { caption: str(it.caption, 1024) } : {}) }
+  );
+}
+
+export function validateGraph(g) {
+  if (!g || typeof g !== 'object' || !Array.isArray(g.nodes)) fail(400, 'El flujo no tiene bloques.');
+  if (JSON.stringify(g).length > 400000) fail(400, 'El flujo es demasiado grande.');
+  if (!g.nodes.length || g.nodes.length > 200) fail(400, 'Un flujo puede tener de 1 a 200 bloques.');
+  const ids = new Set();
+  const nodes = g.nodes.map((n) => {
+    if (!n || !ID_RE.test(n.id || '')) fail(400, 'Hay un bloque con nombre interno inválido.');
+    if (ids.has(n.id)) fail(400, `Hay dos bloques con el mismo nombre interno: ${n.id}.`);
+    ids.add(n.id);
+    if (!NODE_TYPES.includes(n.type)) fail(400, `Tipo de bloque desconocido: ${n.type}.`);
+    const out = { ...n, title: str(n.title || '', 80), x: Math.round(Math.min(Math.max(Number(n.x) || 0, 0), 6000)), y: Math.round(Math.min(Math.max(Number(n.y) || 0, 0), 8000)) };
+    if ('items' in n) out.items = cleanItems(n.items);
+    return out;
+  });
+  const refs = ['next', 'next_other', 'next_error', 'next_no', 'target'];
+  for (const n of nodes) {
+    for (const k of refs) if (n[k] && !ids.has(n[k])) n[k] = null;
+    for (const cs of n.cases || []) if (cs.next && !ids.has(cs.next)) cs.next = null;
+    for (const o of n.options || []) if (o.next && !ids.has(o.next)) o.next = null;
+  }
+  const start = ids.has(g.start) ? g.start : nodes.find((n) => n.type === 'start')?.id || nodes[0].id;
+  const sequences = (Array.isArray(g.sequences) ? g.sequences : []).slice(0, 20).map((s) => ({
+    id: ID_RE.test(s?.id || '') ? s.id : 'seq' + Math.random().toString(36).slice(2, 7),
+    name: str(s?.name || 'Seguimiento', 60),
+    cancel_on: ['reply', 'image', 'none'].includes(s?.cancel_on) ? s.cancel_on : 'reply',
+    steps: (Array.isArray(s?.steps) ? s.steps : []).slice(0, 20).map((st) => {
+      const from = st?.from_h === '' || st?.from_h == null ? null : Math.min(Math.max(Number(st.from_h) || 0, 0), 23);
+      const to = st?.to_h === '' || st?.to_h == null ? null : Math.min(Math.max(Number(st.to_h) || 0, 1), 24);
+      return { after_min: Math.min(Math.max(Math.round(Number(st?.after_min) || 1), 1), 60 * 24 * 7), ...(from != null && to != null && from < to ? { from_h: from, to_h: to } : {}), items: cleanItems(st?.items) };
+    }),
+  }));
+  return { v: 1, start, nodes, sequences };
+}
+
+async function flowFor(c, id, need = 'config') {
+  const f = await loadFlow(c.env, Number(id));
+  if (!f) fail(404, 'Ese flujo no existe.');
+  const store = await storeFor(c, f.store_id, need);
+  return { flow: f, store };
+}
+
+r.post('/stores/:id/bot/flows', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const b = await body(c);
+  const graph = b.template === 'pantalon'
+    ? flowPantalon()
+    : { v: 1, start: 'inicio', nodes: [{ id: 'inicio', type: 'start', x: 360, y: 40, title: 'Clienta nueva', trigger: { new_chat: true, ads: 'all', ad_ids: [], keywords: [] }, labels: [], next: null }], sequences: [] };
+  const name = str(b.name || (b.template === 'pantalon' ? 'Ventas pantalón' : 'Flujo nuevo'), 60);
+  const res = await c.env.DB.prepare('INSERT INTO bot_flows (store_id, name, active, graph, created_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)')
+    .bind(st.id, name, JSON.stringify(validateGraph(graph)), now(), now()).run();
+  await loadSettings(c.env, st.id).then((s) => (s.updated_at ? null : saveSettings(c.env, st.id, {})));
+  return c.json({ id: res.meta.last_row_id });
+});
+
+r.get('/bot/flows/:id', async (c) => {
+  const { flow } = await flowFor(c, c.req.param('id'));
+  return c.json({ flow: { id: flow.id, store_id: flow.store_id, name: flow.name, active: flow.active, graph: flow.graph, updated_at: flow.updated_at }, stats: await flowStats(c.env, flow.id) });
+});
+
+r.put('/bot/flows/:id', async (c) => {
+  const { flow, store } = await flowFor(c, c.req.param('id'));
+  const b = await body(c);
+  const sets = [];
+  const vals = [];
+  if ('name' in b) {
+    sets.push('name = ?');
+    vals.push(str(b.name, 60).trim() || flow.name);
+  }
+  if ('active' in b) {
+    sets.push('active = ?');
+    vals.push(b.active ? 1 : 0);
+  }
+  if ('graph' in b) {
+    sets.push('graph = ?');
+    vals.push(JSON.stringify(validateGraph(b.graph)));
+  }
+  if (sets.length) await c.env.DB.prepare(`UPDATE bot_flows SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`).bind(...vals, now(), flow.id).run();
+  if (b.active === false || b.active === 0) await c.env.DB.prepare('UPDATE bot_jobs SET canceled_at = ? WHERE flow_id = ? AND done_at IS NULL AND canceled_at IS NULL').bind(now(), flow.id).run();
+  await bump(c.env, store.id);
+  const f = await loadFlow(c.env, flow.id);
+  return c.json({ flow: { id: f.id, name: f.name, active: f.active, graph: f.graph, updated_at: f.updated_at } });
+});
+
+r.delete('/bot/flows/:id', async (c) => {
+  const { flow, store } = await flowFor(c, c.req.param('id'));
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE bot_jobs SET canceled_at = ? WHERE flow_id = ? AND done_at IS NULL').bind(now(), flow.id),
+    c.env.DB.prepare('UPDATE chats SET bot_flow_id = NULL, bot_node = NULL, bot_wait = 0 WHERE bot_flow_id = ?').bind(flow.id),
+    c.env.DB.prepare('DELETE FROM bot_counts WHERE flow_id = ?').bind(flow.id),
+    c.env.DB.prepare('DELETE FROM bot_flows WHERE id = ?').bind(flow.id),
+  ]);
+  await bump(c.env, store.id);
+  return c.json({ ok: true });
+});
+
+// Probar la IA sin mandar nada a WhatsApp
+r.post('/bot/flows/:id/test-ia', async (c) => {
+  const { flow, store } = await flowFor(c, c.req.param('id'));
+  const b = await body(c);
+  const node = flow.graph.nodes.find((n) => n.id === b.node && n.type === 'ia') || flow.graph.nodes.find((n) => n.type === 'ia');
+  if (!node) fail(400, 'Este flujo no tiene bloque de IA.');
+  const text = str(b.text, 2000).trim();
+  if (!text) fail(400, 'Escribe un mensaje de prueba.');
+  try {
+    return c.json({ reply: await testIA(c.env, store, flow, node, text) });
+  } catch (e) {
+    fail(400, e.message);
+  }
+});
+
+/* ---------- Archivos ---------- */
+
+r.post('/stores/:id/bot/assets', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const form = await c.req.formData();
+  const file = form.get('file');
+  const key = String(form.get('key') || '').trim();
+  if (!/^[\w-]{1,40}$/.test(key)) fail(400, 'La clave solo puede tener letras, números y guiones (ej: colores-S).');
+  if (!file || typeof file === 'string') fail(400, 'No llegó el archivo.');
+  const mime = String(file.type || '').split(';')[0].toLowerCase() || 'application/octet-stream';
+  const kind = kindForMime(mime);
+  if (file.size > SEND_RULES[kind].max) fail(413, `El archivo pasa de ${Math.round(SEND_RULES[kind].max / 1048576)} MB.`);
+  if (kind === 'document' && !/pdf/.test(mime)) fail(400, 'Usa foto JPG/PNG, video MP4, audio (MP3, M4A, OGG) o PDF.');
+  const r2 = `s${st.id}/bot/${key}-${now()}`;
+  await c.env.MEDIA.put(r2, await file.arrayBuffer(), { httpMetadata: { contentType: mime } });
+  const old = await c.env.DB.prepare('SELECT r2_key FROM bot_assets WHERE store_id = ? AND key = ?').bind(st.id, key).first();
+  await c.env.DB.prepare(
+    `INSERT INTO bot_assets (store_id, key, name, mime, size, r2_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (store_id, key) DO UPDATE SET name = excluded.name, mime = excluded.mime, size = excluded.size, r2_key = excluded.r2_key, wa_media_id = NULL, wa_media_at = NULL, created_at = excluded.created_at`
+  ).bind(st.id, key, clip(file.name || key, 120), mime, file.size, r2, now()).run();
+  // El archivo viejo se guarda: los mensajes ya enviados lo siguen mostrando
+  return c.json({ ok: true, replaced: !!old });
+});
+
+r.get('/bot/assets/:id', async (c) => {
+  const a = await c.env.DB.prepare('SELECT * FROM bot_assets WHERE id = ?').bind(Number(c.req.param('id'))).first();
+  if (!a) fail(404, 'No existe.');
+  await storeFor(c, a.store_id, 'config');
+  const obj = await c.env.MEDIA.get(a.r2_key);
+  if (!obj) fail(404, 'El archivo ya no está guardado.');
+  return new Response(obj.body, { headers: { 'Content-Type': a.mime, 'Cache-Control': 'private, max-age=86400' } });
+});
+
+r.delete('/bot/assets/:id', async (c) => {
+  const a = await c.env.DB.prepare('SELECT * FROM bot_assets WHERE id = ?').bind(Number(c.req.param('id'))).first();
+  if (!a) fail(404, 'No existe.');
+  await storeFor(c, a.store_id, 'config');
+  await c.env.DB.prepare('DELETE FROM bot_assets WHERE id = ?').bind(a.id).run();
+  return c.json({ ok: true });
+});
+
+/* ---------- El bot en un chat ---------- */
+
+r.post('/chats/:id/bot', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const b = await body(c);
+  const db = c.env.DB;
+  if (b.action === 'pause') {
+    await cancelJobs(c.env, chat.id);
+    await db.prepare("UPDATE chats SET bot_paused = 1, handler = 'asesora', updated_at = ? WHERE id = ?").bind(now(), chat.id).run();
+  } else if (b.action === 'resume') {
+    await db.prepare("UPDATE chats SET bot_paused = 0, handler = 'bot', updated_at = ? WHERE id = ?").bind(now(), chat.id).run();
+  } else if (b.action === 'start') {
+    const f = b.flow_id
+      ? await db.prepare('SELECT id FROM bot_flows WHERE id = ? AND store_id = ?').bind(Number(b.flow_id), store.id).first()
+      : await db.prepare('SELECT id FROM bot_flows WHERE store_id = ? ORDER BY active DESC, id LIMIT 1').bind(store.id).first();
+    if (!f) fail(400, 'Esta tienda todavía no tiene flujos. Créalo en Configuración → Bot Suyon AI.');
+    if (!windowOpen(chat)) fail(409, 'La ventana de 24 h de este chat está cerrada: pide a la clienta (o a tu número de prueba) que escriba primero.');
+    const flow = await loadFlow(c.env, f.id);
+    flow.active = 1; // desde aquí se puede probar aunque el flujo esté apagado
+    c.executionCtx.waitUntil(startFlow(c.env, c.executionCtx, store, chat.id, flow).catch((e) => console.error('bot start', e)));
+  } else fail(400, 'Acción desconocida.');
+  await bump(c.env, store.id);
+  return c.json({ ok: true });
+});
+
+// Cuando la asesora escribe a mano en un chat del bot, el bot se pausa (para no responder los dos)
+export async function pauseForHuman(env, chat) {
+  if (chat.handler !== 'bot' || chat.bot_paused) return;
+  await cancelJobs(env, chat.id);
+  await env.DB.prepare("UPDATE chats SET bot_paused = 1, handler = 'asesora' WHERE id = ?").bind(chat.id).run();
+}
+
+/* ---------- Avisos ---------- */
+
+const PEND_COLS = 'c.id, c.wa_id, c.name, c.profile_name, c.last_preview, c.last_msg_at, c.last_dir, c.unread';
+// La asesora tiene algo pendiente si el último mensaje del chat no es suyo
+const NEEDS_ASESORA = `COALESCE((SELECT sender FROM messages WHERE chat_id = c.id ORDER BY id DESC LIMIT 1), 'cli') NOT IN ('ase', 'cel')`;
+
+export async function pendingCounts(db, storeIds) {
+  if (!storeIds.length) return {};
+  const { results: ev } = await db.prepare(
+    `SELECT store_id, COUNT(*) AS n FROM notifications WHERE read_at IS NULL AND store_id IN (${inList(storeIds.length)}) GROUP BY store_id`
+  ).bind(...storeIds).all();
+  const { results: ase } = await db.prepare(
+    `SELECT c.store_id, COUNT(*) AS n FROM chats c JOIN chat_labels cl ON cl.chat_id = c.id JOIN labels l ON l.id = cl.label_id
+     WHERE l.name = 'ASESOR' AND ${NEEDS_ASESORA} AND c.store_id IN (${inList(storeIds.length)}) GROUP BY c.store_id`
+  ).bind(...storeIds).all();
+  const out = {};
+  for (const x of ev) out[x.store_id] = (out[x.store_id] || 0) + x.n;
+  for (const x of ase) out[x.store_id] = (out[x.store_id] || 0) + x.n;
+  return out;
+}
+
+r.get('/stores/:id/avisos', async (c) => {
+  const st = await storeFor(c, c.req.param('id'));
+  const db = c.env.DB;
+  const byLabel = async (name, onlyIn = false) =>
+    (await db.prepare(
+      `SELECT ${PEND_COLS}, cl.created_at AS since FROM chats c JOIN chat_labels cl ON cl.chat_id = c.id JOIN labels l ON l.id = cl.label_id
+       WHERE c.store_id = ? AND l.name = ? ${onlyIn ? 'AND ' + NEEDS_ASESORA : ''} ORDER BY COALESCE(c.last_msg_at, c.created_at) DESC LIMIT 100`
+    ).bind(st.id, name).all()).results;
+  const { results: events } = await db.prepare(
+    'SELECT id, kind, chat_id, title, body, created_at, read_at FROM notifications WHERE store_id = ? ORDER BY id DESC LIMIT 100'
+  ).bind(st.id).all();
+  return c.json({
+    pending: { asesora: await byLabel('ASESOR', true), yape: await byLabel('YAPE PENDIENTE'), agendar: await byLabel('LIMA PENDIENTE') },
+    events,
+  });
+});
+
+r.post('/stores/:id/avisos/read', async (c) => {
+  const st = await storeFor(c, c.req.param('id'));
+  const b = await body(c);
+  if (b.id) await c.env.DB.prepare('UPDATE notifications SET read_at = ? WHERE id = ? AND store_id = ? AND read_at IS NULL').bind(now(), Number(b.id), st.id).run();
+  else await c.env.DB.prepare('UPDATE notifications SET read_at = ? WHERE store_id = ? AND read_at IS NULL').bind(now(), st.id).run();
+  await bump(c.env, st.id);
+  return c.json({ ok: true });
+});
+
+export default r;

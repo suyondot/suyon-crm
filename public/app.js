@@ -1,5 +1,6 @@
 // Suyon CRM — app web (bandeja de WhatsApp, etiquetas, configuración)
 import { webmOpusToOgg } from './ogg.js';
+import { initBot, renderBotTab, renderAvisos, botFicha, botDirty, resetBot } from './bot.js';
 
 /* =================== Utilidades =================== */
 const $ = (s, el = document) => el.querySelector(s);
@@ -20,6 +21,7 @@ const ICON = {
   filter: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M4 5h16l-6 8v5l-4 2v-7z"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg>',
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 21s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="18" height="18"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
 };
 const AVC = ['#7A1F35', '#2D5BA8', '#1E7A4C', '#A35F00', '#6B4FA3', '#B0413E', '#2F7F86', '#8A5A2B'];
@@ -172,6 +174,7 @@ const S = {
   cfgTab: null,
   revs: {},
   unread: {},
+  avisos: {},
   lastUnreadTotal: null,
   health: null,
   team: null,
@@ -381,6 +384,7 @@ function enterStore() {
   S.health = null;
   S.team = null;
   S.connSteps = null;
+  resetBot();
   if (S.storeId) pref.set('store', S.storeId);
   if (S.view === 'chats' && store() && !canChats()) S.view = 'pedidos';
   render();
@@ -407,6 +411,7 @@ async function loadLabels() {
 function navItems() {
   const items = [];
   if (canChats() || !store()) items.push(['chats', 'Chats', ICON.chat, S.unread[S.storeId] || 0]);
+  if (store() && canChats()) items.push(['avisos', 'Avisos', ICON.bell, S.avisos[S.storeId] || 0]);
   if (store() && !canChats()) items.push(['pedidos', 'Pedidos', ICON.box, 0]);
   if (owner() || (!S.me.stores.length && S.me.companies.some((c) => c.role === 'dueno'))) items.push(['config', 'Configuración', ICON.gear, 0]);
   else items.push(['config', 'Mi cuenta', ICON.user, 0]);
@@ -415,7 +420,7 @@ function navItems() {
 
 function render() {
   const st = store();
-  const titles = { chats: 'Chats', pedidos: 'Pedidos', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
+  const titles = { chats: 'Chats', avisos: 'Avisos', pedidos: 'Pedidos', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
   const roleName = st ? S.me.roles[st.role] : '';
   root().innerHTML = `
   <nav class="side" aria-label="Principal">
@@ -433,6 +438,7 @@ function render() {
   </main>`;
   const content = $('#content');
   if (S.view === 'chats') renderChatsView(content);
+  else if (S.view === 'avisos') renderAvisos(content);
   else if (S.view === 'pedidos') content.innerHTML = `<div class="empty" style="height:100%"><b>Pedidos</b><span>La lista de pedidos para despacho llega en la fase 4.</span></div>`;
   else renderConfig();
   drawStoreMenu();
@@ -444,8 +450,8 @@ function storeLabel(s) {
 }
 
 function updateBadges() {
-  $$('.navbtn[data-nav="chats"]').forEach((b) => {
-    const n = S.unread[S.storeId] || 0;
+  $$('.navbtn[data-nav="chats"],.navbtn[data-nav="avisos"]').forEach((b) => {
+    const n = (b.dataset.nav === 'avisos' ? S.avisos : S.unread)[S.storeId] || 0;
     let el = b.querySelector('.cnt');
     if (!n) return el?.remove();
     if (!el) {
@@ -1194,6 +1200,7 @@ function renderFicha() {
     <div class="sec"><h3>Etiquetas</h3><div class="tagbox">${S.labels.map((l) => `<button data-tag="${l.id}" class="${c.labels.includes(l.id) ? '' : 'off'}" aria-pressed="${c.labels.includes(l.id)}">${tagHTML(l)}</button>`).join('')}</div>
       <p class="note" style="margin:8px 0 0">Toca para poner o quitar. Borde punteado: las pondrá el bot solo.</p></div>
     <div class="sec"><h3>De dónde vino</h3>${c.ad_id ? `<dl class="kv"><dt>Anuncio</dt><dd>${esc(c.ad_headline || '—')}</dd><dt>ID anuncio</dt><dd class="mono">${esc(c.ad_id)}</dd><dt>Llegó</dt><dd>${esc(listTime(c.referral_at))}</dd></dl>` : '<p class="note" style="margin:0">Escribió directo, no desde un anuncio.</p>'}</div>
+    ${botFicha(c)}
     <div class="sec"><h3>Notas</h3><textarea class="notesbox" id="cnotes" placeholder="Solo las ve tu equipo">${esc(c.notes || '')}</textarea></div>
     <div class="sec"><button class="iconbtn" data-act="markunread">Marcar como no leído</button></div>`;
   const save = async (field, value) => {
@@ -1258,6 +1265,8 @@ async function poll() {
       }
       if (S.synced && (st.unread || 0) > (S.unread[st.id] || 0)) newUnread = true;
       S.unread[st.id] = st.unread;
+      if (st.id === S.storeId && S.view === 'avisos' && (S.avisos[st.id] || 0) !== (st.avisos || 0)) refreshAvisos();
+      S.avisos[st.id] = st.avisos || 0;
       const ms = S.me.stores.find((x) => x.id === st.id);
       if (ms && ms.status !== st.status) {
         ms.status = st.status;
@@ -1441,7 +1450,7 @@ function addStoreModal() {
 /* =================== CONFIGURACIÓN =================== */
 function cfgTabs() {
   const tabs = [];
-  if (owner()) tabs.push(['numero', 'Número de WhatsApp'], ['etiquetas', 'Etiquetas'], ['equipo', 'Equipo']);
+  if (owner()) tabs.push(['numero', 'Número de WhatsApp'], ['etiquetas', 'Etiquetas'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
   if (S.me.companies.some((c) => c.role === 'dueno')) tabs.push(['empresa', 'Empresas']);
   tabs.push(['cuenta', 'Mi cuenta']);
   return tabs;
@@ -1453,11 +1462,11 @@ function renderConfig() {
   const tabs = cfgTabs();
   if (!tabs.some(([k]) => k === S.cfgTab)) S.cfgTab = tabs[0][0];
   const st = store();
-  content.innerHTML = `<div class="page"><div class="cfg">
+  content.innerHTML = `<div class="page${S.cfgTab === 'bot' ? ' full' : ''}"><div class="cfg">
     <nav class="cfgnav" aria-label="Secciones">${tabs.map(([k, l]) => `<button data-cfg="${k}" aria-current="${S.cfgTab === k}">${l}</button>`).join('')}
-      ${st && owner() ? `<div class="cfgnote">Lo de Número, Etiquetas y Equipo es de <b>${esc(st.name)}</b>${S.cfgTab === 'equipo' ? ` y su empresa` : ''}. Cambia de tienda arriba a la izquierda.</div>` : ''}</nav>
+      ${st && owner() ? `<div class="cfgnote">Lo de Número, Etiquetas, Bot y Equipo es de <b>${esc(st.name)}</b>${S.cfgTab === 'equipo' ? ` y su empresa` : ''}. Cambia de tienda arriba a la izquierda.</div>` : ''}</nav>
     <div id="cfgbody"></div></div></div>`;
-  ({ numero: cfgNumero, etiquetas: cfgEtiquetas, equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta })[S.cfgTab]();
+  ({ numero: cfgNumero, etiquetas: cfgEtiquetas, bot: () => renderBotTab($('#cfgbody')), equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta })[S.cfgTab]();
 }
 
 function statusPill(s) {
@@ -1761,6 +1770,7 @@ document.addEventListener('click', async (e) => {
     if (e.target === t || t.matches('button')) closeModal();
     return;
   }
+  if ((d.nav || d.cfg || d.store) && botDirty() && !confirm('Tienes cambios del bot sin guardar. ¿Salir igual?')) return;
   if (d.nav) {
     S.view = d.nav;
     if (d.tab) S.cfgTab = d.tab;
@@ -2000,6 +2010,29 @@ window.addEventListener('resize', () => {
   }
   lastW = w;
 });
+
+// Abre un chat desde Avisos
+async function goChat(id) {
+  S.view = 'chats';
+  render();
+  if (!S.chats.size) await loadChats();
+  if (!S.chats.has(id)) {
+    try {
+      const r = await api('GET', `/chats/${id}`);
+      mergeChats([r.chat]);
+      renderItems();
+    } catch (er) {
+      return toast(er.message);
+    }
+  }
+  openChat(id);
+}
+
+function refreshAvisos() {
+  if (S.view === 'avisos' && $('#content')) renderAvisos($('#content'));
+}
+
+initBot({ api, esc, toast, $, $$, S, store, goChat, fmtPhone, listTime, renderFicha, refreshAvisos });
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 

@@ -47,7 +47,7 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 3. Reconocer talla SIN IA (palabras clave y números de jean) → etiqueta "Talla X" → imagen de colores de esa talla.
 4. Si no responde: seguimientos 15 min (texto; en Botcake fallaba 0/6,285), 40 min (audio), 3 h (video "Así se ve puesto", 8 a.m.–10 p.m.), 15 h (texto cierre).
 5. Al responder entra la IA: colores → destino → datos → formulario → (provincia) adelanto S/30 → sede Shalom.
-6. Pasa a asesora (etiqueta ASESOR, pausa IA): Yape + sede · Lima confirmó datos · pide persona/reclamo/horario especial/zona dudosa. "Yapeo más tarde" → YAPE PENDIENTE + recordatorio (2 h, 20 h).
+6. Pasa a asesora (etiqueta ASESOR, pausa IA): Yape + sede · Lima confirmó datos · pide persona/reclamo/horario especial/zona dudosa. "Yapeo más tarde" → YAPE PENDIENTE + recordatorio (1 h texto, 3 h foto despacho; 8–22 h; se cancela si manda foto).
 - Ahorro IA: su prompt en Botcake ocupa 15,000/15,000 caracteres en cada respuesta. Aquí: prompt base corto + instrucciones de la etapa actual + reglas fijas sin IA (tallas, sinónimos de color, stock, precios, cobertura, corte HOY/MAÑANA, formularios).
 - El prompt usa **archivos** (tabla de tallas, colores por talla, video de envíos, foto Lima, video confianza) que la IA adjunta por clave; son clave para la confianza y el cierre.
 
@@ -90,7 +90,10 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
   - Reglas: «Anuncios pantalón» = Nuevo suscriptor + ADS por ID (65 anuncios) → etiqueta «pantalón prod» + iniciar flujo (siempre). «NUEVO CLIENTE» = ADS «no igual» a esa lista → mismo flujo. Palabra clave «Deseo mis pantalones formales» (contiene) → mismo flujo. Respuesta predeterminada vacía. Herramientas (QR, cupones, ruleta…) sin usar. Horario de funcionamiento apagado. Evento de conversión Meta CAPI apagado.
   - Ajustes IA en Botcake: retraso 5 s, máx 200 caracteres por mensaje, historial 50 mensajes, seguimiento IA 30 min (1 mensaje manual), voz a texto disponible, audiencia todos. Ajustes generales: GMT-5 Lima, Perú, 12 h, bot responde a todos, imágenes agrupadas.
   - Botcake NO da números por bloque (solo del flujo entero y por mensaje de secuencia) ni mide «respondieron».
-- [ ] 3 · IA por etapa, archivos del prompt, tope de gasto.
+- [x] 2b · **Construido y en línea (2 nov 2026)**: Configuración → **Bot Suyon AI** (pestañas Flujo · Seguimientos · IA Suyon · Archivos) + sección **Avisos** en el menú (campana con número). Botón «Crear desde Ventas pantalón» copia TODO su Botcake: flujo gratis (precios → talla con todas las frases + números de jean dentro de la frase → etiqueta Talla X → foto colores-{talla}), IA con su prompt COMPLETO (15k) + los 2 TXT de conocimiento, 4 casos especiales, «Estamos validando…» si la IA falla, seguimientos talla (15 min, 40 min, 3 h, 15 h) y Yape (1 h, 3 h). Lienzo editable: arrastrar bloques, panel para editar, zoom, números por bloque (enviados, entregados, leídos, fallidos, respondieron, pasaron). Ficha del chat: estado del bot, datos guardados, Pausar/Reanudar/Iniciar flujo.
+  - Seguro por defecto: bot apagado y «solo números de prueba». Jordan debe: (1) crear el flujo desde plantilla, (2) subir los 14 archivos en Archivos, (3) llenar datos de pago en IA Suyon (NO van al código: placeholders {yape} {titular} {bcp} {cci}), (4) poner secreto `ANTHROPIC_API_KEY` en Cloudflare, (5) encender con su número de prueba.
+  - Decisiones: casos especiales mandan igual la respuesta de la IA (en Botcake decía «Ignorar respuesta», pero el prompt define qué decir en cada caso; se puede apagar por caso). Si la asesora escribe a mano en un chat del bot, el bot se pausa (botón Reanudar). Notas de voz: la IA aún no las escucha. La IA responde JSON {mensajes[], caso, datos}; los datos van a `chats.bot_vars`.
+- [ ] 3 · IA por etapa (prompt más corto), voz a texto, comparar Haiku 5.5 vs GPT-5 mini con chats reales.
 - [ ] 4 · Pedidos, editar, copiar orden, Sheet de Shalom, CAPI.
 - [ ] 5 · Control: embudo, CPA real por anuncio, llamadas.
 - [ ] 6 · Piloto 1 semana; luego migrar pantalón formal.
@@ -106,4 +109,7 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 - Ventana para responder: 24 h desde el último mensaje de la clienta, o 72 h si llegó por anuncio y se respondió en las primeras 24 h.
 - Notas de voz: Chrome graba WebM; `public/ogg.js` lo pasa a OGG/Opus sin recodificar (WhatsApp lo muestra como nota de voz). Safari graba MP4/AAC.
 - Front sin build (JS módulo + CSS del prototipo). PWA: `public/sw.js` (red primero), notificaciones del navegador si se activan en Mi cuenta.
-- Pruebas: `npm test` levanta `wrangler dev` con base temporal y un Meta falso (45 pruebas).
+- Pruebas: `npm test` levanta `wrangler dev` con base temporal, un Meta falso y una IA falsa (59 pruebas). Los secretos de prueba van por `--var` (no hace falta .dev.vars).
+- Bot: `src/bot.js` (motor: onInbound, runFrom, runIA, runJobs, flowStats) · `src/bot-template.js` (prompt, conocimiento, flujo «Ventas pantalón», TALLAS) · `src/api-bot.js` (API del bot, archivos, avisos) · `public/bot.js` (lienzo y Avisos). Migración 2 = tablas bot_flows, bot_settings, bot_assets, bot_jobs, bot_counts, notifications, ia_usage + columnas bot_* en chats/messages.
+- Cron: `* * * * *` corre seguimientos/esperas (runJobs); `0 8 * * *` limpieza. `/__test/jobs` solo existe con TEST_MODE.
+- Estado del bot en chats: bot_wait 0 nada · 1 espera respuesta · 2 IA por responder (espera `ia_delay_s` y si llega otro mensaje responde ese) · 3 espera tiempo.

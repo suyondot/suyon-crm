@@ -1,6 +1,7 @@
 // Webhook de Meta: mensajes entrantes, estados de entrega y ecos de la app del celular
 import { now, hmacSha256hex, safeEqual, clip } from './util.js';
 import { downloadMedia, friendlyMetaError } from './whatsapp.js';
+import { onInbound, notify } from './bot.js';
 
 const MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
 const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3 };
@@ -153,11 +154,18 @@ async function handleInbound(env, ctx, store, msg, profileName) {
   }
   await env.DB.prepare(`UPDATE chats SET ${sets.join(', ')} WHERE id = ?`).bind(...vals, chat.id).run();
 
-  if (isMedia && media.id) {
-    const job = fetchMediaToR2(env, store, { id: msgId, chat_id: chat.id, media_id: media.id }).catch(() => {});
-    if (ctx?.waitUntil) ctx.waitUntil(job);
-    else await job;
-  }
+  // Bot Suyon AI: corre después de responder a Meta (las fotos se bajan primero para que la IA pueda verlas)
+  const work = (async () => {
+    if (isMedia && media.id) await fetchMediaToR2(env, store, { id: msgId, chat_id: chat.id, media_id: media.id }).catch(() => {});
+    try {
+      await onInbound(env, ctx, store, chat.id, { id: msgId, type: msg.type, body });
+    } catch (e) {
+      console.error('bot', e);
+      await notify(env, store.id, { kind: 'error', chatId: chat.id, title: 'El bot tuvo un error', body: e.message }).catch(() => {});
+    }
+  })();
+  if (ctx?.waitUntil) ctx.waitUntil(work);
+  else await work;
 }
 
 async function handleReaction(env, store, msg) {
@@ -177,8 +185,13 @@ async function handleStatus(env, store, st) {
   const pricing = st.pricing ? JSON.stringify({ billable: st.pricing.billable, category: st.pricing.category, type: st.pricing.type }) : null;
   let res;
   if (status === 'failed') {
-    res = await env.DB.prepare(`UPDATE messages SET status = 'failed', error = ?, updated_at = ? WHERE wamid = ? AND store_id = ?`)
+    res = await env.DB.prepare(`UPDATE messages SET status = 'failed', error = ?, updated_at = ? WHERE wamid = ? AND store_id = ? AND (status IS NULL OR status != 'failed')`)
       .bind(friendlyMetaError(err), now(), st.id, store.id).run();
+    if (res.meta.changes) {
+      const m = await env.DB.prepare('SELECT chat_id, sender, bot_node FROM messages WHERE wamid = ?').bind(st.id).first();
+      const who = m?.sender === 'ia' ? 'IA Suyon' : m?.sender === 'bot' ? `bot (${m.bot_node})` : 'asesora';
+      await notify(env, store.id, { kind: 'error', chatId: m?.chat_id, title: `WhatsApp no entregó un mensaje de ${who}`, body: friendlyMetaError(err) });
+    }
   } else if (status in STATUS_RANK) {
     res = await env.DB.prepare(
       `UPDATE messages SET status = ?, updated_at = ?,

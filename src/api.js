@@ -2,11 +2,12 @@
 import { Hono } from 'hono';
 import {
   now, fail, randomToken, sha256hex, hashPassword, safeEqual, cleanEmail, validEmail, clip,
-  ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError,
+  ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError, windowOpen,
 } from './util.js';
 import { createSession, destroySession, currentUser, requireUser, checkPassword, loadAccess, storeFor, companyFor, chatFor } from './auth.js';
 import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES } from './whatsapp.js';
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
+import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
 
 const api = new Hono();
 const H24 = 24 * 3600e3;
@@ -630,7 +631,8 @@ api.get('/sync', async (c) => {
     ).bind(...chatStores.map((s) => s.id)).all();
     unread = Object.fromEntries(results.map((r) => [r.store_id, r.n]));
   }
-  return c.json({ t: now(), stores: stores.map((s) => ({ id: s.id, rev: s.rev, unread: unread[s.id] || 0, status: s.status })) });
+  const avisos = await pendingCounts(c.env.DB, chatStores.map((s) => s.id));
+  return c.json({ t: now(), stores: stores.map((s) => ({ id: s.id, rev: s.rev, unread: unread[s.id] || 0, avisos: avisos[s.id] || 0, status: s.status })) });
 });
 
 async function attachLabels(db, chats) {
@@ -643,7 +645,7 @@ async function attachLabels(db, chats) {
 }
 
 const CHAT_COLS = `id, store_id, wa_id, name, profile_name, handler, unread, last_msg_at, last_preview, last_dir, last_inbound_at,
-  ad_id, ad_headline, ad_source_url, referral_at, first_reply_at, notes, created_at, updated_at`;
+  ad_id, ad_headline, ad_source_url, referral_at, first_reply_at, notes, created_at, updated_at, bot_flow_id, bot_node, bot_wait, bot_paused, bot_vars`;
 
 api.get('/stores/:id/chats', async (c) => {
   const st = await storeFor(c, c.req.param('id'));
@@ -789,17 +791,6 @@ api.get('/chats/:id/messages', async (c) => {
   return c.json({ t, messages: rows.map(shapeMsg) });
 });
 
-// Se puede responder libremente: 24 h desde su último mensaje, o 72 h si llegó por anuncio
-// y se le respondió dentro de las primeras 24 h (ventana gratis de Meta)
-function windowOpen(chat) {
-  const t = now();
-  if (chat.last_inbound_at && t - chat.last_inbound_at < H24) return true;
-  if (chat.referral_at && t < chat.referral_at + 3 * H24) {
-    return chat.first_reply_at ? chat.first_reply_at < chat.referral_at + H24 : t < chat.referral_at + H24;
-  }
-  return false;
-}
-
 async function afterSend(env, store, chat, type, bodyText) {
   const t = now();
   await env.DB.prepare(
@@ -842,6 +833,7 @@ api.post('/chats/:id/messages', async (c) => {
   if (!text) fail(400, 'Escribe un mensaje.');
   if (text.length > 4096) fail(400, 'El mensaje es muy largo (máximo 4,096 letras).');
   checkCanSend(store, chat);
+  await pauseForHuman(c.env, chat);
   const reply = b.reply_to ? await c.env.DB.prepare('SELECT wamid FROM messages WHERE id = ? AND chat_id = ?').bind(Number(b.reply_to), chat.id).first() : null;
   const t = now();
   const r = await c.env.DB.prepare(
@@ -868,6 +860,7 @@ api.post('/chats/:id/media', async (c) => {
   const { chat, store } = await chatFor(c, c.req.param('id'));
   const u = await requireUser(c);
   checkCanSend(store, chat);
+  await pauseForHuman(c.env, chat);
   const form = await c.req.formData();
   const file = form.get('file');
   if (!file || typeof file === 'string') fail(400, 'No llegó el archivo.');
@@ -938,5 +931,7 @@ api.get('/media/:id', async (c) => {
   headers.set('Content-Length', String(obj.size));
   return new Response(obj.body, { headers });
 });
+
+api.route('/', botApi);
 
 export default api;

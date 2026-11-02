@@ -5,6 +5,7 @@ import { HttpError, safeEqual, now } from './util.js';
 import api from './api.js';
 import { verifySignature, processWebhook, logWebhook } from './webhook.js';
 import { privacyPage, deletionPage, termsPage } from './pages.js';
+import { runJobs } from './bot.js';
 
 const app = new Hono();
 
@@ -26,6 +27,15 @@ app.use('/api/*', async (c, next) => {
 });
 
 app.route('/api', api);
+
+// Solo para pruebas locales: corre el cron del bot al instante
+app.post('/__test/jobs', async (c) => {
+  if (!c.env.TEST_MODE) return c.text('No existe', 404);
+  await ensureSchema(c.env.DB);
+  if (c.req.query('shift')) await c.env.DB.prepare('UPDATE bot_jobs SET run_at = run_at - ? WHERE done_at IS NULL').bind(Number(c.req.query('shift'))).run();
+  await runJobs(c.env);
+  return c.json({ ok: true });
+});
 
 /* ---------- Webhook de Meta ---------- */
 
@@ -77,15 +87,17 @@ app.notFound((c) => (c.req.path.startsWith('/api/') ? c.json({ error: 'No existe
 
 export default {
   fetch: app.fetch,
-  // Limpieza diaria
+  // Cada minuto: seguimientos y esperas del bot. Una vez al día: limpieza.
   async scheduled(event, env) {
     await ensureSchema(env.DB);
+    if (event.cron !== '0 8 * * *') return runJobs(env);
     const t = now();
     await env.DB.batch([
       env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(t),
       env.DB.prepare('DELETE FROM invites WHERE expires_at < ? AND used_at IS NULL').bind(t - 30 * 864e5),
       env.DB.prepare('DELETE FROM password_resets WHERE expires_at < ?').bind(t - 864e5),
       env.DB.prepare('DELETE FROM webhook_log WHERE received_at < ?').bind(t - 14 * 864e5),
+      env.DB.prepare('DELETE FROM notifications WHERE created_at < ? AND read_at IS NOT NULL').bind(t - 60 * 864e5),
     ]);
   },
 };

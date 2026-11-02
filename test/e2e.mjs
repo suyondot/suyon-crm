@@ -17,6 +17,7 @@ const WABA_ID = '999888777666';
 
 /* ---------- Meta falso ---------- */
 const calls = [];
+const iaCalls = [];
 let seq = 0;
 const IMG = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64');
 const meta = http.createServer(async (req, res) => {
@@ -30,6 +31,18 @@ const meta = http.createServer(async (req, res) => {
   let body = null;
   if ((req.headers['content-type'] || '').includes('json')) body = JSON.parse(raw.toString());
   calls.push({ method: req.method, path: p, body, ctype: req.headers['content-type'], size: raw.length });
+  if (p === 'v1/messages') {
+    // IA falsa (Anthropic): responde según lo que escribió la clienta
+    iaCalls.push(body);
+    if (req.headers['x-api-key'] !== 'ia-test-key') return json(401, { error: { message: 'bad key' } });
+    const last = body.messages[body.messages.length - 1];
+    const txt = typeof last.content === 'string' ? last.content : last.content.map((x) => x.text || '').join(' ');
+    if (/falla/i.test(txt)) return json(500, { error: { message: 'overloaded' } });
+    const out = /yape/i.test(txt)
+      ? { mensajes: [{ texto: '¡Perfecto! 📦 Sede: Av. Brasil. Mi compañera valida tu pago 💕', archivo: null }], caso: 'yape_sede', datos: { sede_shalom: 'Av. Brasil' } }
+      : { mensajes: [{ texto: '¡Lindo! 😍 1 pantalón Negro talla S: S/89', archivo: null }, { texto: '¿A qué ciudad o distrito te lo enviamos? 😊', archivo: 'tabla-tallas' }], caso: null, datos: { colores: 'Negro', cantidad: '1' } };
+    return json(200, { content: [{ type: 'text', text: JSON.stringify(out) }], usage: { input_tokens: 5000, output_tokens: 120 } });
+  }
   if (auth !== 'Bearer test-token') return json(401, { error: { code: 190, message: 'Invalid OAuth access token' } });
   if (p.startsWith('file/')) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(IMG); }
   if (req.method === 'GET' && p === PHONE_ID) return json(200, { display_phone_number: '+51 924 000 111', verified_name: 'Porte Perú', quality_rating: 'GREEN', id: PHONE_ID });
@@ -84,7 +97,11 @@ async function step(name, fn) {
 /* ---------- Arranque ---------- */
 const persist = fs.mkdtempSync(path.join(os.tmpdir(), 'scrm-'));
 await new Promise((r) => meta.listen(META_PORT, '127.0.0.1', r));
-const wd = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--persist-to', persist, '--var', `GRAPH_API:http://127.0.0.1:${META_PORT}`, '--show-interactive-dev-session=false'], { stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
+const VARS = {
+  GRAPH_API: `http://127.0.0.1:${META_PORT}`, ANTHROPIC_API: `http://127.0.0.1:${META_PORT}`, TEST_MODE: '1',
+  WA_TOKEN: 'test-token', WA_VERIFY_TOKEN: 'verifica123', META_APP_SECRET: SECRET, SETUP_CODE: 'inicio-prueba', ANTHROPIC_API_KEY: 'ia-test-key',
+};
+const wd = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--persist-to', persist, ...Object.entries(VARS).flatMap(([k, v]) => ['--var', `${k}:${v}`]), '--show-interactive-dev-session=false'], { stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
 let log = '';
 wd.stdout.on('data', (d) => (log += d));
 wd.stderr.on('data', (d) => (log += d));
@@ -475,6 +492,156 @@ try {
     const r = await call('DELETE', `/api/stores/${store2.id}`, { confirm: 'leggings cargo' });
     assert.equal(r.status, 200);
     assert.ok(!r.stores.some((s) => s.id === store2.id));
+  });
+
+  console.log('Bot Suyon AI');
+  const until = async (fn, ms = 12000) => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await fn();
+      if (v) return v;
+      if (Date.now() - t0 > ms) throw new Error('Se acabó el tiempo esperando al bot');
+      await wait(300);
+    }
+  };
+  const msgsOf = async (id) => (await call('GET', `/api/chats/${id}/messages`)).messages;
+  const chatOf = async (wa) => (await call('GET', `/api/stores/${store.id}/chats?limit=200`)).chats.find((c) => c.wa_id === wa);
+  const inbound = (wa, id, text, extra = {}) => hook(md({ contacts: [{ profile: { name: 'Prueba ' + wa.slice(-3) }, wa_id: wa }], messages: [{ from: wa, id, timestamp: ts(), type: 'text', text: { body: text }, ...extra }] }));
+  let flowId, botChat;
+  await step('reconocer talla sin IA (frases de Botcake y números de jean)', async () => {
+    const { recognize, fitWindow, parseReply } = await import('../src/bot.js');
+    const { TALLAS } = await import('../src/bot-template.js');
+    const cases = { 'M': 'M', 'talla m': 'M', 'Soy M': 'M', '32': 'M', 'mediano': 'M', 'uso talla 30 porfa': 'S', 'small': 'S', '26': 'XS', 'XL': 'XL', '42': 'XL', 'xxl': 'XL', 'largue': 'L', '28 o 31': 'M', 'Hola, quiero info': null, 'sí, me gusta': null, 'precio?': null };
+    for (const [t, v] of Object.entries(cases)) assert.equal(recognize(t, TALLAS), v, t);
+    const t = Date.UTC(2026, 10, 3, 4, 0); // 11 p. m. en Lima
+    assert.equal(new Date(fitWindow(t, 8, 22) - 5 * 3600e3).getUTCHours(), 8);
+    assert.equal(parseReply('hola').mensajes[0].texto, 'hola');
+  });
+  await step('crea el flujo «Ventas pantalón» desde la plantilla', async () => {
+    await call('POST', '/api/login', { email: 'jordan@test.pe', password: 'clave-segura-1' });
+    const r = await call('POST', `/api/stores/${store.id}/bot/flows`, { template: 'pantalon' });
+    assert.equal(r.status, 200, JSON.stringify(r));
+    flowId = r.id;
+    const f = await call('GET', `/api/bot/flows/${flowId}`);
+    assert.equal(f.flow.active, 0);
+    assert.ok(f.flow.graph.nodes.some((n) => n.type === 'ia' && n.cases.length === 4));
+    const b = await call('GET', `/api/stores/${store.id}/bot`);
+    assert.equal(b.settings.bot_on, 0);
+    assert.match(b.settings.ia_prompt, /\{yape\}/);
+    assert.ok(!/928 576/.test(b.settings.ia_prompt), 'los datos de pago no vienen en el código');
+    assert.equal(b.template_assets.length, 14);
+  });
+  await step('sube archivos del bot', async () => {
+    for (const key of ['precios', 'colores-S']) {
+      const fd = new FormData();
+      fd.append('key', key);
+      fd.append('file', new Blob([IMG], { type: 'image/jpeg' }), key + '.jpg');
+      const r = await call('POST', `/api/stores/${store.id}/bot/assets`, undefined, { form: fd });
+      assert.equal(r.status, 200, JSON.stringify(r));
+    }
+    const fd = new FormData();
+    fd.append('key', 'mal clave');
+    fd.append('file', new Blob([IMG], { type: 'image/jpeg' }), 'x.jpg');
+    assert.equal((await call('POST', `/api/stores/${store.id}/bot/assets`, undefined, { form: fd })).status, 400);
+  });
+  await step('enciende el bot solo para el número de prueba', async () => {
+    const r = await call('PATCH', `/api/stores/${store.id}/bot/settings`, { bot_on: true, audience: 'equipo', test_numbers: '911111111', ia_delay_s: 0, pay_yape: '999 111 222', pay_titular: 'Prueba Titular' });
+    assert.equal(r.settings.bot_on, 1);
+    assert.equal((await call('PUT', `/api/bot/flows/${flowId}`, { active: true })).flow.active, 1);
+  });
+  await step('número que no es de prueba: el bot no responde', async () => {
+    await inbound('51955500011', 'wamid.B0', 'Hola', { referral: { source_id: '120', source_type: 'ad', ctwa_clid: 'x' } });
+    await wait(1500);
+    const c = await chatOf('51955500011');
+    assert.equal((await msgsOf(c.id)).filter((m) => m.direction === 'out').length, 0);
+  });
+  await step('clienta nueva por anuncio: foto + precios + pregunta de talla, sin IA', async () => {
+    await inbound('51911111111', 'wamid.B1', 'Deseo mis pantalones formales', { referral: { source_id: '120249329319630533', source_type: 'ad', ctwa_clid: 'abc' } });
+    botChat = await until(async () => { const c = await chatOf('51911111111'); return c?.bot_node === 'talla' && c.bot_wait === 1 ? c : null; });
+    const out = (await msgsOf(botChat.id)).filter((m) => m.direction === 'out');
+    assert.deepEqual(out.map((m) => m.type), ['image', 'text', 'text']);
+    assert.ok(out.every((m) => m.sender === 'bot' && m.status === 'sent'));
+    assert.match(out[2].body, /Qué talla usas/);
+    const l = await call('GET', `/api/stores/${store.id}/labels`);
+    assert.ok(l.labels.some((x) => x.name === 'pantalón prod'));
+  });
+  await step('responde «uso talla 30»: etiqueta Talla S y foto de colores S', async () => {
+    await inbound('51911111111', 'wamid.B2', 'uso talla 30 porfa');
+    const c = await until(async () => { const c = await chatOf('51911111111'); return c?.bot_node === 'colores' ? c : null; });
+    assert.equal(JSON.parse(c.bot_vars).talla, 'S');
+    const labels = (await call('GET', `/api/stores/${store.id}/labels`)).labels;
+    assert.ok(c.labels.includes(labels.find((x) => x.name === 'Talla S').id));
+    const out = (await msgsOf(c.id)).filter((m) => m.direction === 'out');
+    assert.match(out[out.length - 1].body, /tu talla S/);
+  });
+  await step('elige color: entra la IA con el prompt copiado y los datos de pago', async () => {
+    await inbound('51911111111', 'wamid.B3', 'me gusta el negro');
+    const c = await until(async () => { const c = await chatOf('51911111111'); return c?.bot_node === 'bucle' && c.bot_wait === 1 ? c : null; });
+    const sys = iaCalls[iaCalls.length - 1].system;
+    assert.match(sys, /Eres la asesora de ventas de Porte Perú/);
+    assert.match(sys, /999 111 222/);
+    assert.match(sys, /ETIQUETAS DE ESTA CLIENTA: .*Talla S/);
+    const ia = (await msgsOf(c.id)).filter((m) => m.sender === 'ia');
+    assert.equal(ia.length, 2);
+    assert.equal(JSON.parse(c.bot_vars).colores, 'Negro');
+    const av = await call('GET', `/api/stores/${store.id}/avisos`);
+    assert.ok(av.events.some((e) => /tabla-tallas/.test(e.title)), 'avisa que falta un archivo');
+  });
+  await step('caso especial Yape + sede: pasa a asesora con COMPRÓ y aviso', async () => {
+    await inbound('51911111111', 'wamid.B4', 'ya te yapee, sede Shalom Av Brasil');
+    const c = await until(async () => { const c = await chatOf('51911111111'); return c?.bot_paused === 1 ? c : null; });
+    assert.equal(c.handler, 'asesora');
+    const names = (await call('GET', `/api/stores/${store.id}/labels`)).labels.filter((l) => c.labels.includes(l.id)).map((l) => l.name);
+    assert.ok(names.includes('ASESOR') && names.includes('COMPRÓ'), names.join(','));
+    const av = await call('GET', `/api/stores/${store.id}/avisos`);
+    assert.ok(av.pending.asesora.some((x) => x.id === c.id));
+    assert.ok(av.events.some((e) => e.kind === 'asesora' && e.chat_id === c.id));
+    const sync = await call('GET', '/api/sync');
+    assert.ok(sync.stores.find((s) => s.id === store.id).avisos > 0);
+  });
+  await step('números por bloque', async () => {
+    const f = await call('GET', `/api/bot/flows/${flowId}`);
+    assert.equal(f.stats.precios.sent, 1);
+    assert.equal(f.stats.talla.replied, 1);
+    assert.ok(f.stats.reconocer.entered >= 1);
+  });
+  await step('seguimiento: si no responde sale el mensaje de 15 min; falta el audio y avisa', async () => {
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { test_numbers: '911111111, 911111112' });
+    await inbound('51911111112', 'wamid.C1', 'hola', { referral: { source_id: '1', source_type: 'ad', ctwa_clid: 'y' } });
+    const c = await until(async () => { const c = await chatOf('51911111112'); return c?.bot_node === 'talla' ? c : null; });
+    await call('POST', '/__test/jobs?shift=' + 41 * 60e3);
+    const seq = (await msgsOf(c.id)).filter((m) => m.direction === 'out' && /Si no la sabes/.test(m.body || ''));
+    assert.equal(seq.length, 1);
+    const av = await call('GET', `/api/stores/${store.id}/avisos`);
+    assert.ok(av.events.some((e) => /audio-talla/.test(e.title)));
+  });
+  await step('si la asesora escribe a mano, el bot se pausa; se puede reanudar', async () => {
+    const c = await chatOf('51911111112');
+    await call('POST', `/api/chats/${c.id}/messages`, { text: 'Hola, soy la asesora' });
+    let x = await chatOf('51911111112');
+    assert.equal(x.bot_paused, 1);
+    await call('POST', `/api/chats/${c.id}/bot`, { action: 'resume' });
+    x = await chatOf('51911111112');
+    assert.equal(x.bot_paused, 0);
+  });
+  await step('si la IA falla: «Estamos validando…» y pasa a asesora', async () => {
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { test_numbers: '911111111, 911111112, 911111113' });
+    await inbound('51911111113', 'wamid.D1', 'hola', { referral: { source_id: '1', source_type: 'ad', ctwa_clid: 'z' } });
+    await until(async () => (await chatOf('51911111113'))?.bot_node === 'talla');
+    await inbound('51911111113', 'wamid.D2', 'no sé, falla');
+    const c = await until(async () => { const c = await chatOf('51911111113'); return c?.bot_paused === 1 ? c : null; });
+    assert.ok((await msgsOf(c.id)).some((m) => /Estamos validando/.test(m.body || '')));
+    const av = await call('GET', `/api/stores/${store.id}/avisos`);
+    assert.ok(av.events.some((e) => e.kind === 'ia'));
+    await call('POST', `/api/stores/${store.id}/avisos/read`, {});
+    assert.ok((await call('GET', `/api/stores/${store.id}/avisos`)).events.every((e) => e.read_at));
+  });
+  await step('guardar el lienzo valida los bloques', async () => {
+    const f = await call('GET', `/api/bot/flows/${flowId}`);
+    const g = f.flow.graph;
+    g.nodes.find((n) => n.id === 'precios').x = 500;
+    assert.equal((await call('PUT', `/api/bot/flows/${flowId}`, { graph: g })).flow.graph.nodes.find((n) => n.id === 'precios').x, 500);
+    assert.equal((await call('PUT', `/api/bot/flows/${flowId}`, { graph: { nodes: [{ id: 'a', type: 'raro' }] } })).status, 400);
   });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos']) assert.equal((await fetch(BASE + p)).status, 200);

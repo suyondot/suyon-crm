@@ -163,6 +163,112 @@ export const MIGRATIONS = [
       )`,
     ],
   },
+  {
+    id: 2,
+    name: 'bot_suyon_ai',
+    sql: [
+      // Estado del bot en cada chat
+      `ALTER TABLE chats ADD COLUMN bot_flow_id INTEGER`,
+      `ALTER TABLE chats ADD COLUMN bot_node TEXT`,
+      // 0 = no espera · 1 = espera respuesta · 2 = la IA está por responder · 3 = espera un tiempo
+      `ALTER TABLE chats ADD COLUMN bot_wait INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE chats ADD COLUMN bot_vars TEXT`,
+      `ALTER TABLE chats ADD COLUMN bot_paused INTEGER NOT NULL DEFAULT 0`,
+      // De qué bloque salió cada mensaje del bot (para los números por bloque)
+      `ALTER TABLE messages ADD COLUMN bot_flow_id INTEGER`,
+      `ALTER TABLE messages ADD COLUMN bot_node TEXT`,
+      `ALTER TABLE messages ADD COLUMN replied INTEGER`,
+      `CREATE INDEX messages_bot ON messages (bot_flow_id, bot_node) WHERE bot_flow_id IS NOT NULL`,
+      `CREATE TABLE bot_flows (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 0,
+        graph TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+      // Ajustes del bot y de la IA por tienda (aquí van los datos de pago, nunca en el código)
+      `CREATE TABLE bot_settings (
+        store_id INTEGER PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
+        bot_on INTEGER NOT NULL DEFAULT 0,
+        audience TEXT NOT NULL DEFAULT 'equipo',
+        test_numbers TEXT,
+        ia_model TEXT,
+        ia_secret TEXT,
+        ia_daily_cap REAL,
+        ia_prompt TEXT,
+        ia_knowledge TEXT,
+        ia_delay_s INTEGER,
+        ia_history INTEGER,
+        ia_follow_min INTEGER,
+        ia_follow_text TEXT,
+        pay_yape TEXT,
+        pay_titular TEXT,
+        pay_bcp TEXT,
+        pay_cci TEXT,
+        updated_at INTEGER
+      )`,
+      `CREATE TABLE bot_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        name TEXT,
+        mime TEXT NOT NULL,
+        size INTEGER,
+        r2_key TEXT NOT NULL,
+        wa_media_id TEXT,
+        wa_media_at INTEGER,
+        created_at INTEGER NOT NULL,
+        UNIQUE (store_id, key)
+      )`,
+      // Seguimientos y esperas programadas (los corre el cron de cada minuto)
+      `CREATE TABLE bot_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store_id INTEGER NOT NULL,
+        chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+        flow_id INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        seq_id TEXT,
+        step INTEGER,
+        node_id TEXT,
+        cancel_on TEXT,
+        run_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        done_at INTEGER,
+        canceled_at INTEGER
+      )`,
+      `CREATE INDEX bot_jobs_due ON bot_jobs (run_at) WHERE done_at IS NULL AND canceled_at IS NULL`,
+      `CREATE INDEX bot_jobs_chat ON bot_jobs (chat_id)`,
+      `CREATE TABLE bot_counts (
+        flow_id INTEGER NOT NULL,
+        node_id TEXT NOT NULL,
+        entered INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (flow_id, node_id)
+      )`,
+      // kind: error | ia | asesora | archivo | aviso
+      `CREATE TABLE notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        chat_id INTEGER,
+        title TEXT NOT NULL,
+        body TEXT,
+        created_at INTEGER NOT NULL,
+        read_at INTEGER
+      )`,
+      `CREATE INDEX notifications_store ON notifications (store_id, id DESC)`,
+      `CREATE TABLE ia_usage (
+        store_id INTEGER NOT NULL,
+        day TEXT NOT NULL,
+        calls INTEGER NOT NULL DEFAULT 0,
+        in_tokens INTEGER NOT NULL DEFAULT 0,
+        out_tokens INTEGER NOT NULL DEFAULT 0,
+        cost REAL NOT NULL DEFAULT 0,
+        PRIMARY KEY (store_id, day)
+      )`,
+    ],
+  },
 ];
 
 let ready = null;

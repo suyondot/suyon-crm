@@ -112,3 +112,15 @@ export const DEFAULT_LABELS = [
 ];
 
 export const LABEL_COLORS = ['--t-grey', '--t-yellow', '--t-orange', '--t-green', '--t-blue', '--t-wine', '--bad', '--t-purple', '--t-teal'];
+
+// Se puede responder libremente: 24 h desde su último mensaje, o 72 h si llegó por anuncio
+// y se le respondió dentro de las primeras 24 h (ventana gratis de Meta)
+const H24 = 24 * 3600e3;
+export function windowOpen(chat) {
+  const t = now();
+  if (chat.last_inbound_at && t - chat.last_inbound_at < H24) return true;
+  if (chat.referral_at && t < chat.referral_at + 3 * H24) {
+    return chat.first_reply_at ? chat.first_reply_at < chat.referral_at + H24 : t < chat.referral_at + H24;
+  }
+  return false;
+}
