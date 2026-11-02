@@ -342,6 +342,7 @@ tr:last-child td{border-bottom:0}
 
 /* ===== Agregados de la app real ===== */
 body{margin:0}
+.empty{align-content:center}
 .boot{height:100%;display:grid;place-items:center;padding:16px;overflow:auto}
 .auth{width:min(420px,100%);background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px;display:grid;gap:14px;box-shadow:var(--shadow)}
 .auth .brand-mark{width:40px;height:40px;font-size:20px;border-radius:10px}

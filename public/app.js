@@ -251,7 +251,7 @@ function showSetup(st) {
     <p>Crea la cuenta del dueño. Esto se hace una sola vez.</p>
     ${st.code_set ? '' : '<div class="err">Falta poner la clave de inicio (SETUP_CODE) en Cloudflare. Sigue los pasos de la guía y recarga esta página.</div>'}
     <form id="f" class="grid" style="gap:12px">
-      <div class="field"><label for="code">Clave de inicio</label><input id="code" name="code" required autocomplete="off"><span class="note">La que pusiste como SETUP_CODE en Cloudflare.</span></div>
+      <div class="field"><label for="code">Clave de inicio</label><input id="code" name="code" required autocomplete="off"><span class="note">La clave que inventaste y pusiste en Cloudflare (el valor de SETUP_CODE, no el nombre).</span></div>
       <div class="field"><label for="company">Nombre de tu empresa</label><input id="company" name="company" required value="Porte Perú"></div>
       <div class="field"><label for="name">Tu nombre</label><input id="name" name="name" required autocomplete="name"></div>
       <div class="field"><label for="email">Tu correo</label><input id="email" name="email" type="email" required autocomplete="email"></div>
