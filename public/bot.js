@@ -18,6 +18,18 @@ const T = {
   handoff: { label: 'Pasar a asesora', cls: 'k-hand', desc: 'Pausa el bot, etiqueta y avisa' },
   goto: { label: 'Ir a otro paso', cls: 'k-free', desc: 'Bucles y atajos' },
 };
+const SV = (d) => `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const IC = {
+  start: SV('<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'),
+  send: SV('<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>'),
+  recognize: SV('<path d="M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3"/><path d="M8 12h8"/>'),
+  condition: SV('<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>'),
+  action: SV('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>'),
+  delay: SV('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/>'),
+  ia: SV('<path d="M12 3l1.8 4.6L18 9.4l-4.2 1.8L12 16l-1.8-4.8L6 9.4l4.2-1.8z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>'),
+  handoff: SV('<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M17 11l2 2 4-4"/>'),
+  goto: SV('<path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>'),
+};
 const PALETTE = [
   ['Mensajes', ['send']],
   ['Decidir · gratis, sin IA', ['recognize', 'condition', 'goto']],
@@ -183,7 +195,7 @@ function drawFlow() {
   }
   box.innerHTML = `${flowBar()}
   <div class="bwrap">
-    <aside class="bpal" aria-label="Agregar bloque">${PALETTE.map(([g, ts]) => `<h4>${g}</h4>${ts.map((t) => `<button data-badd="${t}" title="${T[t].desc}"><i class="kdot ${T[t].cls}"></i><b>${T[t].label}</b></button>`).join('')}`).join('')}
+    <aside class="bpal" aria-label="Agregar bloque">${PALETTE.map(([g, ts]) => `<h4>${g}</h4>${ts.map((t) => `<button data-badd="${t}" title="${T[t].desc}" class="${T[t].cls}"><span class="kic">${IC[t]}</span><b>${T[t].label}</b></button>`).join('')}`).join('')}
       <span class="note">Toca para agregar · arrastra para ordenar · elige a dónde sigue cada bloque en el panel</span></aside>
     <section class="bcanvas-wrap" aria-label="Lienzo"><div class="bsizer" id="bsizer"><div class="bcanvas" id="bcanvas"></div></div></section>
     <aside class="bpanel" id="bpanel" aria-label="Bloque elegido"></aside>
@@ -236,8 +248,9 @@ function statLine(n) {
 
 function cardHTML(n, i) {
   const t = T[n.type] || {};
-  return `<div class="bnode ${t.cls} ${n.wait ? 'waits' : ''}" data-node="${e(n.id)}" style="left:${n.x}px;top:${n.y}px;width:${NODE_W}px" tabindex="0" role="button" aria-pressed="${B.sel === n.id}">
-    <small>${n.type === 'start' ? '' : i + ' · '}${e(typeLabel(n))}</small><b>${e(n.title || n.id)}</b><span class="bsum">${e(summary(n))}</span>${statLine(n)}</div>`;
+  const live = B.stats[n.id]?.sent || B.stats[n.id]?.entered;
+  return `<div class="bnode ${t.cls} ${n.wait ? 'waits' : ''}" data-node="${e(n.id)}" style="left:${n.x}px;top:${n.y}px;width:${NODE_W}px;--d:${Math.min(i, 14) * 35}ms" tabindex="0" role="button" aria-pressed="${B.sel === n.id}">
+    <small><span class="kic">${IC[n.type] || ''}</span>${n.type === 'start' ? '' : '<span class="kn">' + i + '</span>'}${e(typeLabel(n))}${live ? '<i class="livedot" title="Ya pasaron clientas"></i>' : ''}</small><b>${e(n.title || n.id)}</b><span class="bsum">${e(summary(n))}</span>${statLine(n)}</div>`;
 }
 
 function canvasSize() {
@@ -396,7 +409,7 @@ function select(id) {
 function refreshCard(n) {
   const el = C.$(`#bcanvas .bnode[data-node="${CSS.escape(n.id)}"]`);
   if (!el) return drawCanvas();
-  const idx = n.type === 'start' ? 0 : el.querySelector('small').textContent.split(' · ')[0];
+  const idx = n.type === 'start' ? 0 : el.querySelector('.kn')?.textContent || '';
   const tmp = document.createElement('div');
   tmp.innerHTML = cardHTML(n, idx);
   el.replaceWith(tmp.firstElementChild);
@@ -521,7 +534,7 @@ function drawPanel() {
       f = nextSel('target', n.target, n.id, 'Ir a');
       break;
   }
-  p.innerHTML = `${assetList()}<div class="bphead"><span class="kpill ${T[n.type].cls}">${e(typeLabel(n))}</span><span class="grow"></span>${n.type !== 'start' ? `<button class="iconbtn" data-bact="dup">Duplicar</button><button class="iconbtn" data-bact="del" aria-label="Borrar bloque">${'Borrar'}</button>` : ''}</div>
+  p.innerHTML = `${assetList()}<div class="bphead"><span class="kpill ${T[n.type].cls}"><span class="kic">${IC[n.type] || ''}</span>${e(typeLabel(n))}</span><span class="grow"></span>${n.type !== 'start' ? `<button class="iconbtn" data-bact="dup">Duplicar</button><button class="iconbtn" data-bact="del" aria-label="Borrar bloque">${'Borrar'}</button>` : ''}</div>
     <div class="field"><label>Título</label><input data-k="title" value="${e(n.title || '')}" maxlength="80"></div>
     ${statsBox(n.id)}
     <div class="bform">${f}</div>`;

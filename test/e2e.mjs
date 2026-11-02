@@ -643,6 +643,25 @@ try {
     assert.equal((await call('PUT', `/api/bot/flows/${flowId}`, { graph: g })).flow.graph.nodes.find((n) => n.id === 'precios').x, 500);
     assert.equal((await call('PUT', `/api/bot/flows/${flowId}`, { graph: { nodes: [{ id: 'a', type: 'raro' }] } })).status, 400);
   });
+  await step('franja de llamadas: pendientes por día y resultado', async () => {
+    const labels = (await call('GET', `/api/stores/${store.id}/labels`)).labels;
+    const lima = labels.find((l) => l.name === 'LIMA PENDIENTE');
+    const c = await chatOf('51911111112');
+    await call('PUT', `/api/chats/${c.id}/labels/${lima.id}`);
+    let r = await call('GET', `/api/stores/${store.id}/llamadas`);
+    const row = r.calls.find((x) => x.id === c.id && x.label === 'LIMA PENDIENTE');
+    assert.ok(row && !row.last_result && row.tries === 0);
+    await call('POST', `/api/chats/${c.id}/llamada`, { result: 'no_contesto', label: 'LIMA PENDIENTE' });
+    r = await call('GET', `/api/stores/${store.id}/llamadas`);
+    assert.equal(r.calls.find((x) => x.id === c.id).last_result, 'no_contesto');
+    assert.equal(r.calls.find((x) => x.id === c.id).tries, 1);
+    await call('POST', `/api/chats/${c.id}/llamada`, { result: 'cerro', label: 'LIMA PENDIENTE' });
+    r = await call('GET', `/api/stores/${store.id}/llamadas`);
+    assert.ok(!r.calls.some((x) => x.id === c.id));
+    const after = await chatOf('51911111112');
+    assert.ok(after.labels.includes(labels.find((l) => l.name === '✅ LIMA').id));
+    assert.equal((await call('POST', `/api/chats/${c.id}/llamada`, { result: 'raro' })).status, 400);
+  });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos']) assert.equal((await fetch(BASE + p)).status, 200);
     const app = await fetch(BASE + '/invitacion/abc');

@@ -269,6 +269,24 @@ export const MIGRATIONS = [
       )`,
     ],
   },
+  {
+    id: 3,
+    name: 'llamadas',
+    sql: [
+      // Resultado de cada llamada a clientas con YAPE PENDIENTE o LIMA PENDIENTE
+      // result: cerro | lo_piensa | no_contesto
+      `CREATE TABLE calls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+        chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+        label TEXT,
+        result TEXT NOT NULL,
+        user_id INTEGER,
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX calls_chat ON calls (chat_id, id)`,
+    ],
+  },
 ];
 
 let ready = null;

@@ -21,6 +21,7 @@ const ICON = {
   filter: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M4 5h16l-6 8v5l-4 2v-7z"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg>',
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 21s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>',
+  phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>',
   bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="18" height="18"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
 };
@@ -175,6 +176,8 @@ const S = {
   revs: {},
   unread: {},
   avisos: {},
+  calls: [],
+  callsOpen: false,
   lastUnreadTotal: null,
   health: null,
   team: null,
@@ -202,7 +205,7 @@ const pref = {
 
 function tagHTML(l) {
   if (!l) return '';
-  return `<span class="tag${l.auto ? ' sys' : ''}"><i style="background:var(${esc(l.color)})"></i>${esc(l.name)}</span>`;
+  return `<span class="tag${l.auto ? ' sys' : ''}" style="--tc:var(${esc(l.color)})"><i></i>${esc(l.name)}</span>`;
 }
 
 /* =================== Arranque y pantallas de acceso =================== */
@@ -388,9 +391,12 @@ function enterStore() {
   if (S.storeId) pref.set('store', S.storeId);
   if (S.view === 'chats' && store() && !canChats()) S.view = 'pedidos';
   render();
+  S.calls = [];
+  S.callsOpen = false;
   if (S.storeId && canChats()) {
     loadLabels();
     loadChats();
+    loadCalls();
   }
 }
 
@@ -544,7 +550,7 @@ function renderListHead() {
   const list = $('#list');
   if (!list) return;
   const all = [...S.chats.values()];
-  list.innerHTML = `${storeBanner()}<div class="list-head">
+  list.innerHTML = `${storeBanner()}<div id="callbar"></div><div class="list-head">
       <div class="searchrow">
         <div class="search"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="Buscar nombre o número" value="${esc(S.q)}" aria-label="Buscar chats" autocomplete="off"></div>
         <button class="filterbtn ${S.tagf.length ? 'on' : ''}" data-act="tagmenu" aria-expanded="${S.tagMenu}">${ICON.filter}Etiqueta${S.tagf.length ? ` · ${S.tagf.length}` : ''}</button>
@@ -556,6 +562,7 @@ function renderListHead() {
       </div>
     </div>
     <div class="items" id="items"></div>`;
+  renderCallbar();
   const q = $('#q');
   let deb;
   q.addEventListener('input', () => {
@@ -820,7 +827,7 @@ function msgRow(m, list) {
   const meta = `<span class="meta">${hhmm(m.created_at)} ${tick(m)}</span>`;
   const bubble = `<div class="bub ${media ? 'mediab' : ''}">${inner}${meta}${m.extra?.reaction ? `<span class="react">${esc(m.extra.reaction)}</span>` : ''}</div>`;
   const canReply = !!m.wamid;
-  return `<div class="m ${out ? 'out' : ''}">${out ? `<span class="by ${m.sender === 'ase' ? 'ase' : m.sender}">${esc(byLabel(m))}</span>` : ''}
+  return `<div class="m ${out ? 'out s-' + m.sender : ''}">${out ? `<span class="by ${m.sender === 'ase' ? 'ase' : m.sender}">${esc(byLabel(m))}</span>` : ''}
     <div class="wrapb">${bubble}${canReply ? `<button class="rbtn" data-reply="${m.id}" aria-label="Responder a este mensaje" title="Responder">↩</button>` : ''}</div>
     ${m.status === 'failed' ? `<div class="failnote"><span>${esc(m.error || 'No se envió')}</span>${typeof m.id === 'number' ? `<button data-retry="${m.id}">Reintentar</button>` : ''}</div>` : ''}
   </div>`;
@@ -1241,6 +1248,87 @@ async function toggleTag(labelId) {
   }
 }
 
+/* =================== Franja de llamadas =================== */
+const CALL_RES = { cerro: ['Cerró', 'ok'], lo_piensa: ['Lo piensa', 'warn'], no_contesto: ['No contestó', 'bad'] };
+let callsLoading = false;
+async function loadCalls() {
+  if (!S.storeId || !canChats() || callsLoading) return;
+  callsLoading = true;
+  const sid = S.storeId;
+  try {
+    const r = await api('GET', `/stores/${sid}/llamadas`);
+    if (sid === S.storeId) {
+      S.calls = r.calls;
+      renderCallbar();
+    }
+  } catch {}
+  callsLoading = false;
+}
+
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function renderCallbar() {
+  const el = $('#callbar');
+  if (!el) return;
+  const t0 = startOfToday();
+  const todo = S.calls.filter((c) => !c.last_at || c.last_at < t0);
+  if (!S.calls.length) return (el.innerHTML = '');
+  const nY = todo.filter((c) => c.label === 'YAPE PENDIENTE').length;
+  const nL = todo.length - nY;
+  const groups = new Map();
+  for (const c of S.calls) {
+    const k = dayLabel(c.since);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(c);
+  }
+  el.innerHTML = `<div class="callbar ${todo.length ? 'hot' : ''} ${S.callsOpen ? 'open' : ''}">
+    <button class="cb-head" data-calltoggle aria-expanded="${S.callsOpen}">
+      <span class="cb-ic">${ICON.phone}</span>
+      <span class="cb-t"><b>${todo.length ? `${todo.length} para llamar` : 'Llamadas al día'}</b><span>${todo.length ? `Yape ${nY} · Lima ${nL}` : 'Todas llamadas hoy'}</span></span>
+      <span class="caret">${S.callsOpen ? '▴' : '▾'}</span>
+    </button>
+    ${S.callsOpen ? `<div class="cb-list">${[...groups].map(([day, list]) => `<h5>${esc(day)} <span>${list.length}</span></h5>${list.map((c) => {
+      const done = c.last_at && c.last_at >= t0;
+      const res = CALL_RES[c.last_result];
+      return `<div class="cb-row ${done ? 'done' : ''}">
+        <button class="cb-name" data-open="${c.id}"><b>${esc(c.name || c.profile_name || fmtPhone(c.wa_id))}</b>
+          <span class="cb-tag ${c.label === 'YAPE PENDIENTE' ? 'y' : 'l'}">${c.label === 'YAPE PENDIENTE' ? 'Yape' : 'Lima'}</span>
+          ${res ? `<span class="cb-res ${res[1]}">${res[0]}${c.tries > 1 ? ` · ${c.tries} veces` : ''}${c.last_by ? ` · ${esc(c.last_by)}` : ''}</span>` : ''}</button>
+        <div class="cb-acts"><a class="iconbtn" href="tel:+${esc(c.wa_id)}" aria-label="Llamar">${ICON.phone}</a>
+          ${Object.entries(CALL_RES).map(([k, [l, cls]]) => `<button class="cb-btn ${cls}" data-callr="${c.id}|${esc(c.label)}|${k}">${l}</button>`).join('')}</div>
+      </div>`;
+    }).join('')}`).join('')}</div>` : ''}
+  </div>`;
+}
+
+document.addEventListener('click', async (e) => {
+  const t = e.target.closest('[data-calltoggle],[data-callr]');
+  if (!t) return;
+  if ('calltoggle' in t.dataset) {
+    S.callsOpen = !S.callsOpen;
+    renderCallbar();
+    if (S.callsOpen) loadCalls();
+    return;
+  }
+  const [id, label, result] = t.dataset.callr.split('|');
+  const row = S.calls.find((c) => c.id === Number(id) && c.label === label);
+  t.closest('.cb-row')?.classList.add('saving');
+  try {
+    await api('POST', `/chats/${id}/llamada`, { result, label });
+    if (row) Object.assign(row, { last_result: result, last_at: Date.now(), last_by: S.me.user.name, tries: (row.tries || 0) + 1 });
+    if (result === 'cerro') S.calls = S.calls.filter((c) => c !== row);
+    renderCallbar();
+    toast(`Llamada guardada: ${CALL_RES[result][0]}`);
+  } catch (er) {
+    toast(er.message);
+    renderCallbar();
+  }
+});
+
 /* =================== Sincronización =================== */
 let pollTimer = null;
 let polling = false;
@@ -1322,6 +1410,7 @@ async function fetchNewMessages(id) {
 
 async function refreshStore(newUnread) {
   const sid = S.storeId;
+  loadCalls();
   const r = await api('GET', `/stores/${sid}/chats?after=${S.chatCursor}`);
   if (sid !== S.storeId) return;
   S.chatCursor = r.t;
@@ -1789,7 +1878,7 @@ document.addEventListener('click', async (e) => {
     enterStore();
     return;
   }
-  if (d.open) return openChat(Number(d.open));
+  if (d.open) return S.chats.has(Number(d.open)) ? openChat(Number(d.open)) : goChat(Number(d.open));
   if (d.filter) {
     S.filter = d.filter;
     renderListHead();

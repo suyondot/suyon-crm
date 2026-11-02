@@ -1,7 +1,8 @@
 // API de Bot Suyon AI (Configuración → Herramientas) y de Avisos
 import { Hono } from 'hono';
 import { now, fail, clip, windowOpen } from './util.js';
-import { storeFor, chatFor } from './auth.js';
+import { storeFor, chatFor, requireUser } from './auth.js';
+import { addLabel } from './bot.js';
 import { kindForMime, SEND_RULES } from './whatsapp.js';
 import {
   NODE_TYPES, IA_MODELS, loadSettings, loadFlow, flowStats, startFlow, cancelJobs, testIA,
@@ -325,6 +326,46 @@ r.post('/stores/:id/avisos/read', async (c) => {
   if (b.id) await c.env.DB.prepare('UPDATE notifications SET read_at = ? WHERE id = ? AND store_id = ? AND read_at IS NULL').bind(now(), Number(b.id), st.id).run();
   else await c.env.DB.prepare('UPDATE notifications SET read_at = ? WHERE store_id = ? AND read_at IS NULL').bind(now(), st.id).run();
   await bump(c.env, st.id);
+  return c.json({ ok: true });
+});
+
+/* ---------- Llamadas (franja arriba de los chats) ---------- */
+
+const CALL_LABELS = ['YAPE PENDIENTE', 'LIMA PENDIENTE'];
+
+r.get('/stores/:id/llamadas', async (c) => {
+  const st = await storeFor(c, c.req.param('id'));
+  const { results } = await c.env.DB.prepare(
+    `SELECT c.id, c.wa_id, c.name, c.profile_name, c.last_preview, c.last_msg_at, l.name AS label, cl.created_at AS since,
+       (SELECT result FROM calls WHERE chat_id = c.id AND created_at >= cl.created_at ORDER BY id DESC LIMIT 1) AS last_result,
+       (SELECT created_at FROM calls WHERE chat_id = c.id AND created_at >= cl.created_at ORDER BY id DESC LIMIT 1) AS last_at,
+       (SELECT u.name FROM calls x LEFT JOIN users u ON u.id = x.user_id WHERE x.chat_id = c.id AND x.created_at >= cl.created_at ORDER BY x.id DESC LIMIT 1) AS last_by,
+       (SELECT COUNT(*) FROM calls WHERE chat_id = c.id AND created_at >= cl.created_at) AS tries
+     FROM chats c JOIN chat_labels cl ON cl.chat_id = c.id JOIN labels l ON l.id = cl.label_id
+     WHERE c.store_id = ? AND l.name IN ('YAPE PENDIENTE', 'LIMA PENDIENTE') ORDER BY cl.created_at DESC LIMIT 300`
+  ).bind(st.id).all();
+  return c.json({ t: now(), calls: results });
+});
+
+r.post('/chats/:id/llamada', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const u = await requireUser(c);
+  const b = await body(c);
+  if (!['cerro', 'lo_piensa', 'no_contesto'].includes(b.result)) fail(400, 'Elige el resultado de la llamada.');
+  const label = CALL_LABELS.includes(b.label) ? b.label : null;
+  const db = c.env.DB;
+  await db.prepare('INSERT INTO calls (store_id, chat_id, label, result, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(store.id, chat.id, label, b.result, u.id, now()).run();
+  if (b.result === 'cerro') {
+    // Cerró: sale de la franja. Lima → ✅ LIMA · Yape → COMPRÓ
+    const names = label ? [label] : CALL_LABELS;
+    await db.prepare(`DELETE FROM chat_labels WHERE chat_id = ? AND label_id IN (SELECT id FROM labels WHERE store_id = ? AND name IN (${inList(names.length)}))`)
+      .bind(chat.id, store.id, ...names).run();
+    if (!label || label === 'LIMA PENDIENTE') await addLabel(c.env, store.id, chat.id, '✅ LIMA');
+    if (label === 'YAPE PENDIENTE') await addLabel(c.env, store.id, chat.id, 'COMPRÓ');
+  }
+  await db.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
+  await bump(c.env, store.id);
   return c.json({ ok: true });
 });
 
