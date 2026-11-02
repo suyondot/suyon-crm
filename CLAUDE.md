@@ -29,6 +29,7 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 ## Número piloto conectado (datos públicos, no son claves)
 - +51 941 010 752 · phone_number_id `1395172913681493` · cuenta de mensajes "Orión - Pancake Singapore" `2306137423565969` (portafolio Orión, business `27970507489211613`).
 - OJO Meta 2026: la "cuenta de WhatsApp" del número (`1434395304770204`, la que sale en Configuración del negocio → Cuentas de WhatsApp) NO sirve para `subscribed_apps` ("This API is not supported for this WhatsApp Business Account"). Hay que usar la **cuenta de mensajes** (Messaging accounts → Linked accounts) y asignársela al usuario del sistema con acceso total.
+- Recibir funciona; ENVIAR falla con código 10 aunque el token tiene whatsapp_business_messaging para todas. Pancake sí puede enviar → probable causa: la cuenta usa la línea de crédito (billetera) de Pancake. Plan: quitar socio Pancake Singapore SOLO de +51 941 010 752 y poner tarjeta propia en el Administrador de WhatsApp.
 - Hay DOS cuentas llamadas "Orión - Pancake Singapore": no quitar Pancake de la equivocada (la otra puede tener Orión Perú).
 - Solo 1 usuario del sistema Admin permitido (negocio sin verificar): el nuestro es rol Empleado.
 
@@ -81,6 +82,7 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 - [ ] 4 · Pedidos, editar, copiar orden, Sheet de Shalom, CAPI.
 - [ ] 5 · Control: embudo, CPA real por anuncio, llamadas.
 - [ ] 6 · Piloto 1 semana; luego migrar pantalón formal.
+- [ ] 7 · Billetera para alumnos (idea de Jordan, 2 nov 2026): saldo prepagado por empresa que se recarga con tarjeta peruana (Culqi/Izipay/Mercado Pago) y se reparte entre "destinatarios": WhatsApp (Meta) e IA (OpenAI). Requisitos: negocio verificado en Meta + ser **Proveedor de tecnología / Solution Partner** con línea de crédito compartida (así lo hace Pancake); OpenAI con clave central y consumo medido por tienda. Mientras tanto: cada tienda usa su propia tarjeta en Meta y su propia clave de OpenAI.
 - Estimado realista: 2–4 semanas por sesiones.
 
 ## Notas técnicas (para la próxima sesión)
