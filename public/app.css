@@ -446,3 +446,6 @@ body{margin:0}
   .composer .iconbtn{min-width:38px;padding:0 7px}
   .send{padding:9px 12px}
 }
+/* Celular/tablet: la conversación ocupa todo el ancho */
+@media (max-width:1180px){ .chats.no-ficha,.chats.ficha-open{grid-template-columns:300px minmax(0,1fr)} }
+@media (max-width:860px){ .chats.no-ficha,.chats.ficha-open{grid-template-columns:minmax(0,1fr)} }
