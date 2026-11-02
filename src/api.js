@@ -1,0 +1,879 @@
+// API de la app web
+import { Hono } from 'hono';
+import {
+  now, fail, randomToken, sha256hex, hashPassword, safeEqual, cleanEmail, validEmail, clip,
+  ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError,
+} from './util.js';
+import { createSession, destroySession, currentUser, requireUser, checkPassword, loadAccess, storeFor, companyFor, chatFor } from './auth.js';
+import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, kindForMime, SEND_RULES } from './whatsapp.js';
+import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
+
+const api = new Hono();
+const H24 = 24 * 3600e3;
+
+const body = async (c) => {
+  try {
+    return await c.req.json();
+  } catch {
+    return {};
+  }
+};
+const txt = (v, max = 200) => clip(String(v ?? '').trim(), max);
+const ids = (arr) => (Array.isArray(arr) ? arr.map(Number).filter((n) => Number.isInteger(n) && n > 0) : []);
+const bump = (env, storeId) => env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE id = ?').bind(storeId).run();
+const inList = (n) => Array(n).fill('?').join(',');
+
+function checkPasswordRules(p) {
+  if (String(p || '').length < 8) fail(400, 'La contraseña debe tener al menos 8 caracteres.');
+}
+
+function publicStore(s) {
+  const out = {
+    id: s.id, company_id: s.company_id, name: s.name, color: s.color, phone_display: s.phone_display,
+    status: s.status, verified_name: s.verified_name, role: s.role, rev: s.rev,
+  };
+  if (s.role === 'dueno') {
+    Object.assign(out, {
+      phone_number_id: s.phone_number_id, waba_id: s.waba_id, token_secret: s.token_secret,
+      read_receipts: s.read_receipts, last_webhook_at: s.last_webhook_at, connect_error: s.connect_error,
+    });
+  }
+  return out;
+}
+
+async function mePayload(c) {
+  const a = await loadAccess(c);
+  return {
+    user: { id: a.user.id, name: a.user.name, email: a.user.email, is_admin: !!a.user.is_admin },
+    companies: a.companies,
+    stores: a.stores.map(publicStore),
+    roles: ROLES,
+  };
+}
+
+/* ---------------- Entrada, cuenta y sesión ---------------- */
+
+api.get('/state', async (c) => {
+  const any = await c.env.DB.prepare('SELECT id FROM users LIMIT 1').first();
+  if (!any) return c.json({ setup: true, code_set: !!c.env.SETUP_CODE });
+  const u = await currentUser(c);
+  if (!u) return c.json({ login: true });
+  return c.json(await mePayload(c));
+});
+
+// Primera cuenta (dueño y administrador). Solo funciona si no hay usuarios.
+api.post('/setup', async (c) => {
+  const b = await body(c);
+  if (!c.env.SETUP_CODE) fail(400, 'Primero pon la clave de inicio (SETUP_CODE) como secreto en Cloudflare.');
+  if (!safeEqual(String(b.code || '').trim(), c.env.SETUP_CODE)) fail(403, 'La clave de inicio no coincide.');
+  const any = await c.env.DB.prepare('SELECT id FROM users LIMIT 1').first();
+  if (any) fail(409, 'El sistema ya tiene cuenta de dueño. Entra con tu correo.');
+  const email = cleanEmail(b.email);
+  if (!validEmail(email)) fail(400, 'Escribe un correo válido.');
+  checkPasswordRules(b.password);
+  const name = txt(b.name, 60) || 'Dueño';
+  const company = txt(b.company, 60) || 'Mi empresa';
+  const { hash, salt } = await hashPassword(b.password);
+  const t = now();
+  const u = await c.env.DB.prepare('INSERT INTO users (email, name, pass_hash, pass_salt, is_admin, created_at) VALUES (?, ?, ?, ?, 1, ?)')
+    .bind(email, name, hash, salt, t).run();
+  const userId = u.meta.last_row_id;
+  const co = await c.env.DB.prepare('INSERT INTO companies (name, created_at) VALUES (?, ?)').bind(company, t).run();
+  await c.env.DB.prepare("INSERT INTO memberships (user_id, company_id, role, all_stores, created_at) VALUES (?, ?, 'dueno', 1, ?)")
+    .bind(userId, co.meta.last_row_id, t).run();
+  await createSession(c, userId);
+  return c.json(await mePayload(c));
+});
+
+api.post('/login', async (c) => {
+  const b = await body(c);
+  const email = cleanEmail(b.email);
+  const user = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
+  const bad = () => fail(401, 'Correo o contraseña incorrectos.');
+  if (!user || user.disabled) {
+    await hashPassword(String(b.password || ''), 'AAAAAAAAAAAAAAAAAAAAAA=='); // mismo tiempo de respuesta
+    bad();
+  }
+  if (user.locked_until && user.locked_until > now()) fail(429, 'Demasiados intentos. Espera 15 minutos o pide al dueño un enlace para cambiar tu contraseña.');
+  if (!(await checkPassword(user, String(b.password || '')))) {
+    const n = user.failed_logins + 1;
+    await c.env.DB.prepare('UPDATE users SET failed_logins = ?, locked_until = ? WHERE id = ?')
+      .bind(n >= 8 ? 0 : n, n >= 8 ? now() + 15 * 60e3 : null, user.id).run();
+    bad();
+  }
+  await c.env.DB.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?').bind(user.id).run();
+  await createSession(c, user.id);
+  return c.json(await mePayload(c));
+});
+
+api.post('/logout', async (c) => {
+  await destroySession(c);
+  return c.json({ ok: true });
+});
+
+// Recuperar la cuenta del administrador con la clave de inicio
+api.post('/recover', async (c) => {
+  const b = await body(c);
+  if (!c.env.SETUP_CODE || !safeEqual(String(b.code || '').trim(), c.env.SETUP_CODE)) fail(403, 'La clave de inicio no coincide.');
+  checkPasswordRules(b.password);
+  const user = await c.env.DB.prepare('SELECT * FROM users WHERE email = ? AND is_admin = 1').bind(cleanEmail(b.email)).first();
+  if (!user) fail(404, 'Ese correo no es de un administrador.');
+  const { hash, salt } = await hashPassword(b.password);
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE users SET pass_hash = ?, pass_salt = ?, failed_logins = 0, locked_until = NULL WHERE id = ?').bind(hash, salt, user.id),
+    c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id),
+  ]);
+  await createSession(c, user.id);
+  return c.json(await mePayload(c));
+});
+
+api.get('/me', async (c) => c.json(await mePayload(c)));
+
+api.patch('/me', async (c) => {
+  const u = await requireUser(c);
+  const b = await body(c);
+  const name = txt(b.name, 60);
+  if (!name) fail(400, 'Escribe tu nombre.');
+  await c.env.DB.prepare('UPDATE users SET name = ? WHERE id = ?').bind(name, u.id).run();
+  c.set('user', undefined);
+  c.set('access', undefined);
+  return c.json(await mePayload(c));
+});
+
+api.post('/me/password', async (c) => {
+  const u = await requireUser(c);
+  const b = await body(c);
+  const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(u.id).first();
+  if (!(await checkPassword(user, String(b.current || '')))) fail(400, 'Tu contraseña actual no coincide.');
+  checkPasswordRules(b.password);
+  const { hash, salt } = await hashPassword(b.password);
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE users SET pass_hash = ?, pass_salt = ? WHERE id = ?').bind(hash, salt, u.id),
+    c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(u.id),
+  ]);
+  await createSession(c, u.id);
+  return c.json({ ok: true });
+});
+
+/* ---------------- Invitaciones y cambio de contraseña por enlace ---------------- */
+
+async function findInvite(env, token) {
+  const inv = await env.DB.prepare(
+    `SELECT i.*, co.name AS company_name FROM invites i JOIN companies co ON co.id = i.company_id WHERE i.token_hash = ?`
+  ).bind(await sha256hex(String(token || ''))).first();
+  if (!inv || inv.used_at || inv.expires_at < now()) fail(404, 'Esta invitación ya no es válida. Pide una nueva al dueño.');
+  return inv;
+}
+
+api.get('/invites/:token', async (c) => {
+  const inv = await findInvite(c.env, c.req.param('token'));
+  const exists = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(inv.email).first();
+  return c.json({ email: inv.email, company: inv.company_name, role: ROLES[inv.role], has_account: !!exists });
+});
+
+api.post('/invites/:token/accept', async (c) => {
+  const inv = await findInvite(c.env, c.req.param('token'));
+  const b = await body(c);
+  const db = c.env.DB;
+  let user = await db.prepare('SELECT * FROM users WHERE email = ?').bind(inv.email).first();
+  if (user) {
+    if (!(await checkPassword(user, String(b.password || '')))) fail(401, 'Ya tienes cuenta con este correo: escribe tu contraseña de siempre.');
+  } else {
+    checkPasswordRules(b.password);
+    const name = txt(b.name, 60);
+    if (!name) fail(400, 'Escribe tu nombre.');
+    const { hash, salt } = await hashPassword(b.password);
+    const r = await db.prepare('INSERT INTO users (email, name, pass_hash, pass_salt, created_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(inv.email, name, hash, salt, now()).run();
+    user = { id: r.meta.last_row_id };
+  }
+  const stmts = [
+    db.prepare(
+      `INSERT INTO memberships (user_id, company_id, role, all_stores, created_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (user_id, company_id) DO UPDATE SET role = excluded.role, all_stores = excluded.all_stores`
+    ).bind(user.id, inv.company_id, inv.role, inv.all_stores, now()),
+    db.prepare('UPDATE invites SET used_at = ? WHERE id = ?').bind(now(), inv.id),
+    db.prepare('DELETE FROM member_stores WHERE user_id = ? AND store_id IN (SELECT id FROM stores WHERE company_id = ?)').bind(user.id, inv.company_id),
+  ];
+  for (const sid of ids(JSON.parse(inv.store_ids || '[]'))) {
+    stmts.push(db.prepare('INSERT OR IGNORE INTO member_stores (user_id, store_id) SELECT ?, id FROM stores WHERE id = ? AND company_id = ?').bind(user.id, sid, inv.company_id));
+  }
+  await db.batch(stmts);
+  await createSession(c, user.id);
+  return c.json(await mePayload(c));
+});
+
+async function findReset(env, token) {
+  const r = await env.DB.prepare(
+    `SELECT r.*, u.email, u.name FROM password_resets r JOIN users u ON u.id = r.user_id WHERE r.token_hash = ?`
+  ).bind(await sha256hex(String(token || ''))).first();
+  if (!r || r.used_at || r.expires_at < now()) fail(404, 'Este enlace ya no es válido. Pide uno nuevo al dueño.');
+  return r;
+}
+
+api.get('/resets/:token', async (c) => {
+  const r = await findReset(c.env, c.req.param('token'));
+  return c.json({ email: r.email, name: r.name });
+});
+
+api.post('/resets/:token', async (c) => {
+  const r = await findReset(c.env, c.req.param('token'));
+  const b = await body(c);
+  checkPasswordRules(b.password);
+  const { hash, salt } = await hashPassword(b.password);
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE users SET pass_hash = ?, pass_salt = ?, failed_logins = 0, locked_until = NULL WHERE id = ?').bind(hash, salt, r.user_id),
+    c.env.DB.prepare('UPDATE password_resets SET used_at = ? WHERE token_hash = ?').bind(now(), r.token_hash),
+    c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(r.user_id),
+  ]);
+  await createSession(c, r.user_id);
+  return c.json(await mePayload(c));
+});
+
+/* ---------------- Empresas y equipo ---------------- */
+
+api.post('/companies', async (c) => {
+  const u = await requireUser(c);
+  if (!u.is_admin) fail(403, 'Solo el administrador puede crear empresas.');
+  const name = txt((await body(c)).name, 60);
+  if (!name) fail(400, 'Escribe el nombre de la empresa.');
+  const r = await c.env.DB.prepare('INSERT INTO companies (name, created_at) VALUES (?, ?)').bind(name, now()).run();
+  await c.env.DB.prepare("INSERT INTO memberships (user_id, company_id, role, all_stores, created_at) VALUES (?, ?, 'dueno', 1, ?)")
+    .bind(u.id, r.meta.last_row_id, now()).run();
+  c.set('access', undefined);
+  return c.json(await mePayload(c));
+});
+
+api.patch('/companies/:id', async (c) => {
+  const co = await companyFor(c, c.req.param('id'));
+  const name = txt((await body(c)).name, 60);
+  if (!name) fail(400, 'Escribe el nombre de la empresa.');
+  await c.env.DB.prepare('UPDATE companies SET name = ? WHERE id = ?').bind(name, co.id).run();
+  c.set('access', undefined);
+  return c.json(await mePayload(c));
+});
+
+api.get('/companies/:id/team', async (c) => {
+  const co = await companyFor(c, c.req.param('id'));
+  const db = c.env.DB;
+  const { results: members } = await db.prepare(
+    `SELECT u.id, u.name, u.email, m.role, m.all_stores,
+       (SELECT group_concat(ms.store_id) FROM member_stores ms JOIN stores s ON s.id = ms.store_id AND s.company_id = m.company_id WHERE ms.user_id = u.id) AS store_ids
+     FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.company_id = ? ORDER BY m.role = 'dueno' DESC, u.name`
+  ).bind(co.id).all();
+  const { results: invites } = await db.prepare(
+    'SELECT id, email, role, all_stores, store_ids, expires_at, created_at FROM invites WHERE company_id = ? AND used_at IS NULL AND expires_at > ? ORDER BY id DESC'
+  ).bind(co.id, now()).all();
+  return c.json({
+    members: members.map((m) => ({ ...m, store_ids: m.store_ids ? m.store_ids.split(',').map(Number) : [] })),
+    invites: invites.map((i) => ({ ...i, store_ids: JSON.parse(i.store_ids || '[]') })),
+  });
+});
+
+function checkRoleInput(b) {
+  if (!ROLES[b.role]) fail(400, 'Elige un rol.');
+  const all = b.role === 'dueno' || !!b.all_stores;
+  const storeIds = all ? [] : ids(b.store_ids);
+  if (!all && !storeIds.length) fail(400, 'Elige al menos una tienda o marca "Todas las tiendas".');
+  return { role: b.role, all, storeIds };
+}
+
+api.post('/companies/:id/invites', async (c) => {
+  const co = await companyFor(c, c.req.param('id'));
+  const u = await requireUser(c);
+  const b = await body(c);
+  const email = cleanEmail(b.email);
+  if (!validEmail(email)) fail(400, 'Escribe un correo válido.');
+  const { role, all, storeIds } = checkRoleInput(b);
+  const token = randomToken(24);
+  await c.env.DB.prepare(
+    'INSERT INTO invites (token_hash, company_id, email, role, all_stores, store_ids, created_by, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(await sha256hex(token), co.id, email, role, all ? 1 : 0, JSON.stringify(storeIds), u.id, now() + 7 * 864e5, now()).run();
+  return c.json({ link: `${new URL(c.req.url).origin}/invitacion/${token}`, email, company: co.name });
+});
+
+api.delete('/companies/:id/invites/:inviteId', async (c) => {
+  const co = await companyFor(c, c.req.param('id'));
+  await c.env.DB.prepare('DELETE FROM invites WHERE id = ? AND company_id = ?').bind(Number(c.req.param('inviteId')), co.id).run();
+  return c.json({ ok: true });
+});
+
+async function ownersLeft(db, companyId, exceptUser) {
+  const r = await db.prepare("SELECT COUNT(*) AS n FROM memberships WHERE company_id = ? AND role = 'dueno' AND user_id != ?").bind(companyId, exceptUser).first();
+  return r.n;
+}
+
+api.patch('/companies/:id/members/:userId', async (c) => {
+  const co = await companyFor(c, c.req.param('id'));
+  const userId = Number(c.req.param('userId'));
+  const { role, all, storeIds } = checkRoleInput(await body(c));
+  const db = c.env.DB;
+  const m = await db.prepare('SELECT role FROM memberships WHERE user_id = ? AND company_id = ?').bind(userId, co.id).first();
+  if (!m) fail(404, 'Esa persona no está en el equipo.');
+  if (m.role === 'dueno' && role !== 'dueno' && !(await ownersLeft(db, co.id, userId))) fail(400, 'La empresa necesita al menos un dueño.');
+  const stmts = [
+    db.prepare('UPDATE memberships SET role = ?, all_stores = ? WHERE user_id = ? AND company_id = ?').bind(role, all ? 1 : 0, userId, co.id),
+    db.prepare('DELETE FROM member_stores WHERE user_id = ? AND store_id IN (SELECT id FROM stores WHERE company_id = ?)').bind(userId, co.id),
+  ];
+  for (const sid of storeIds) stmts.push(db.prepare('INSERT OR IGNORE INTO member_stores (user_id, store_id) SELECT ?, id FROM stores WHERE id = ? AND company_id = ?').bind(userId, sid, co.id));
+  await db.batch(stmts);
+  return c.json({ ok: true });
+});
+
+api.delete('/companies/:id/members/:userId', async (c) => {
+  const co = await companyFor(c, c.req.param('id'));
+  const userId = Number(c.req.param('userId'));
+  const db = c.env.DB;
+  const m = await db.prepare('SELECT role FROM memberships WHERE user_id = ? AND company_id = ?').bind(userId, co.id).first();
+  if (!m) fail(404, 'Esa persona no está en el equipo.');
+  if (m.role === 'dueno' && !(await ownersLeft(db, co.id, userId))) fail(400, 'La empresa necesita al menos un dueño.');
+  await db.batch([
+    db.prepare('DELETE FROM memberships WHERE user_id = ? AND company_id = ?').bind(userId, co.id),
+    db.prepare('DELETE FROM member_stores WHERE user_id = ? AND store_id IN (SELECT id FROM stores WHERE company_id = ?)').bind(userId, co.id),
+  ]);
+  const other = await db.prepare('SELECT 1 FROM memberships WHERE user_id = ?').bind(userId).first();
+  if (!other) await db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId).run();
+  return c.json({ ok: true });
+});
+
+api.post('/companies/:id/members/:userId/reset', async (c) => {
+  const co = await companyFor(c, c.req.param('id'));
+  const me = await requireUser(c);
+  const userId = Number(c.req.param('userId'));
+  const m = await c.env.DB.prepare('SELECT 1 FROM memberships WHERE user_id = ? AND company_id = ?').bind(userId, co.id).first();
+  if (!m) fail(404, 'Esa persona no está en el equipo.');
+  const token = randomToken(24);
+  await c.env.DB.prepare('INSERT INTO password_resets (token_hash, user_id, created_by, expires_at) VALUES (?, ?, ?, ?)')
+    .bind(await sha256hex(token), userId, me.id, now() + 2 * 864e5).run();
+  return c.json({ link: `${new URL(c.req.url).origin}/clave/${token}` });
+});
+
+/* ---------------- Tiendas (números de WhatsApp) ---------------- */
+
+function storeInput(b, partial) {
+  const out = {};
+  if (!partial || 'name' in b) {
+    out.name = txt(b.name, 60);
+    if (!out.name) fail(400, 'Escribe el nombre de la tienda.');
+  }
+  if ('color' in b) out.color = /^#[0-9a-fA-F]{6}$/.test(b.color) ? b.color : '#7A1F35';
+  if ('phone_display' in b) out.phone_display = txt(b.phone_display, 40) || null;
+  for (const k of ['phone_number_id', 'waba_id']) {
+    if (k in b) {
+      const v = String(b[k] || '').replace(/\D/g, '');
+      out[k] = v || null;
+    }
+  }
+  if ('token_secret' in b) {
+    const v = String(b.token_secret || 'WA_TOKEN').trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9_]{1,40}$/.test(v)) fail(400, 'El nombre del secreto del token solo puede tener letras, números y _.');
+    out.token_secret = v;
+  }
+  if ('read_receipts' in b) out.read_receipts = b.read_receipts ? 1 : 0;
+  return out;
+}
+
+api.post('/companies/:id/stores', async (c) => {
+  const co = await companyFor(c, c.req.param('id'));
+  const s = storeInput(await body(c), false);
+  const db = c.env.DB;
+  if (s.phone_number_id && (await db.prepare('SELECT 1 FROM stores WHERE phone_number_id = ?').bind(s.phone_number_id).first())) {
+    fail(409, 'Ese número ya está en otra tienda.');
+  }
+  const r = await db.prepare(
+    'INSERT INTO stores (company_id, name, color, phone_display, phone_number_id, waba_id, token_secret, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(co.id, s.name, s.color || '#7A1F35', s.phone_display ?? null, s.phone_number_id ?? null, s.waba_id ?? null, s.token_secret || 'WA_TOKEN', now()).run();
+  const storeId = r.meta.last_row_id;
+  await db.batch(DEFAULT_LABELS.map(([name, color, auto], i) =>
+    db.prepare('INSERT INTO labels (store_id, name, color, auto, sort, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(storeId, name, color, auto, i, now())
+  ));
+  c.set('access', undefined);
+  return c.json({ ...(await mePayload(c)), store_id: storeId });
+});
+
+api.patch('/stores/:id', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const s = storeInput(await body(c), true);
+  const db = c.env.DB;
+  if (s.phone_number_id && s.phone_number_id !== st.phone_number_id) {
+    if (await db.prepare('SELECT 1 FROM stores WHERE phone_number_id = ? AND id != ?').bind(s.phone_number_id, st.id).first()) fail(409, 'Ese número ya está en otra tienda.');
+  }
+  if (('phone_number_id' in s && s.phone_number_id !== st.phone_number_id) || ('waba_id' in s && s.waba_id !== st.waba_id) || ('token_secret' in s && s.token_secret !== st.token_secret)) {
+    s.status = 'pendiente';
+    s.connect_error = null;
+  }
+  const keys = Object.keys(s);
+  if (keys.length) {
+    await db.prepare(`UPDATE stores SET ${keys.map((k) => `${k} = ?`).join(', ')}, rev = rev + 1 WHERE id = ?`).bind(...keys.map((k) => s[k]), st.id).run();
+  }
+  c.set('access', undefined);
+  return c.json(await mePayload(c));
+});
+
+api.delete('/stores/:id', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const b = await body(c);
+  if (String(b.confirm || '').trim().toLowerCase() !== st.name.trim().toLowerCase()) fail(400, 'Para borrar, escribe el nombre exacto de la tienda.');
+  const db = c.env.DB;
+  // Borra los archivos de R2 de esta tienda
+  let cursor;
+  do {
+    const list = await c.env.MEDIA.list({ prefix: `s${st.id}/`, cursor });
+    if (list.objects.length) await c.env.MEDIA.delete(list.objects.map((o) => o.key));
+    cursor = list.truncated ? list.cursor : undefined;
+  } while (cursor);
+  await db.batch([
+    db.prepare('DELETE FROM chat_labels WHERE chat_id IN (SELECT id FROM chats WHERE store_id = ?)').bind(st.id),
+    db.prepare('DELETE FROM messages WHERE store_id = ?').bind(st.id),
+    db.prepare('DELETE FROM chats WHERE store_id = ?').bind(st.id),
+    db.prepare('DELETE FROM labels WHERE store_id = ?').bind(st.id),
+    db.prepare('DELETE FROM member_stores WHERE store_id = ?').bind(st.id),
+    db.prepare('DELETE FROM stores WHERE id = ?').bind(st.id),
+  ]);
+  c.set('access', undefined);
+  return c.json(await mePayload(c));
+});
+
+// Prueba el token, guarda el nombre verificado y suscribe la app a la cuenta de WhatsApp
+api.post('/stores/:id/connect', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  if (!st.phone_number_id || !st.waba_id) fail(400, 'Falta el "Identificador del número" o el "Identificador de la cuenta de WhatsApp".');
+  const db = c.env.DB;
+  const steps = [];
+  try {
+    const info = await getPhoneInfo(c.env, st);
+    steps.push(`Número encontrado: ${info.display_phone_number} (${info.verified_name || 'sin nombre'})`);
+    if (info.quality_rating) steps.push(`Calidad del número: ${info.quality_rating}`);
+    await subscribeApp(c.env, st);
+    steps.push('La app SUYON CRM quedó suscrita a la cuenta de WhatsApp');
+    await db.prepare("UPDATE stores SET status = 'activo', connect_error = NULL, verified_name = ?, phone_display = COALESCE(?, phone_display), rev = rev + 1 WHERE id = ?")
+      .bind(info.verified_name || null, info.display_phone_number || null, st.id).run();
+    c.set('access', undefined);
+    return c.json({ ok: true, steps, ...(await mePayload(c)) });
+  } catch (e) {
+    await db.prepare("UPDATE stores SET status = 'pendiente', connect_error = ? WHERE id = ?").bind(clip(e.message, 300), st.id).run();
+    c.set('access', undefined);
+    return c.json({ ok: false, steps, error: e.message, ...(await mePayload(c)) }, 200);
+  }
+});
+
+api.get('/stores/:id/health', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const { results: log } = await c.env.DB.prepare(
+    'SELECT received_at, kind, phone_number_id, detail FROM webhook_log WHERE phone_number_id = ? OR kind = ? ORDER BY id DESC LIMIT 15'
+  ).bind(st.phone_number_id || '-', 'tienda_desconocida').all();
+  const counts = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS chats, SUM(CASE WHEN last_inbound_at > ? THEN 1 ELSE 0 END) AS active FROM chats WHERE store_id = ?"
+  ).bind(now() - H24, st.id).first();
+  return c.json({
+    webhook_url: `${new URL(c.req.url).origin}/webhook`,
+    privacy_url: `${new URL(c.req.url).origin}/privacidad`,
+    secrets: {
+      [st.token_secret || 'WA_TOKEN']: !!c.env[st.token_secret || 'WA_TOKEN'],
+      WA_VERIFY_TOKEN: !!c.env.WA_VERIFY_TOKEN,
+      META_APP_SECRET: !!c.env.META_APP_SECRET,
+      SETUP_CODE: !!c.env.SETUP_CODE,
+    },
+    media_ok: !!c.env.MEDIA,
+    last_webhook_at: st.last_webhook_at,
+    chats: counts.chats || 0,
+    active_24h: counts.active || 0,
+    log,
+  });
+});
+
+/* ---------------- Etiquetas ---------------- */
+
+api.get('/stores/:id/labels', async (c) => {
+  const st = await storeFor(c, c.req.param('id'));
+  const { results } = await c.env.DB.prepare(
+    `SELECT l.id, l.name, l.color, l.auto, l.sort, (SELECT COUNT(*) FROM chat_labels cl WHERE cl.label_id = l.id) AS n
+     FROM labels l WHERE l.store_id = ? ORDER BY l.sort, l.id`
+  ).bind(st.id).all();
+  return c.json({ labels: results });
+});
+
+function labelInput(b, partial) {
+  const out = {};
+  if (!partial || 'name' in b) {
+    out.name = txt(b.name, 30);
+    if (!out.name) fail(400, 'Escribe el nombre de la etiqueta.');
+  }
+  if ('color' in b) out.color = LABEL_COLORS.includes(b.color) ? b.color : '--t-grey';
+  if ('sort' in b) out.sort = Number(b.sort) || 0;
+  return out;
+}
+
+api.post('/stores/:id/labels', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const l = labelInput(await body(c), false);
+  const max = await c.env.DB.prepare('SELECT COALESCE(MAX(sort), 0) + 1 AS s FROM labels WHERE store_id = ?').bind(st.id).first();
+  try {
+    await c.env.DB.prepare('INSERT INTO labels (store_id, name, color, auto, sort, created_at) VALUES (?, ?, ?, 0, ?, ?)')
+      .bind(st.id, l.name, l.color || '--t-grey', max.s, now()).run();
+  } catch {
+    fail(409, 'Ya existe una etiqueta con ese nombre.');
+  }
+  await bump(c.env, st.id);
+  return c.json({ ok: true });
+});
+
+async function labelFor(c, labelId) {
+  const l = await c.env.DB.prepare('SELECT * FROM labels WHERE id = ?').bind(Number(labelId)).first();
+  if (!l) fail(404, 'Esa etiqueta no existe.');
+  return l;
+}
+
+api.patch('/labels/:id', async (c) => {
+  const l = await labelFor(c, c.req.param('id'));
+  await storeFor(c, l.store_id, 'config');
+  const b = labelInput(await body(c), true);
+  if (l.auto && 'name' in b && b.name !== l.name) fail(400, 'Las etiquetas automáticas no se pueden renombrar: el bot las usa por su nombre.');
+  const keys = Object.keys(b);
+  if (keys.length) {
+    try {
+      await c.env.DB.prepare(`UPDATE labels SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).bind(...keys.map((k) => b[k]), l.id).run();
+    } catch {
+      fail(409, 'Ya existe una etiqueta con ese nombre.');
+    }
+  }
+  await bump(c.env, l.store_id);
+  return c.json({ ok: true });
+});
+
+api.delete('/labels/:id', async (c) => {
+  const l = await labelFor(c, c.req.param('id'));
+  await storeFor(c, l.store_id, 'config');
+  if (l.auto) fail(400, 'Las etiquetas automáticas no se pueden borrar: el bot las usa.');
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id IN (SELECT chat_id FROM chat_labels WHERE label_id = ?)').bind(now(), l.id),
+    c.env.DB.prepare('DELETE FROM chat_labels WHERE label_id = ?').bind(l.id),
+    c.env.DB.prepare('DELETE FROM labels WHERE id = ?').bind(l.id),
+  ]);
+  await bump(c.env, l.store_id);
+  return c.json({ ok: true });
+});
+
+/* ---------------- Sincronización y chats ---------------- */
+
+// Consulta liviana cada pocos segundos: si "rev" cambió, la app pide lo nuevo
+api.get('/sync', async (c) => {
+  const { stores } = await loadAccess(c);
+  const chatStores = stores.filter((s) => s.role === 'dueno' || s.role === 'asesora');
+  let unread = {};
+  if (chatStores.length) {
+    const { results } = await c.env.DB.prepare(
+      `SELECT store_id, COUNT(*) AS n FROM chats WHERE unread > 0 AND store_id IN (${inList(chatStores.length)}) GROUP BY store_id`
+    ).bind(...chatStores.map((s) => s.id)).all();
+    unread = Object.fromEntries(results.map((r) => [r.store_id, r.n]));
+  }
+  return c.json({ t: now(), stores: stores.map((s) => ({ id: s.id, rev: s.rev, unread: unread[s.id] || 0, status: s.status })) });
+});
+
+async function attachLabels(db, chats) {
+  if (!chats.length) return chats;
+  const { results } = await db.prepare(`SELECT chat_id, label_id FROM chat_labels WHERE chat_id IN (${inList(chats.length)})`)
+    .bind(...chats.map((x) => x.id)).all();
+  const by = {};
+  for (const r of results) (by[r.chat_id] ||= []).push(r.label_id);
+  return chats.map((x) => ({ ...x, labels: by[x.id] || [] }));
+}
+
+const CHAT_COLS = `id, store_id, wa_id, name, profile_name, handler, unread, last_msg_at, last_preview, last_dir, last_inbound_at,
+  ad_id, ad_headline, ad_source_url, referral_at, first_reply_at, notes, created_at, updated_at`;
+
+api.get('/stores/:id/chats', async (c) => {
+  const st = await storeFor(c, c.req.param('id'));
+  const q = c.req.query();
+  const db = c.env.DB;
+  const t = now();
+  const limit = Math.min(Number(q.limit) || 60, 200);
+  const where = ['store_id = ?'];
+  const vals = [st.id];
+  let order = 'COALESCE(last_msg_at, created_at) DESC';
+  if (q.after) {
+    where.push('updated_at > ?');
+    vals.push(Number(q.after) - 3000);
+    order = 'updated_at';
+  } else {
+    if (q.before) {
+      where.push('COALESCE(last_msg_at, created_at) < ?');
+      vals.push(Number(q.before));
+    }
+    if (q.q) {
+      const like = `%${String(q.q).trim().replace(/[%_]/g, '')}%`;
+      const digits = String(q.q).replace(/\D/g, '');
+      where.push(digits.length >= 4 ? '(name LIKE ? OR profile_name LIKE ? OR wa_id LIKE ?)' : '(name LIKE ? OR profile_name LIKE ?)');
+      vals.push(like, like);
+      if (digits.length >= 4) vals.push(`%${digits}%`);
+    }
+    if (q.filter === 'unread') where.push('unread > 0');
+    if (q.filter === 'pending') where.push("last_dir = 'in'");
+    const lab = ids(String(q.labels || '').split(','));
+    if (lab.length) {
+      where.push(`id IN (SELECT chat_id FROM chat_labels WHERE label_id IN (${inList(lab.length)}) GROUP BY chat_id HAVING COUNT(*) = ?)`);
+      vals.push(...lab, lab.length);
+    }
+  }
+  const { results } = await db.prepare(`SELECT ${CHAT_COLS} FROM chats WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ?`)
+    .bind(...vals, q.after ? 500 : limit).all();
+  return c.json({ t, chats: await attachLabels(db, results), more: !q.after && results.length === limit });
+});
+
+api.get('/chats/:id', async (c) => {
+  const { chat } = await chatFor(c, c.req.param('id'));
+  const [x] = await attachLabels(c.env.DB, [chat]);
+  delete x.referral_json;
+  delete x.ctwa_clid;
+  return c.json({ chat: x, referral: chat.referral_json ? JSON.parse(chat.referral_json) : null });
+});
+
+api.patch('/chats/:id', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const b = await body(c);
+  const sets = [];
+  const vals = [];
+  if ('name' in b) {
+    sets.push('name = ?');
+    vals.push(txt(b.name, 60) || null);
+  }
+  if ('notes' in b) {
+    sets.push('notes = ?');
+    vals.push(txt(b.notes, 2000) || null);
+  }
+  if ('unread' in b) {
+    sets.push('unread = ?');
+    vals.push(b.unread ? Math.max(1, chat.unread) : 0);
+  }
+  if (!sets.length) return c.json({ ok: true });
+  await c.env.DB.prepare(`UPDATE chats SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`).bind(...vals, now(), chat.id).run();
+  await bump(c.env, store.id);
+  return c.json({ ok: true });
+});
+
+// Marca como leído y avisa a WhatsApp (doble check azul para la clienta)
+api.post('/chats/:id/read', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  if (chat.unread > 0) {
+    await c.env.DB.prepare('UPDATE chats SET unread = 0, updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
+    await bump(c.env, store.id);
+    if (store.read_receipts && store.status === 'activo') {
+      const last = await c.env.DB.prepare(
+        "SELECT wamid FROM messages WHERE chat_id = ? AND direction = 'in' AND wamid IS NOT NULL AND created_at > ? ORDER BY id DESC LIMIT 1"
+      ).bind(chat.id, now() - 29 * 864e5).first();
+      if (last) c.executionCtx.waitUntil(markRead(c.env, store, last.wamid).catch(() => {}));
+    }
+  }
+  return c.json({ ok: true });
+});
+
+api.put('/chats/:id/labels/:labelId', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const u = await requireUser(c);
+  const l = await c.env.DB.prepare('SELECT id FROM labels WHERE id = ? AND store_id = ?').bind(Number(c.req.param('labelId')), store.id).first();
+  if (!l) fail(404, 'Esa etiqueta no es de esta tienda.');
+  await c.env.DB.batch([
+    c.env.DB.prepare('INSERT OR IGNORE INTO chat_labels (chat_id, label_id, user_id, created_at) VALUES (?, ?, ?, ?)').bind(chat.id, l.id, u.id, now()),
+    c.env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(now(), chat.id),
+  ]);
+  await bump(c.env, store.id);
+  return c.json({ ok: true });
+});
+
+api.delete('/chats/:id/labels/:labelId', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM chat_labels WHERE chat_id = ? AND label_id = ?').bind(chat.id, Number(c.req.param('labelId'))),
+    c.env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(now(), chat.id),
+  ]);
+  await bump(c.env, store.id);
+  return c.json({ ok: true });
+});
+
+/* ---------------- Mensajes ---------------- */
+
+const MSG_COLS = `m.id, m.wamid, m.direction, m.sender, m.user_id, u.name AS user_name, m.type, m.body, m.media_mime, m.media_name, m.media_size,
+  m.media_status, m.status, m.error, m.context_wamid, m.extra, m.created_at, m.updated_at`;
+
+function shapeMsg(m) {
+  const x = { ...m, extra: m.extra ? JSON.parse(m.extra) : null };
+  if (x.extra?.referral) {
+    const r = x.extra.referral;
+    x.extra.referral = { headline: r.headline, body: r.body, source_id: r.source_id, source_type: r.source_type, source_url: r.source_url, media_type: r.media_type };
+  }
+  return x;
+}
+
+api.get('/chats/:id/messages', async (c) => {
+  const { chat } = await chatFor(c, c.req.param('id'));
+  const q = c.req.query();
+  const t = now();
+  const db = c.env.DB;
+  let rows;
+  if (q.after) {
+    ({ results: rows } = await db.prepare(
+      `SELECT ${MSG_COLS} FROM messages m LEFT JOIN users u ON u.id = m.user_id WHERE m.chat_id = ? AND m.updated_at > ? ORDER BY m.id LIMIT 300`
+    ).bind(chat.id, Number(q.after) - 3000).all());
+  } else {
+    const limit = Math.min(Number(q.limit) || 60, 200);
+    const before = Number(q.before) || Number.MAX_SAFE_INTEGER;
+    ({ results: rows } = await db.prepare(
+      `SELECT ${MSG_COLS} FROM messages m LEFT JOIN users u ON u.id = m.user_id WHERE m.chat_id = ? AND m.id < ? ORDER BY m.id DESC LIMIT ?`
+    ).bind(chat.id, before, limit).all());
+    rows.reverse();
+    return c.json({ t, messages: rows.map(shapeMsg), more: rows.length === limit });
+  }
+  return c.json({ t, messages: rows.map(shapeMsg) });
+});
+
+// Se puede responder libremente: 24 h desde su último mensaje, o 72 h si llegó por anuncio
+// y se le respondió dentro de las primeras 24 h (ventana gratis de Meta)
+function windowOpen(chat) {
+  const t = now();
+  if (chat.last_inbound_at && t - chat.last_inbound_at < H24) return true;
+  if (chat.referral_at && t < chat.referral_at + 3 * H24) {
+    return chat.first_reply_at ? chat.first_reply_at < chat.referral_at + H24 : t < chat.referral_at + H24;
+  }
+  return false;
+}
+
+async function afterSend(env, store, chat, type, bodyText) {
+  const t = now();
+  await env.DB.prepare(
+    `UPDATE chats SET last_msg_at = ?, last_preview = ?, last_dir = 'out', unread = 0, updated_at = ?,
+       first_reply_at = CASE WHEN referral_at IS NOT NULL AND first_reply_at IS NULL THEN ? ELSE first_reply_at END WHERE id = ?`
+  ).bind(t, preview(type, bodyText), t, t, chat.id).run();
+  await bump(env, store.id);
+}
+
+async function deliver(env, store, chat, msg) {
+  try {
+    let wamid;
+    if (msg.type === 'text') {
+      wamid = await sendText(env, store, chat.wa_id, msg.body, msg.context_wamid);
+    } else {
+      const obj = await env.MEDIA.get(msg.media_key);
+      if (!obj) throw new HttpError(500, 'No se encontró el archivo para enviar.');
+      const mediaId = await uploadMedia(env, store, await obj.arrayBuffer(), msg.media_mime, msg.media_name);
+      wamid = await sendMediaById(env, store, chat.wa_id, msg.type, mediaId, { caption: msg.body, filename: msg.media_name, replyTo: msg.context_wamid });
+    }
+    await env.DB.prepare("UPDATE messages SET wamid = ?, status = 'sent', error = NULL, updated_at = ? WHERE id = ?").bind(wamid, now(), msg.id).run();
+  } catch (e) {
+    await env.DB.prepare("UPDATE messages SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").bind(clip(e.message, 300), now(), msg.id).run();
+  }
+  await afterSend(env, store, chat, msg.type, msg.body);
+  const row = await env.DB.prepare(`SELECT ${MSG_COLS} FROM messages m LEFT JOIN users u ON u.id = m.user_id WHERE m.id = ?`).bind(msg.id).first();
+  return shapeMsg(row);
+}
+
+function checkCanSend(store, chat) {
+  if (store.status !== 'activo') fail(409, 'Este número todavía no está conectado. El dueño debe conectarlo en Configuración → Número.');
+  if (!windowOpen(chat)) fail(409, 'Pasaron más de 24 h desde el último mensaje de la clienta. Solo se puede enviar una plantilla aprobada (llega en una próxima fase).');
+}
+
+api.post('/chats/:id/messages', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const u = await requireUser(c);
+  const b = await body(c);
+  const text = String(b.text || '').trim();
+  if (!text) fail(400, 'Escribe un mensaje.');
+  if (text.length > 4096) fail(400, 'El mensaje es muy largo (máximo 4,096 letras).');
+  checkCanSend(store, chat);
+  const reply = b.reply_to ? await c.env.DB.prepare('SELECT wamid FROM messages WHERE id = ? AND chat_id = ?').bind(Number(b.reply_to), chat.id).first() : null;
+  const t = now();
+  const r = await c.env.DB.prepare(
+    `INSERT INTO messages (chat_id, store_id, direction, sender, user_id, type, body, status, context_wamid, created_at, updated_at)
+     VALUES (?, ?, 'out', 'ase', ?, 'text', ?, 'sending', ?, ?, ?)`
+  ).bind(chat.id, store.id, u.id, text, reply?.wamid || null, t, t).run();
+  const msg = { id: r.meta.last_row_id, type: 'text', body: text, context_wamid: reply?.wamid || null };
+  return c.json({ message: await deliver(c.env, store, chat, msg) });
+});
+
+function normalizeMime(mime, filename) {
+  let m = String(mime || '').split(';')[0].trim().toLowerCase();
+  const ext = String(filename || '').split('.').pop().toLowerCase();
+  if (!m || m === 'application/octet-stream') {
+    m = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', mp4: 'video/mp4', mp3: 'audio/mpeg', m4a: 'audio/mp4', ogg: 'audio/ogg', opus: 'audio/ogg', aac: 'audio/aac', amr: 'audio/amr', pdf: 'application/pdf' }[ext] || 'application/octet-stream';
+  }
+  if (m === 'audio/x-m4a' || m === 'audio/m4a') m = 'audio/mp4';
+  if (m === 'audio/mp3') m = 'audio/mpeg';
+  if (m === 'audio/opus') m = 'audio/ogg';
+  return m;
+}
+
+api.post('/chats/:id/media', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const u = await requireUser(c);
+  checkCanSend(store, chat);
+  const form = await c.req.formData();
+  const file = form.get('file');
+  if (!file || typeof file === 'string') fail(400, 'No llegó el archivo.');
+  const caption = String(form.get('caption') || '').trim().slice(0, 1024);
+  const filename = clip(file.name || 'archivo', 120);
+  const mime = normalizeMime(file.type, filename);
+  let kind = form.get('as') === 'document' ? 'document' : kindForMime(mime);
+  const rule = SEND_RULES[kind];
+  if (file.size > rule.max) {
+    const mb = Math.round(rule.max / 1048576);
+    if (kind !== 'document' && file.size <= SEND_RULES.document.max) fail(413, `Pasa de ${mb} MB. Envíalo como documento.`, { can_document: true });
+    fail(413, `El archivo pasa de ${mb} MB.`);
+  }
+  const t = now();
+  const r = await c.env.DB.prepare(
+    `INSERT INTO messages (chat_id, store_id, direction, sender, user_id, type, body, media_mime, media_name, media_size, media_status, status, created_at, updated_at)
+     VALUES (?, ?, 'out', 'ase', ?, ?, ?, ?, ?, ?, 'ok', 'sending', ?, ?)`
+  ).bind(chat.id, store.id, u.id, kind, caption || null, mime, filename, file.size, t, t).run();
+  const id = r.meta.last_row_id;
+  const key = mediaKey(store.id, chat.id, id);
+  await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: mime } });
+  await c.env.DB.prepare('UPDATE messages SET media_key = ? WHERE id = ?').bind(key, id).run();
+  const msg = { id, type: kind, body: caption || null, media_key: key, media_mime: mime, media_name: filename };
+  return c.json({ message: await deliver(c.env, store, chat, msg) });
+});
+
+api.post('/messages/:id/retry', async (c) => {
+  const m = await c.env.DB.prepare('SELECT * FROM messages WHERE id = ?').bind(Number(c.req.param('id'))).first();
+  if (!m) fail(404, 'Ese mensaje no existe.');
+  const { chat, store } = await chatFor(c, m.chat_id);
+  if (m.direction !== 'out' || m.status !== 'failed') fail(400, 'Solo se reintentan mensajes que fallaron.');
+  checkCanSend(store, chat);
+  await c.env.DB.prepare("UPDATE messages SET status = 'sending', error = NULL, updated_at = ? WHERE id = ?").bind(now(), m.id).run();
+  return c.json({ message: await deliver(c.env, store, chat, m) });
+});
+
+// Sirve fotos, audios y videos (con soporte de "Range" para que el video se pueda adelantar)
+api.get('/media/:id', async (c) => {
+  const m = await c.env.DB.prepare('SELECT id, chat_id, media_id, media_key, media_mime, media_name FROM messages WHERE id = ?').bind(Number(c.req.param('id'))).first();
+  if (!m) fail(404, 'No existe.');
+  const { store } = await chatFor(c, m.chat_id);
+  let key = m.media_key;
+  if (!key) {
+    if (!m.media_id) fail(404, 'Este mensaje no tiene archivo.');
+    try {
+      key = await fetchMediaToR2(c.env, store, m);
+    } catch (e) {
+      fail(502, 'No se pudo bajar el archivo de WhatsApp: ' + e.message);
+    }
+  }
+  const range = c.req.header('range');
+  const obj = await c.env.MEDIA.get(key, range ? { range: c.req.raw.headers } : undefined);
+  if (!obj) fail(404, 'El archivo ya no está guardado.');
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  headers.set('Content-Type', m.media_mime || headers.get('Content-Type') || 'application/octet-stream');
+  headers.set('Cache-Control', 'private, max-age=31536000, immutable');
+  headers.set('Accept-Ranges', 'bytes');
+  headers.set('ETag', obj.httpEtag);
+  if (m.media_name) headers.set('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(m.media_name)}`);
+  if (range && obj.range) {
+    const off = obj.range.offset ?? 0;
+    const len = obj.range.length ?? obj.size - off;
+    headers.set('Content-Range', `bytes ${off}-${off + len - 1}/${obj.size}`);
+    headers.set('Content-Length', String(len));
+    return new Response(obj.body, { status: 206, headers });
+  }
+  headers.set('Content-Length', String(obj.size));
+  return new Response(obj.body, { headers });
+});
+
+export default api;

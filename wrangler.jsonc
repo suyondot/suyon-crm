@@ -1,0 +1,45 @@
+{
+  // Suyon CRM — Cloudflare Worker (API + webhook de Meta + app web)
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "suyon-crm",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // App web (PWA). Las rutas de la API y del webhook pasan primero por el Worker.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/webhook", "/privacidad", "/eliminar-datos", "/terminos"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "suyon-crm-db",
+      "database_id": "e329743f-686b-4721-b078-1bdd2999d816"
+    }
+  ],
+
+  // Fotos, audios y videos de los chats
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "suyon-crm-media" }
+  ],
+
+  // Limpieza diaria (sesiones vencidas, registros viejos del webhook)
+  "triggers": { "crons": ["0 8 * * *"] },
+
+  "vars": {
+    "GRAPH_API": "https://graph.facebook.com/v23.0",
+    "APP_NAME": "Suyon CRM",
+    "CONTACT_EMAIL": "storesuyo@gmail.com"
+  }
+
+  // Secretos (se ponen en Cloudflare, NUNCA aquí):
+  //   WA_TOKEN         token permanente de WhatsApp (usuario del sistema de Meta)
+  //   WA_VERIFY_TOKEN  palabra que inventas y pegas también en Meta > Webhook
+  //   META_APP_SECRET  "Clave secreta de la app" de SUYON CRM (para validar el webhook)
+  //   SETUP_CODE       clave de inicio para crear la primera cuenta de dueño
+}

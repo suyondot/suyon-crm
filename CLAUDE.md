@@ -67,10 +67,22 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 ## Fases
 - [x] 0 · Meta app SUYON CRM creada y probada (número de prueba OK), Cloudflare, D1 creada, GitHub + este repo.
 - [ ] 0 · Pendientes de Jordan: verificación del negocio en Meta (Ficha RUC), proyecto OpenAI "Pantalón rayas", datos del pantalón de rayas.
-- [ ] 1 · Login/roles, empresas y tiendas, webhook de Meta, bandeja real (recibir/enviar texto, fotos, audios, videos), etiquetas.
+- [x] 1 · Login/roles, empresas y tiendas, webhook de Meta, bandeja real (recibir/enviar texto, fotos, audios, videos), etiquetas. (Código listo y probado, 2 nov 2026.)
+- [ ] 1 · Pendientes de Jordan para ponerla en línea: pasos del README (R2 `suyon-crm-media`, conectar repo en Workers Builds, secretos, token permanente, webhook, publicar app de Meta).
 - [ ] 2 · Bot fijo + seguimientos dentro de la ventana gratis.
 - [ ] 3 · IA por etapa, archivos del prompt, tope de gasto.
 - [ ] 4 · Pedidos, editar, copiar orden, Sheet de Shalom, CAPI.
 - [ ] 5 · Control: embudo, CPA real por anuncio, llamadas.
 - [ ] 6 · Piloto 1 semana; luego migrar pantalón formal.
 - Estimado realista: 2–4 semanas por sesiones.
+
+## Notas técnicas (para la próxima sesión)
+- Estructura: `src/index.js` (Hono: rutas, webhook, páginas /privacidad /eliminar-datos /terminos, cron de limpieza) · `src/api.js` (API de la app) · `src/webhook.js` (entrantes, estados, reacciones, ecos de coexistencia `smb_message_echoes`, media → R2) · `src/whatsapp.js` (Graph API + errores en español) · `src/auth.js` (sesiones por cookie, acceso por empresa/tienda) · `src/migrations.js`.
+- **Migraciones**: se aplican solas desde el Worker (tabla `_migrations`). Para cambiar el esquema, agregar una migración nueva al final; nunca editar la 1.
+- Primer dueño: pantalla de configuración inicial con el secreto `SETUP_CODE` (también sirve para recuperar la cuenta del administrador). Invitaciones y cambios de clave son enlaces (no hay envío de correos).
+- Token por tienda: columna `stores.token_secret` = nombre del secreto en Cloudflare (por defecto `WA_TOKEN`).
+- Tiempo real: la app consulta `/api/sync` cada 3 s (15 s en segundo plano); usa `stores.rev` y luego pide solo lo cambiado (`updated_at`).
+- Ventana para responder: 24 h desde el último mensaje de la clienta, o 72 h si llegó por anuncio y se respondió en las primeras 24 h.
+- Notas de voz: Chrome graba WebM; `public/ogg.js` lo pasa a OGG/Opus sin recodificar (WhatsApp lo muestra como nota de voz). Safari graba MP4/AAC.
+- Front sin build (JS módulo + CSS del prototipo). PWA: `public/sw.js` (red primero), notificaciones del navegador si se activan en Mi cuenta.
+- Pruebas: `npm test` levanta `wrangler dev` con base temporal y un Meta falso (42 pruebas).
