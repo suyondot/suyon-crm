@@ -9,7 +9,7 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 - No guardar en el repo datos de pago del negocio (Yape/Plin, cuentas): son configuración por tienda en la base de datos.
 
 ## Stack decidido
-- **Cloudflare Workers** (API + webhook de Meta) · **D1** (base de datos `suyon-crm-db`) · **R2** (fotos/audios/videos) · Cron Triggers / Queues para seguimientos.
+- **Cloudflare Workers** (API + webhook de Meta) · **D1** (base de datos `suyon-crm-db`, database_id `e329743f-686b-4721-b078-1bdd2999d816`, cuenta Cloudflare storesuyo@gmail.com) · **R2** (fotos/audios/videos) · Cron Triggers / Queues para seguimientos.
 - **WhatsApp Cloud API** oficial con app propia de Meta **"SUYON CRM"** (tipo Integrar con la API, en modo desarrollo; se publica en Fase 1 — necesita URL de política de privacidad, la servimos desde el Worker).
 - **OpenAI GPT-5 mini**, razonamiento mínimo, clave propia por tienda, tope diario de gasto.
 - **Meta CAPI**: evento Compra al **crear** el pedido (no al confirmar), con el ID del anuncio de origen (referral de Click-to-WhatsApp).
@@ -65,8 +65,8 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 - Provincia: Shalom (Olva solo si la pide), adelanto S/30, despacho 4 p.m., llega en 1–2 días.
 
 ## Fases
-- [x] 0 · Meta app SUYON CRM creada y probada (número de prueba OK), Cloudflare, GitHub + este repo.
-- [ ] 0 · Pendientes de Jordan: verificación del negocio en Meta (Ficha RUC), proyecto OpenAI "Pantalón rayas", D1 `suyon-crm-db` (pasar Database ID), datos del pantalón de rayas.
+- [x] 0 · Meta app SUYON CRM creada y probada (número de prueba OK), Cloudflare, D1 creada, GitHub + este repo.
+- [ ] 0 · Pendientes de Jordan: verificación del negocio en Meta (Ficha RUC), proyecto OpenAI "Pantalón rayas", datos del pantalón de rayas.
 - [ ] 1 · Login/roles, empresas y tiendas, webhook de Meta, bandeja real (recibir/enviar texto, fotos, audios, videos), etiquetas.
 - [ ] 2 · Bot fijo + seguimientos dentro de la ventana gratis.
 - [ ] 3 · IA por etapa, archivos del prompt, tope de gasto.
