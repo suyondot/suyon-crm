@@ -370,6 +370,9 @@ function storeInput(b, partial) {
     out.token_secret = v;
   }
   if ('read_receipts' in b) out.read_receipts = b.read_receipts ? 1 : 0;
+  if (out.phone_number_id && out.waba_id && out.phone_number_id === out.waba_id) {
+    fail(400, 'Los dos identificadores son iguales. El de la cuenta de WhatsApp Business es otro número: lo ves en la dirección del Administrador de WhatsApp (asset_id=…).');
+  }
   return out;
 }
 
@@ -444,7 +447,11 @@ api.post('/stores/:id/connect', async (c) => {
     const info = await getPhoneInfo(c.env, st);
     steps.push(`Número encontrado: ${info.display_phone_number} (${info.verified_name || 'sin nombre'})`);
     if (info.quality_rating) steps.push(`Calidad del número: ${info.quality_rating}`);
-    await subscribeApp(c.env, st);
+    try {
+      await subscribeApp(c.env, st);
+    } catch (e) {
+      throw new HttpError(502, `No se pudo suscribir la app a la cuenta de WhatsApp. Revisa el "Identificador de la cuenta de WhatsApp Business" y que el usuario del sistema tenga esa cuenta asignada. (${e.message})`);
+    }
     steps.push('La app SUYON CRM quedó suscrita a la cuenta de WhatsApp');
     await db.prepare("UPDATE stores SET status = 'activo', connect_error = NULL, verified_name = ?, phone_display = COALESCE(?, phone_display), rev = rev + 1 WHERE id = ?")
       .bind(info.verified_name || null, info.display_phone_number || null, st.id).run();
