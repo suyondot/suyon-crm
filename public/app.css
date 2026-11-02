@@ -449,3 +449,10 @@ body{margin:0}
 /* Celular/tablet: la conversación ocupa todo el ancho */
 @media (max-width:1180px){ .chats.no-ficha,.chats.ficha-open{grid-template-columns:300px minmax(0,1fr)} }
 @media (max-width:860px){ .chats.no-ficha,.chats.ficha-open{grid-template-columns:minmax(0,1fr)} }
+/* Etiquetas rápidas encima del cuadro de escribir */
+.tagbar{display:flex;gap:4px;padding:6px 12px 0;background:var(--surface);border-top:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.tagbar button{flex:1 0 auto;border:0;border-radius:7px;padding:7px 10px;font-size:12px;font-weight:700;white-space:nowrap;color:var(--fg);background:color-mix(in srgb,var(--c) 18%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c) 45%,transparent)}
+.tagbar button:hover{background:color-mix(in srgb,var(--c) 30%,transparent)}
+.tagbar button[aria-pressed="true"]{background:var(--c);color:#fff;box-shadow:none}
+#tagbar:not(:empty) + #composer .composer{border-top:0}
+@media (max-width:860px){ .tagbar{flex-wrap:wrap;padding:6px 8px 0} .tagbar button{flex:1 1 30%;padding:6px 4px;font-size:11px} }

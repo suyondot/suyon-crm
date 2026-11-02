@@ -398,6 +398,7 @@ async function loadLabels() {
       renderListHead();
       renderItems();
       renderFicha();
+      renderTagbar();
     } else if (S.view === 'config') renderConfig();
   } catch {}
 }
@@ -700,7 +701,7 @@ function renderConv() {
     conv.innerHTML = `<div class="empty" style="height:100%"><b>Elige un chat</b><span>${S.chats.size ? 'Los más recientes salen arriba.' : ''}</span></div>`;
     return;
   }
-  conv.innerHTML = `<div class="conv-head" id="convhead"></div><div class="msgs" id="msgs"></div><div id="replyslot"></div><div id="composer"></div>`;
+  conv.innerHTML = `<div class="conv-head" id="convhead"></div><div class="msgs" id="msgs"></div><div id="replyslot"></div><div id="tagbar"></div><div id="composer"></div>`;
   renderConvHead();
   const box = $('#msgs');
   box.addEventListener('load', onMediaLoad, true);
@@ -715,7 +716,28 @@ function renderConv() {
   });
   renderMsgs({ toBottom: true });
   renderReply();
+  renderTagbar();
   renderComposer();
+}
+
+// Barra de etiquetas rápidas encima del cuadro de escribir (como en Pancake)
+const QUICK_ORDER = ['LIMA PENDIENTE', 'YAPE PENDIENTE', '🔥 URGENTE', '✅ LIMA', '✅ PROVINCIA'];
+function quickLabels() {
+  const list = S.labels.filter((l) => !l.auto || l.name === 'YAPE PENDIENTE');
+  const rank = (l) => {
+    const i = QUICK_ORDER.indexOf(l.name);
+    return i < 0 ? 100 + l.sort : i;
+  };
+  return list.sort((a, b) => rank(a) - rank(b));
+}
+function renderTagbar() {
+  const box = $('#tagbar');
+  const c = S.chats.get(S.openId);
+  if (!box) return;
+  if (!c || !S.labels.length) return (box.innerHTML = '');
+  box.innerHTML = `<div class="tagbar" role="group" aria-label="Etiquetas rápidas">${quickLabels()
+    .map((l) => `<button data-tag="${l.id}" aria-pressed="${c.labels.includes(l.id)}" style="--c:var(${esc(l.color)})" title="${c.labels.includes(l.id) ? 'Quitar' : 'Poner'} ${esc(l.name)}">${esc(l.name)}</button>`)
+    .join('')}</div>`;
 }
 
 function renderConvHead() {
@@ -1199,12 +1221,14 @@ async function toggleTag(labelId) {
   const on = c.labels.includes(labelId);
   c.labels = on ? c.labels.filter((x) => x !== labelId) : [...c.labels, labelId];
   renderFicha();
+  renderTagbar();
   renderItems();
   try {
     await api(on ? 'DELETE' : 'PUT', `/chats/${c.id}/labels/${labelId}`);
   } catch (e) {
     c.labels = on ? [...c.labels, labelId] : c.labels.filter((x) => x !== labelId);
     renderFicha();
+    renderTagbar();
     renderItems();
     toast(e.message);
   }
@@ -1306,6 +1330,7 @@ async function refreshStore(newUnread) {
     await fetchNewMessages(S.openId);
     renderConvHead();
     renderFicha();
+    renderTagbar();
     const wasLocked = !$('#draft') && !S.rec;
     if (wasLocked) renderComposer();
   }
