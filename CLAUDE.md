@@ -30,7 +30,8 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 - +51 941 010 752 · AHORA (desde 2 nov 15:25) en cuenta de mensajes propia **"Orión" `4467572743460773`** · phone_number_id **`1438552302669955`** (portafolio Orión, business `27970507489211613`). Antes estaba en "Orión - Pancake Singapore" `2306137423565969` (phone id `1395172913681493`), con línea de crédito de Pancake (CAKE COMM PTE. LTD.) → no se podía enviar (código 10). Se borró y se volvió a agregar.
 - Límite Meta sin verificar: 2 números por empresa al agregar desde la app (sube a 20 con verificación).
 - OJO Meta 2026: la "cuenta de WhatsApp" del número (`1434395304770204`, la que sale en Configuración del negocio → Cuentas de WhatsApp) NO sirve para `subscribed_apps` ("This API is not supported for this WhatsApp Business Account"). Hay que usar la **cuenta de mensajes** (Messaging accounts → Linked accounts) y asignársela al usuario del sistema con acceso total.
-- Recibir funciona; ENVIAR falla con código 10 aunque el token tiene whatsapp_business_messaging para todas. Pancake sí puede enviar → probable causa: la cuenta usa la línea de crédito (billetera) de Pancake. Plan: quitar socio Pancake Singapore SOLO de +51 941 010 752 y poner tarjeta propia en el Administrador de WhatsApp.
+- RESUELTO 2 nov 15:39: con la cuenta propia (ownership_type SELF) recibir y ENVIAR funcionan. Lección: un número dado de alta con el botón de Pancake queda en una cuenta con línea de crédito de Pancake → otra app recibe pero no envía (código 10). Solución: borrar el número de esa cuenta y agregarlo de nuevo desde la app SUYON CRM (cuenta nueva, PEN, Lima) con SMS al chip. Ojo límite de 2 números sin verificación.
+- Estado de la cuenta propia: name_status PENDING_REVIEW (nombre «Porte Perú»), business_verification_status **rejected** (hay que volver a pedir la verificación con RUC). Sin tarjeta todavía (las 2 tarjetas fallaron); responder clientas funciona sin tarjeta dentro de los 1,000 gratis/mes.
 - Hay DOS cuentas llamadas "Orión - Pancake Singapore": no quitar Pancake de la equivocada (la otra puede tener Orión Perú).
 - Solo 1 usuario del sistema Admin permitido (negocio sin verificar): el nuestro es rol Empleado.
 
@@ -77,7 +78,8 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 - [ ] 0 · Pendientes de Jordan: verificación del negocio en Meta (Ficha RUC), proyecto OpenAI "Pantalón rayas", datos del pantalón de rayas.
 - [x] 1 · Login/roles, empresas y tiendas, webhook de Meta, bandeja real (recibir/enviar texto, fotos, audios, videos), etiquetas. (Código listo y probado, 2 nov 2026.)
 - [x] 1 · En línea (2 nov 2026): https://suyon-crm.storesuyo.workers.dev · R2, Workers Builds desde GitHub, 4 secretos, usuario del sistema `suyon-crm` (Empleado, portafolio Orión), webhook verificado, app de Meta publicada. Primer mensaje real recibido.
-- [ ] 1 · Pendiente: nombre visible "Orión Formal Rayas" RECHAZADO por Meta (pedir uno nuevo antes de vender); apagar Botcake/Pancake en el número piloto; verificación del negocio.
+- [x] 1 · Primer envío real desde el CRM (2 nov 15:39).
+- [ ] 1 · Pendiente: nombre «Porte Perú» en revisión; tarjeta en la cuenta Orión `4467572743460773`; volver a pedir verificación del negocio (estaba rejected); probar fotos/audios/notas de voz reales.
 - [ ] 2 · Bot fijo + seguimientos dentro de la ventana gratis.
 - [ ] 3 · IA por etapa, archivos del prompt, tope de gasto.
 - [ ] 4 · Pedidos, editar, copiar orden, Sheet de Shalom, CAPI.
