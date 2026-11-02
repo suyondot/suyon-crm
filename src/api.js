@@ -5,7 +5,7 @@ import {
   ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError,
 } from './util.js';
 import { createSession, destroySession, currentUser, requireUser, checkPassword, loadAccess, storeFor, companyFor, chatFor } from './auth.js';
-import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, kindForMime, SEND_RULES } from './whatsapp.js';
+import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES } from './whatsapp.js';
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 
 const api = new Hono();
@@ -508,6 +508,16 @@ api.post('/stores/:id/connect', async (c) => {
     c.set('access', undefined);
     return c.json({ ok: false, steps, error: e.message, ...(await mePayload(c)) }, 200);
   }
+});
+
+api.post('/stores/:id/register', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  if (!st.phone_number_id) fail(400, 'Primero guarda el "Identificador del número de teléfono".');
+  const pin = String((await body(c)).pin || '').trim();
+  if (!/^\d{6}$/.test(pin)) fail(400, 'El PIN debe tener 6 números.');
+  await registerNumber(c.env, st, pin);
+  await bump(c.env, st.id);
+  return c.json({ ok: true });
 });
 
 api.get('/stores/:id/health', async (c) => {

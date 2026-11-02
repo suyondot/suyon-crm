@@ -140,6 +140,12 @@ export async function findWaba(env, store) {
   return report;
 }
 
+// Activa el número en la API oficial (paso final después de verificarlo por SMS en Meta).
+// El PIN de 6 dígitos queda como "verificación en dos pasos" del número.
+export async function registerNumber(env, store, pin) {
+  return graph(env, store, `${store.phone_number_id}/register`, { method: 'POST', json: { messaging_product: 'whatsapp', pin } });
+}
+
 export async function subscribeApp(env, store) {
   return graph(env, store, `${store.waba_id}/subscribed_apps`, { method: 'POST' });
 }

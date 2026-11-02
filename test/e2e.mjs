@@ -38,6 +38,7 @@ const meta = http.createServer(async (req, res) => {
   if (req.method === 'GET' && p === 'debug_token') return json(200, { data: { granular_scopes: [{ scope: 'whatsapp_business_management', target_ids: ['555', WABA_ID] }] } });
   if (req.method === 'GET' && p === '555/phone_numbers') return json(200, { data: [{ id: '777' }] });
   if (req.method === 'GET' && p === `${WABA_ID}/phone_numbers`) return json(200, { data: [{ id: PHONE_ID }] });
+  if (req.method === 'POST' && p === `${PHONE_ID}/register`) return json(200, { success: body?.pin === '123456' });
   if (req.method === 'POST' && p === `${PHONE_ID}/media`) return json(200, { id: 'up_media_' + ++seq });
   if (req.method === 'POST' && p === `${PHONE_ID}/messages`) {
     if (body.status === 'read') return json(200, { success: true });
@@ -167,6 +168,12 @@ try {
     assert.equal(s.status, 'activo');
     assert.equal(s.verified_name, 'Porte Perú');
     assert.ok(calls.some((c) => c.path === `${WABA_ID}/subscribed_apps`));
+  });
+  await step('activar número con PIN de 6 dígitos', async () => {
+    assert.equal((await call('POST', `/api/stores/${store.id}/register`, { pin: '12' })).status, 400);
+    const r = await call('POST', `/api/stores/${store.id}/register`, { pin: '123456' });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.ok(calls.some((c) => c.path === `${PHONE_ID}/register` && c.body?.messaging_product === 'whatsapp'));
   });
   await step('salud muestra URL del webhook y secretos', async () => {
     const h = await call('GET', `/api/stores/${store.id}/health`);

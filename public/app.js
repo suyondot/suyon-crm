@@ -1456,6 +1456,12 @@ function cfgNumero() {
       ${S.connSteps ? `<ul class="stlist" style="margin-bottom:12px">${S.connSteps.steps.map((x) => `<li><span class="${/^(Cuenta|El token|No se pudo)/.test(x) ? 'n' : /^Info/.test(x) ? 'y' : 'y'}">${/^(Cuenta|El token|No se pudo)/.test(x) ? '•' : /^Info/.test(x) ? 'ℹ' : '✓'}</span><span style="overflow-wrap:anywhere">${esc(x)}</span></li>`).join('')}${S.connSteps.ok ? '' : `<li><span class="n">✗</span><span>${esc(S.connSteps.error)}</span></li>`}</ul>` : ''}
       <button class="send" data-act="connect" ${st.phone_number_id ? '' : 'disabled'}>${st.status === 'activo' ? 'Probar conexión otra vez' : 'Conectar número'}</button>
     </div>
+    <div class="card"><h3>Activar número en la API</h3><p class="sub">Solo para un número recién agregado o pasado a una cuenta nueva: después de verificarlo con el código SMS en Meta, se activa aquí. El PIN de 6 números queda como «verificación en dos pasos». Anótalo.</p>
+      <form id="rf" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div class="field" style="flex:1;min-width:160px"><label for="r-pin">PIN nuevo (6 números)</label><input id="r-pin" name="pin" inputmode="numeric" maxlength="6" pattern="\\d{6}" required autocomplete="off" class="mono"></div>
+        <button class="iconbtn" type="submit" style="height:38px" ${st.phone_number_id ? '' : 'disabled'}>Activar número</button>
+        <div class="err" hidden style="width:100%"></div>
+      </form></div>
     <div class="card"><h3>Datos del número</h3><p class="sub">Se guardan solo para esta tienda.</p>
       <form id="sf" class="grid" style="gap:12px">
         <div class="fields">
@@ -1509,6 +1515,11 @@ function cfgNumero() {
     setMe(r);
     toast('Guardado');
     render();
+  });
+  formHandler($('#rf'), async (d) => {
+    await api('POST', `/stores/${st.id}/register`, d);
+    $('#rf').reset();
+    toast('Número activado. Ahora toca «Conectar número».', 5000);
   });
   if (!h) loadHealth();
 }

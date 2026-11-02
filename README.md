@@ -68,5 +68,5 @@ Si algo no llega: **Configuración → Número de WhatsApp → Webhook de Meta**
 ---
 
 ## Para desarrollo
-- `npm install` · `npm run dev` (local con `.dev.vars`) · `npm test` (44 pruebas con un WhatsApp simulado).
+- `npm install` · `npm run dev` (local con `.dev.vars`) · `npm test` (45 pruebas con un WhatsApp simulado).
 - Código: `src/` (Worker: API, webhook, migraciones automáticas de D1), `public/` (app web sin build).
