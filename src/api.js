@@ -459,17 +459,28 @@ api.post('/stores/:id/connect', async (c) => {
     }
     if (!subscribed) {
       // El identificador de la cuenta falta o no es el correcto: se busca solo
-      const found = await findWaba(c.env, st).catch(() => null);
-      if (found && found !== st.waba_id) {
-        st.waba_id = found;
-        await db.prepare('UPDATE stores SET waba_id = ? WHERE id = ?').bind(found, st.id).run();
-        steps.push(`Se encontró la cuenta de WhatsApp correcta: ${found}`);
-        await subscribeApp(c.env, st);
-        subscribed = true;
+      const rep = await findWaba(c.env, st);
+      if (rep.found && rep.found !== st.waba_id) {
+        st.waba_id = rep.found;
+        await db.prepare('UPDATE stores SET waba_id = ? WHERE id = ?').bind(rep.found, st.id).run();
+        steps.push(`Se encontró la cuenta de WhatsApp correcta: ${rep.found}`);
+        try {
+          await subscribeApp(c.env, st);
+          subscribed = true;
+        } catch (e) {
+          subErr = e;
+        }
+      }
+      if (!subscribed) {
+        if (subErr) steps.push(`Cuenta ${st.waba_id || '(vacía)'}: ${subErr.message}`);
+        if (rep.error) steps.push(rep.error);
+        for (const t of rep.tried) {
+          steps.push(`Cuenta que ve el token: ${t.id}${t.name ? ' «' + t.name + '»' : ''} → ${t.error ? 'error: ' + t.error : t.phones.length ? 'números: ' + t.phones.join(', ') : 'sin números'}`);
+        }
       }
     }
     if (!subscribed) {
-      throw new HttpError(502, `No se pudo suscribir la app a la cuenta de WhatsApp. Revisa que el usuario del sistema tenga asignada la cuenta de este número con acceso total.${subErr ? ' (' + subErr.message + ')' : ''}`);
+      throw new HttpError(502, 'No se pudo suscribir la app a la cuenta de WhatsApp. Abajo está lo que revisó el CRM.');
     }
     steps.push('La app SUYON CRM quedó suscrita a la cuenta de WhatsApp');
     await db.prepare("UPDATE stores SET status = 'activo', connect_error = NULL, verified_name = ?, phone_display = COALESCE(?, phone_display), rev = rev + 1 WHERE id = ?")

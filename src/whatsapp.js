@@ -70,21 +70,39 @@ export async function getPhoneInfo(env, store) {
   return graph(env, store, `${store.phone_number_id}?fields=display_phone_number,verified_name,quality_rating,code_verification_status,platform_type,throughput`);
 }
 
-// Busca a qué cuenta de WhatsApp Business pertenece el número, con los permisos del token
+// Busca a qué cuenta de WhatsApp Business pertenece el número, con los permisos del token.
+// Devuelve también lo que revisó, para poder explicar qué pasó si no la encuentra.
 export async function findWaba(env, store) {
   const token = tokenFor(env, store);
-  const dbg = await graph(env, store, `debug_token?input_token=${encodeURIComponent(token)}`);
+  const report = { found: null, tried: [], error: null };
+  let dbg;
+  try {
+    dbg = await graph(env, store, `debug_token?input_token=${encodeURIComponent(token)}`);
+  } catch (e) {
+    report.error = 'No se pudo leer el token: ' + e.message;
+    return report;
+  }
   const ids = new Set();
   for (const sc of dbg.data?.granular_scopes || []) {
     if (/whatsapp/.test(sc.scope || '')) for (const t of sc.target_ids || []) ids.add(String(t));
   }
+  if (!ids.size) report.error = 'El token no tiene cuentas de WhatsApp asignadas (o se generó antes de asignarlas).';
   for (const id of ids) {
+    const item = { id, name: null, phones: [], error: null };
+    try {
+      const info = await graph(env, store, `${id}?fields=name`);
+      item.name = info.name || null;
+    } catch {}
     try {
       const r = await graph(env, store, `${id}/phone_numbers?fields=id,display_phone_number`);
-      if ((r.data || []).some((p) => String(p.id) === String(store.phone_number_id))) return id;
-    } catch {}
+      item.phones = (r.data || []).map((p) => `${p.display_phone_number || ''} (${p.id})`);
+      if ((r.data || []).some((p) => String(p.id) === String(store.phone_number_id))) report.found = id;
+    } catch (e) {
+      item.error = e.message;
+    }
+    report.tried.push(item);
   }
-  return null;
+  return report;
 }
 
 export async function subscribeApp(env, store) {
