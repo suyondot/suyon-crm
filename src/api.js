@@ -5,7 +5,7 @@ import {
   ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError,
 } from './util.js';
 import { createSession, destroySession, currentUser, requireUser, checkPassword, loadAccess, storeFor, companyFor, chatFor } from './auth.js';
-import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, kindForMime, SEND_RULES } from './whatsapp.js';
+import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, kindForMime, SEND_RULES } from './whatsapp.js';
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 
 const api = new Hono();
@@ -446,6 +446,13 @@ api.post('/stores/:id/connect', async (c) => {
   try {
     const info = await getPhoneInfo(c.env, st);
     steps.push(`Número encontrado: ${info.display_phone_number} (${info.verified_name || 'sin nombre'})`);
+    try {
+      const ti = await tokenInfo(c.env, st);
+      steps.push(`Info del token · app: ${ti.app} · tipo: ${ti.type} · vence: ${ti.expires} · permisos: ${ti.scopes}`);
+      for (const g of ti.granular) steps.push(`Info del token · ${g}`);
+    } catch (e) {
+      steps.push('Info del token: no se pudo leer (' + e.message + ')');
+    }
     if (info.quality_rating) steps.push(`Calidad del número: ${info.quality_rating}`);
     let subscribed = false;
     let subErr = null;

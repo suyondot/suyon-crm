@@ -66,6 +66,24 @@ async function graph(env, store, path, { method = 'GET', json, form } = {}) {
   return data;
 }
 
+// Datos del token para diagnosticar permisos (no expone el token)
+export async function tokenInfo(env, store) {
+  const token = tokenFor(env, store);
+  const d = (await graph(env, store, `debug_token?input_token=${encodeURIComponent(token)}`)).data || {};
+  let app = null;
+  try {
+    app = await graph(env, store, `${d.app_id}?fields=name`);
+  } catch {}
+  return {
+    app: `${app?.name || '?'} (${d.app_id || '?'})`,
+    type: d.type,
+    valid: d.is_valid,
+    expires: d.expires_at ? new Date(d.expires_at * 1000).toISOString().slice(0, 10) : 'nunca',
+    scopes: (d.scopes || []).join(', '),
+    granular: (d.granular_scopes || []).map((g) => `${g.scope}: ${g.target_ids ? g.target_ids.join(', ') : 'todas'}`),
+  };
+}
+
 export async function getPhoneInfo(env, store) {
   return graph(env, store, `${store.phone_number_id}?fields=display_phone_number,verified_name,quality_rating,code_verification_status,platform_type,throughput`);
 }
