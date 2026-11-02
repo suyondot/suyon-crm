@@ -5,7 +5,7 @@ import {
   ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError,
 } from './util.js';
 import { createSession, destroySession, currentUser, requireUser, checkPassword, loadAccess, storeFor, companyFor, chatFor } from './auth.js';
-import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, kindForMime, SEND_RULES } from './whatsapp.js';
+import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, kindForMime, SEND_RULES } from './whatsapp.js';
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 
 const api = new Hono();
@@ -453,6 +453,14 @@ api.post('/stores/:id/connect', async (c) => {
     } catch (e) {
       steps.push('Info del token: no se pudo leer (' + e.message + ')');
     }
+    try {
+      const pf = await probeFields(c.env, st, st.phone_number_id, ['status', 'name_status', 'account_mode', 'code_verification_status', 'platform_type', 'messaging_limit_tier', 'is_official_business_account']);
+      steps.push('Info del número · ' + Object.entries(pf).map(([k, v]) => `${k}: ${v}`).join(' · '));
+      if (st.waba_id) {
+        const wf = await probeFields(c.env, st, st.waba_id, ['name', 'owner_business_info', 'ownership_type', 'account_review_status', 'business_verification_status', 'primary_funding_id']);
+        steps.push('Info de la cuenta · ' + Object.entries(wf).map(([k, v]) => `${k}: ${v}`).join(' · '));
+      }
+    } catch {}
     if (info.quality_rating) steps.push(`Calidad del número: ${info.quality_rating}`);
     let subscribed = false;
     let subErr = null;

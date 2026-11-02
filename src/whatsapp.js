@@ -84,6 +84,20 @@ export async function tokenInfo(env, store) {
   };
 }
 
+// Campos sueltos (si Meta no reconoce uno, no rompe los demás)
+export async function probeFields(env, store, id, fields) {
+  const out = {};
+  for (const f of fields) {
+    try {
+      const r = await graph(env, store, `${id}?fields=${f}`);
+      out[f] = r[f] === undefined ? '—' : typeof r[f] === 'object' ? JSON.stringify(r[f]) : String(r[f]);
+    } catch (e) {
+      out[f] = 'error';
+    }
+  }
+  return out;
+}
+
 export async function getPhoneInfo(env, store) {
   return graph(env, store, `${store.phone_number_id}?fields=display_phone_number,verified_name,quality_rating,code_verification_status,platform_type,throughput`);
 }
