@@ -55,6 +55,8 @@ const meta = http.createServer(async (req, res) => {
   if (req.method === 'POST' && p === 'APP123/uploads') return json(200, { id: 'upload:abc123' });
   if (req.method === 'GET' && p === `${PHONE_ID}/whatsapp_business_profile`) return json(200, { data: [{ about: 'Hola', vertical: 'APPAREL', websites: ['https://instagram.com/x'], messaging_product: 'whatsapp' }] });
   if (req.method === 'POST' && p === `${PHONE_ID}/whatsapp_business_profile`) return json(200, { success: true });
+  if (req.method === 'POST' && p === `${WABA_ID}/message_templates`) return json(200, { id: 'tpl_' + ++seq, status: 'PENDING', category: body.category });
+  if (req.method === 'GET' && p === `${WABA_ID}/message_templates`) return json(200, { data: [{ name: url.searchParams.get('name'), status: 'APPROVED', language: 'es' }] });
   if (p.startsWith('file/')) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(IMG); }
   if (req.method === 'GET' && p === PHONE_ID) return json(200, { display_phone_number: '+51 924 000 111', verified_name: 'Porte Perú', quality_rating: 'GREEN', id: PHONE_ID });
   if (req.method === 'POST' && p === `${WABA_ID}/subscribed_apps`) return json(200, { success: true });
@@ -110,7 +112,7 @@ const persist = fs.mkdtempSync(path.join(os.tmpdir(), 'scrm-'));
 await new Promise((r) => meta.listen(META_PORT, '127.0.0.1', r));
 const VARS = {
   GRAPH_API: `http://127.0.0.1:${META_PORT}`, ANTHROPIC_API: `http://127.0.0.1:${META_PORT}`, TEST_MODE: '1',
-  WA_TOKEN: 'test-token', WA_VERIFY_TOKEN: 'verifica123', META_APP_SECRET: SECRET, SETUP_CODE: 'inicio-prueba', ANTHROPIC_API_KEY: 'ia-test-key',
+  WA_TOKEN: 'test-token', WA_VERIFY_TOKEN: 'verifica123', META_APP_SECRET: SECRET, SETUP_CODE: 'inicio-prueba', ANTHROPIC_API_KEY: 'ia-test-key', SHOPIFY_SECRET: 'shp-secret',
 };
 const wd = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--persist-to', persist, ...Object.entries(VARS).flatMap(([k, v]) => ['--var', `${k}:${v}`]), '--show-interactive-dev-session=false'], { stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
 let log = '';
@@ -593,6 +595,13 @@ try {
     assert.deepEqual(out.map((m) => m.type), ['image', 'text', 'text']);
     assert.ok(out.every((m) => m.sender === 'bot' && m.status === 'sent'));
     assert.match(out[2].body, /Qué talla usas/);
+    // la pregunta de talla sale como lista para tocar (XS a XL con su talla de jean)
+    const sentList = calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.to === '51911111111' && x.body?.type === 'interactive').pop();
+    assert.equal(sentList.body.interactive.type, 'list');
+    assert.deepEqual(sentList.body.interactive.action.sections[0].rows.map((r) => r.title), ['XS', 'S', 'M', 'L', 'XL']);
+    assert.equal(sentList.body.interactive.action.sections[0].rows[2].description, 'Jean 31-33');
+    assert.equal(sentList.body.interactive.action.button, 'Elegir mi talla');
+    assert.deepEqual(out[2].extra?.opciones?.length, 5);
     const l = await call('GET', `/api/stores/${store.id}/labels`);
     assert.ok(l.labels.some((x) => x.name === 'pantalón prod'));
   });
@@ -765,6 +774,133 @@ try {
     assert.match(b.entrega_ahora, /HOY|MAÑANA|LUNES|MARTES/);
     await call('PATCH', `/api/stores/${store.id}/bot/settings`, { corte_h: 13, entrega_sab: true, entrega_horario: 'entre 2 y 8 p.m.' });
   });
+  console.log('Pedidos y Shopify');
+  const shopHook = async (topic, obj, secret = 'shp-secret', url) => {
+    const raw = JSON.stringify(obj);
+    const h = crypto.createHmac('sha256', secret).update(raw).digest('base64');
+    return fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-shopify-topic': topic, 'x-shopify-hmac-sha256': h }, body: raw });
+  };
+  let shopUrl, limaOrder;
+  await step('la IA dejó el pedido armado cuando la clienta yapeó (agencia)', async () => {
+    const c = await chatOf('51911111111');
+    const r = await call('GET', `/api/chats/${c.id}/pedidos`);
+    assert.equal(r.pedidos.length, 1, JSON.stringify(r));
+    const o = r.pedidos[0];
+    assert.equal(o.source, 'ia');
+    assert.equal(o.modo, 'agencia');
+    assert.equal(o.status, 'por_pagar');
+    assert.equal(o.sede, 'Av. Brasil');
+    assert.equal(o.adelanto, 30);
+    assert.equal(o.items[0].talla, 'S');
+    assert.equal(o.items[0].color, 'Negro');
+  });
+  await step('pedido manual de Lima: precio por cantidad, día de entrega y copiar orden', async () => {
+    const c = await chatOf('51911111112');
+    const d = await call('GET', `/api/chats/${c.id}/pedido-borrador`);
+    assert.equal(d.borrador.celular, '51911111112');
+    let r = await call('POST', `/api/stores/${store.id}/pedidos`, { chat_id: c.id, modo: 'lima', nombre: 'Ana Pérez', celular: '911111112', distrito: 'Surco', direccion: 'Av. Primavera 123', items: [{ talla: 'M', color: 'Negro', cantidad: 1 }, { talla: 'M', color: 'Vino', cantidad: 1 }] });
+    assert.equal(r.status, 200, JSON.stringify(r));
+    limaOrder = r.pedido;
+    assert.equal(limaOrder.total, 139);
+    assert.equal(limaOrder.status, 'nuevo');
+    assert.equal(limaOrder.celular, '51911111112');
+    assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(limaOrder.entrega));
+    assert.equal(limaOrder.number, 2);
+    r = await call('GET', `/api/pedidos/${limaOrder.id}`);
+    assert.ok(r.texto, JSON.stringify(r));
+    assert.match(r.texto, /✅ AGENDADO · Pedido #2/);
+    assert.match(r.texto, /Surco/);
+    assert.equal((await call('PATCH', `/api/pedidos/${limaOrder.id}`, { status: 'recogido' })).status, 400, 'estado de agencia no vale en Lima');
+  });
+  await step('mensajes por estado: apagados no salen; encendidos salen gratis en la ventana', async () => {
+    const before = calls.filter((x) => x.path === `${PHONE_ID}/messages`).length;
+    await call('PATCH', `/api/pedidos/${limaOrder.id}`, { status: 'confirmado' });
+    assert.equal(calls.filter((x) => x.path === `${PHONE_ID}/messages`).length, before, 'apagado no manda');
+    const a = await call('PATCH', `/api/stores/${store.id}/autos/en_ruta`, { on: true });
+    assert.equal(a.auto.on, true);
+    const r = await call('PATCH', `/api/pedidos/${limaOrder.id}`, { status: 'en_ruta' });
+    assert.equal(r.pedido.status, 'en_ruta');
+    const sent = calls.filter((x) => x.path === `${PHONE_ID}/messages`).pop();
+    assert.equal(sent.body.type, 'text');
+    assert.match(sent.body.text.body, /en camino/);
+    assert.match(sent.body.text.body, /S\/139/);
+    const ev = await call('GET', `/api/pedidos/${limaOrder.id}`);
+    assert.ok(ev.events.some((e) => /Se mandó «En ruta»/.test(e.detail)));
+    const dup = await call('POST', `/api/pedidos/${limaOrder.id}/duplicar`);
+    assert.equal(dup.pedido.number, 3);
+    assert.equal(dup.pedido.status, 'nuevo');
+    assert.match(dup.pedido.notas, /Recompra del pedido #2/);
+    const list = await call('GET', `/api/stores/${store.id}/pedidos?grupo=lima`);
+    assert.ok(list.pedidos.length >= 2 && list.dias.length === 14);
+    assert.equal(list.estados.en_ruta.n, 1);
+  });
+  await step('Shopify: enlace, firma y pedido que entra solo (Lima → confirmar)', async () => {
+    const r = await call('POST', `/api/stores/${store.id}/shopify/enlace`);
+    shopUrl = r.shopify.url.replace(/^https?:\/\/[^/]+/, BASE);
+    assert.ok(r.shopify.secret_ok);
+    await call('PATCH', `/api/stores/${store.id}/autos/confirmar`, { on: true });
+    const order = { id: 5551, name: '#1001', total_price: '175.00', phone: '+51 917 777 777', note: 'Tocar timbre', checkout_token: 'ck1',
+      shipping_address: { first_name: 'Rosa', last_name: 'Díaz', phone: '917777777', address1: 'Jr. Lima 456', city: 'Miraflores', province: 'Lima', company: '45678912' },
+      line_items: [{ title: 'Pantalón formal', variant_title: 'L / Gris oscuro', quantity: 3, price: '58.33' }] };
+    assert.equal((await shopHook('orders/create', order, 'mala', shopUrl)).status, 401);
+    assert.equal((await shopHook('orders/create', order, 'shp-secret', shopUrl)).status, 200);
+    const o = await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Rosa`)).pedidos[0]);
+    assert.equal(o.source, 'shopify');
+    assert.equal(o.ext_name, '#1001');
+    assert.equal(o.modo, 'lima');
+    assert.equal(o.distrito, 'Miraflores');
+    assert.equal(o.celular, '51917777777');
+    assert.deepEqual([o.items[0].talla, o.items[0].color, o.items[0].cantidad], ['L', 'Gris oscuro', 3]);
+    assert.equal(o.total, 175);
+    await shopHook('orders/create', order, 'shp-secret', shopUrl);
+    await wait(800);
+    assert.equal((await call('GET', `/api/stores/${store.id}/pedidos?q=Rosa`)).pedidos.length, 1, 'no se duplica');
+    // Clienta nueva: ventana cerrada y sin plantilla → aviso, no se manda nada
+    await wait(1500);
+    const avx = await call('GET', `/api/stores/${store.id}/avisos`);
+    assert.ok(avx.events.some((e) => /No se mandó «Confirmar pedido contra entrega» del pedido/.test(e.title)), JSON.stringify(avx.events.slice(0, 4).map((e) => e.title + ' :: ' + e.body)));
+  });
+  await step('plantilla de Meta: se pide, se aprueba y el siguiente pedido sale con plantilla', async () => {
+    let r = await call('POST', `/api/stores/${store.id}/autos/confirmar/plantilla`);
+    assert.equal(r.status, 200, JSON.stringify(r));
+    assert.equal(r.auto.tpl_status, 'PENDING');
+    const created = calls.filter((x) => x.path === `${WABA_ID}/message_templates` && x.method === 'POST').pop();
+    assert.equal(created.body.category, 'UTILITY');
+    assert.match(created.body.components[0].text, /\{\{1\}\}/);
+    assert.deepEqual(created.body.components[1].buttons.map((b) => b.text), ['Sí, confirmo', 'Cambiar algo']);
+    r = await call('POST', `/api/stores/${store.id}/autos/sync`);
+    assert.equal(r.autos.find((a) => a.key === 'confirmar').tpl_status, 'APPROVED');
+    await shopHook('orders/create', { id: 5552, name: '#1002', total_price: '89.00', shipping_address: { first_name: 'Luz', phone: '912345678', address1: 'Calle 1', city: 'Comas', province: 'Lima' }, line_items: [{ title: 'Pantalón formal', variant_title: 'S / Negro', quantity: 1 }] }, 'shp-secret', shopUrl);
+    const sent = await until(() => calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.type === 'template').pop());
+    assert.equal(sent.body.to, '51912345678');
+    assert.equal(sent.body.template.name, created.body.name);
+    assert.equal(sent.body.template.components[0].parameters[0].text, 'Luz');
+  });
+  await step('la clienta toca «Sí, confirmo» y el pedido queda Confirmado', async () => {
+    const o = (await call('GET', `/api/stores/${store.id}/pedidos?q=Luz`)).pedidos[0];
+    assert.equal(o.status, 'nuevo');
+    await hook(md({ contacts: [{ profile: { name: 'Luz' }, wa_id: '51912345678' }], messages: [{ from: '51912345678', id: 'wamid.BTN1', timestamp: ts(), type: 'button', button: { text: 'Sí, confirmo', payload: 'Sí, confirmo' } }] }));
+    const ok = await until(async () => { const x = (await call('GET', `/api/stores/${store.id}/pedidos?q=Luz`)).pedidos[0]; return x.status === 'confirmado' ? x : null; });
+    assert.equal(ok.status, 'confirmado');
+    // y con el botón del mensaje gratis (ord:edit) pasa a asesora
+    await hook(md({ contacts: [{ profile: { name: 'Luz' }, wa_id: '51912345678' }], messages: [{ from: '51912345678', id: 'wamid.BTN2', timestamp: ts(), type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: `ord:edit:${ok.id}`, title: 'Cambiar algo' } } }] }));
+    const c = await until(async () => { const x = await chatOf('51912345678'); return x?.bot_paused === 1 ? x : null; });
+    assert.equal(c.handler, 'asesora');
+  });
+  await step('Shopify: provincia va por agencia, cancelar y carrito abandonado', async () => {
+    await shopHook('orders/create', { id: 5553, name: '#1003', total_price: '139.00', shipping_address: { first_name: 'Eva', phone: '913333333', address1: 'Av. Sol 1', city: 'Cusco', province: 'Cusco' }, line_items: [{ title: 'Pantalón formal', variant_title: 'M / Perla', quantity: 2 }] }, 'shp-secret', shopUrl);
+    const o = await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Eva`)).pedidos[0]);
+    assert.equal(o.modo, 'agencia');
+    assert.equal(o.status, 'por_pagar');
+    assert.equal(o.adelanto, 30);
+    await shopHook('orders/cancelled', { id: 5553, cancelled_at: new Date().toISOString() }, 'shp-secret', shopUrl);
+    await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Eva`)).pedidos[0]?.status === 'cancelado');
+    await call('PATCH', `/api/stores/${store.id}/autos/carrito`, { on: true, delay_min: 30 });
+    await shopHook('checkouts/create', { token: 'ck-abc', total_price: '89.00', shipping_address: { first_name: 'Noa', phone: '914444444' }, line_items: [{ title: 'Pantalón formal', variant_title: 'XS / Vino', quantity: 1 }] }, 'shp-secret', shopUrl);
+    await wait(800);
+    await call('POST', '/__test/jobs?shift=' + 31 * 60e3);
+    await until(async () => (await call('GET', `/api/stores/${store.id}/avisos`)).events.some((e) => /No se mandó «Carrito abandonado/.test(e.title)));
+  });
   await step('guardar el lienzo valida los bloques', async () => {
     const f = await call('GET', `/api/bot/flows/${flowId}`);
     const g = f.flow.graph;
@@ -801,14 +937,18 @@ try {
     assert.equal(r.status, 200, JSON.stringify(r));
     assert.ok(r.oneDay && r.series.length === 24);
     assert.ok(r.totales.mensajes > 0 && r.totales.chats > 0);
-    assert.equal(r.totales.ventas, 2, JSON.stringify(r.totales));
-    assert.equal(r.totales.lima, 1);
+    // la tienda ya tiene pedidos: las ventas salen de Pedidos (sin cancelados)
+    assert.equal(r.fuente, 'pedidos');
+    assert.equal(r.totales.ventas, 5, JSON.stringify(r.totales));
+    assert.equal(r.totales.lima, 4);
     assert.equal(r.totales.provincia, 1);
+    assert.equal(r.totales.monto, 631);
+    assert.equal(r.tallas.reduce((a, x) => a + x.value, 0), r.totales.unidades);
     assert.ok(r.tallas.some((x) => x.name === 'S'));
     assert.ok(r.colores.some((x) => x.name === 'Negro'));
     assert.ok(r.anuncios.some((a) => a.ventas > 0));
     assert.equal(r.llamadas.cerro, 1);
-    assert.equal(r.series.reduce((a, x) => a + x.ventas, 0), 2);
+    assert.equal(r.series.reduce((a, x) => a + x.ventas, 0), 5);
     const w = await call('GET', `/api/stores/${store.id}/reporte?desde=2026-01-01&hasta=2026-01-07`);
     assert.equal(w.series.length, 7);
     assert.equal(w.totales.ventas, 0);
@@ -819,6 +959,17 @@ try {
     assert.ok(r.total >= 5 && r.clientes.every((c) => !c.wa_id.startsWith('sim')), 'el simulador no sale');
     const c = r.clientes.find((x) => x.wa_id === '51911111111');
     assert.ok(c.msgs > 0 && Array.isArray(c.labels));
+    // números y segmentos (salen de los pedidos)
+    assert.ok(r.kpis && r.kpis.compraron >= 1 && r.kpis.pedidos >= 5 && r.kpis.ticket > 0, JSON.stringify(r.kpis));
+    assert.equal(r.kpis.total, r.total);
+    assert.equal(r.kpis.nueva + r.kpis.una + r.kpis.frecuente + r.kpis.vip + r.kpis.reactivar, r.kpis.total);
+    const buyer = r.clientes.find((x) => x.compras > 0);
+    assert.ok(buyer && buyer.gastado > 0);
+    const seg = await call('GET', `/api/stores/${store.id}/clientes?seg=nueva&limit=200`);
+    assert.equal(seg.total, r.kpis.nueva);
+    assert.ok(seg.clientes.every((x) => x.compras === 0));
+    const one = await call('GET', `/api/stores/${store.id}/clientes?seg=una&limit=200`);
+    assert.ok(one.clientes.every((x) => x.compras === 1));
     r = await call('GET', `/api/stores/${store.id}/clientes?q=Negro`);
     assert.ok(r.clientes.some((x) => x.id === c.id), 'busca dentro de los datos del bot');
     assert.equal((await call('PUT', `/api/chats/${c.id}/datos`, { datos: { 'mal dato!': 'x' } })).status, 400);

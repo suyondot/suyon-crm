@@ -9,6 +9,7 @@ import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribe
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
 import reportesApi from './api-reportes.js';
+import pedidosApi from './api-pedidos.js';
 
 const api = new Hono();
 const H24 = 24 * 3600e3;
@@ -879,12 +880,42 @@ api.delete('/chats/:id', async (c) => {
     db.prepare('DELETE FROM chat_labels WHERE chat_id = ?').bind(chat.id),
     db.prepare('DELETE FROM messages WHERE chat_id = ?').bind(chat.id),
     db.prepare('UPDATE notifications SET chat_id = NULL WHERE chat_id = ?').bind(chat.id),
+    db.prepare('UPDATE orders SET chat_id = NULL WHERE chat_id = ?').bind(chat.id),
     db.prepare('DELETE FROM chats WHERE id = ?').bind(chat.id),
   ]);
   c.executionCtx.waitUntil(deleteMedia(c.env, store.id, chat.id).catch((e) => console.error('r2', e)));
   await bump(c.env, store.id);
   return c.json({ ok: true, deleted: chat.id });
 });
+
+// Compras de cada clienta (pedidos que no se cayeron)
+const BUENOS = "o.chat_id = c.id AND o.status NOT IN ('cancelado','rechazado','no_recogido')";
+const COMPRAS = `(SELECT COUNT(*) FROM orders o WHERE ${BUENOS})`;
+const GASTADO = `(SELECT COALESCE(SUM(o.total), 0) FROM orders o WHERE ${BUENOS})`;
+const ULTIMA = `(SELECT MAX(o.created_at) FROM orders o WHERE ${BUENOS})`;
+const REACTIVAR_DIAS = 60;
+// Segmentos: Nueva (no compró) · Compró 1 vez · Frecuente (2-3) · VIP (4+ o S/500+) · Para reactivar (compró y no vuelve hace 60+ días)
+function segWhere(seg, cutoff) {
+  switch (seg) {
+    case 'nueva': return [`${COMPRAS} = 0`, []];
+    case 'una': return [`${COMPRAS} = 1 AND ${ULTIMA} >= ?`, [cutoff]];
+    case 'frecuente': return [`${COMPRAS} BETWEEN 2 AND 3 AND ${GASTADO} < 500 AND ${ULTIMA} >= ?`, [cutoff]];
+    case 'vip': return [`(${COMPRAS} >= 4 OR ${GASTADO} >= 500) AND ${ULTIMA} >= ?`, [cutoff]];
+    case 'reactivar': return [`${COMPRAS} >= 1 AND ${ULTIMA} < ?`, [cutoff]];
+  }
+  return null;
+}
+
+async function clientesKpis(db, storeId, cutoff) {
+  const k = await db.prepare(
+    `SELECT COUNT(*) AS total, COALESCE(SUM(n >= 1), 0) AS compraron, COALESCE(SUM(n >= 2), 0) AS recompra,
+       COALESCE(SUM(n = 0), 0) AS nueva, COALESCE(SUM(n = 1 AND u >= ?1), 0) AS una, COALESCE(SUM(n BETWEEN 2 AND 3 AND g < 500 AND u >= ?1), 0) AS frecuente,
+       COALESCE(SUM((n >= 4 OR g >= 500) AND u >= ?1), 0) AS vip, COALESCE(SUM(n >= 1 AND u < ?1), 0) AS reactivar
+     FROM (SELECT ${COMPRAS} AS n, ${GASTADO} AS g, ${ULTIMA} AS u FROM chats c WHERE c.store_id = ?2 AND c.sim = 0)`
+  ).bind(cutoff, storeId).first();
+  const t = await db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(total), 0) AS s FROM orders WHERE store_id = ? AND status NOT IN ('cancelado','rechazado','no_recogido')").bind(storeId).first();
+  return { ...k, pedidos: t.n, ventas: t.s, ticket: t.n ? Math.round((t.s / t.n) * 100) / 100 : 0, reactivar_dias: REACTIVAR_DIAS };
+}
 
 // Lista de clientas con totales (para la sección Clientes)
 api.get('/stores/:id/clientes', async (c) => {
@@ -907,6 +938,12 @@ api.get('/stores/:id/clientes', async (c) => {
   }
   if (q.origen === 'anuncio') where.push('c.ad_id IS NOT NULL');
   if (q.origen === 'directo') where.push('c.ad_id IS NULL');
+  const cutoff = now() - REACTIVAR_DIAS * 864e5;
+  const sw = segWhere(q.seg, cutoff);
+  if (sw) {
+    where.push(sw[0]);
+    vals.push(...sw[1]);
+  }
   const limit = Math.min(Number(q.limit) || 50, 200);
   const offset = Math.max(Number(q.offset) || 0, 0);
   const w = where.join(' AND ');
@@ -914,10 +951,12 @@ api.get('/stores/:id/clientes', async (c) => {
   const { results } = await db.prepare(
     `SELECT c.id, c.wa_id, c.name, c.profile_name, c.ad_id, c.ad_headline, c.created_at, c.last_msg_at, c.last_inbound_at, c.notes,
        c.bot_vars, c.bot_paused, c.bot_flow_id, c.handler,
-       (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id) AS msgs
-     FROM chats c WHERE ${w} ORDER BY COALESCE(c.last_msg_at, c.created_at) DESC LIMIT ? OFFSET ?`
+       (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id) AS msgs,
+       ${COMPRAS} AS compras, ${GASTADO} AS gastado, ${ULTIMA} AS ultima_compra
+     FROM chats c WHERE ${w} ORDER BY ${q.seg && q.seg !== 'nueva' ? `${GASTADO} DESC,` : ''} COALESCE(c.last_msg_at, c.created_at) DESC LIMIT ? OFFSET ?`
   ).bind(...vals, limit, offset).all();
-  return c.json({ total, clientes: await attachLabels(db, results), offset, limit });
+  const kpis = offset ? null : await clientesKpis(db, st.id, cutoff);
+  return c.json({ total, clientes: await attachLabels(db, results), offset, limit, kpis });
 });
 
 // Descargar clientas en Excel (CSV) — solo el dueño
@@ -926,6 +965,7 @@ api.get('/stores/:id/clientes.csv', async (c) => {
   const db = c.env.DB;
   const { results } = await db.prepare(
     `SELECT c.id, c.wa_id, c.name, c.profile_name, c.ad_id, c.created_at, c.last_msg_at, c.notes, c.bot_vars,
+       ${COMPRAS} AS compras, ${GASTADO} AS gastado, ${ULTIMA} AS ultima_compra,
        (SELECT GROUP_CONCAT(l.name, ' | ') FROM chat_labels cl JOIN labels l ON l.id = cl.label_id WHERE cl.chat_id = c.id) AS etiquetas
      FROM chats c WHERE c.store_id = ? AND c.sim = 0 ORDER BY c.created_at DESC LIMIT 20000`
   ).bind(st.id).all();
@@ -936,10 +976,10 @@ api.get('/stores/:id/clientes.csv', async (c) => {
     return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const day = (t) => (t ? localDay(t, st.timezone) : '');
-  const rows = [['Nombre', 'Nombre en WhatsApp', 'Celular', 'Etiquetas', ...keys, 'Anuncio', 'Primer mensaje', 'Último mensaje', 'Notas'].join(',')];
+  const rows = [['Nombre', 'Nombre en WhatsApp', 'Celular', 'Etiquetas', 'Compras', 'Total comprado', 'Última compra', ...keys, 'Anuncio', 'Primer mensaje', 'Último mensaje', 'Notas'].join(',')];
   for (const r of results) {
     const v = JSON.parse(r.bot_vars || '{}');
-    rows.push([r.name, r.profile_name, '+' + r.wa_id, r.etiquetas, ...keys.map((k) => v[k]), r.ad_id, day(r.created_at), day(r.last_msg_at), r.notes].map(cell).join(','));
+    rows.push([r.name, r.profile_name, '+' + r.wa_id, r.etiquetas, r.compras, r.gastado, day(r.ultima_compra), ...keys.map((k) => v[k]), r.ad_id, day(r.created_at), day(r.last_msg_at), r.notes].map(cell).join(','));
   }
   return new Response('﻿' + rows.join('\r\n'), {
     headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="clientes-${st.id}-${localDay(now(), st.timezone)}.csv"` },
@@ -1125,5 +1165,6 @@ api.get('/media/:id', async (c) => {
 
 api.route('/', botApi);
 api.route('/', reportesApi);
+api.route('/', pedidosApi);
 
 export default api;

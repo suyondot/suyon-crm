@@ -2,6 +2,7 @@
 import { now, hmacSha256hex, safeEqual, clip } from './util.js';
 import { downloadMedia, friendlyMetaError } from './whatsapp.js';
 import { onInbound, notify } from './bot.js';
+import { handleOrderReply } from './automations.js';
 
 const MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
 const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3 };
@@ -158,7 +159,10 @@ async function handleInbound(env, ctx, store, msg, profileName) {
   const work = (async () => {
     if (isMedia && media.id) await fetchMediaToR2(env, store, { id: msgId, chat_id: chat.id, media_id: media.id }).catch(() => {});
     try {
-      await onInbound(env, ctx, store, chat.id, { id: msgId, type: msg.type, body });
+      const payload = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || msg.button?.payload || null;
+      // Respuesta a «¿Confirmas tu pedido?»: la maneja Pedidos, no el bot
+      if (await handleOrderReply(env, store, chat, { type: msg.type, body, payload })) return;
+      await onInbound(env, ctx, store, chat.id, { id: msgId, type: msg.type, body, payload });
     } catch (e) {
       console.error('bot', e);
       await notify(env, store.id, { kind: 'error', chatId: chat.id, title: 'El bot tuvo un error', body: e.message }).catch(() => {});

@@ -99,9 +99,15 @@ r.patch('/stores/:id/bot/settings', async (c) => {
 const ID_RE = /^[\w-]{1,40}$/;
 const str = (v, n = 4000) => clip(String(v ?? ''), n);
 
+function cleanOpts(it) {
+  const o = (Array.isArray(it.opciones) ? it.opciones : []).map((x) => str(x, 96).trim()).filter(Boolean).slice(0, 10);
+  if (!o.length) return {};
+  return { opciones: o, ...(o.length > 3 && it.boton ? { boton: str(it.boton, 20) } : {}) };
+}
+
 function cleanItems(items) {
   return (Array.isArray(items) ? items : []).slice(0, 10).map((it) =>
-    it?.kind === 'text' ? { kind: 'text', text: str(it.text, 4096) } : { kind: ['image', 'video', 'audio', 'document', 'file'].includes(it?.kind) ? it.kind : 'file', asset: str(it?.asset, 60), ...(it?.caption ? { caption: str(it.caption, 1024) } : {}) }
+    it?.kind === 'text' ? { kind: 'text', text: str(it.text, 4096), ...cleanOpts(it) } : { kind: ['image', 'video', 'audio', 'document', 'file'].includes(it?.kind) ? it.kind : 'file', asset: str(it?.asset, 60), ...(it?.caption ? { caption: str(it.caption, 1024) } : {}) }
   );
 }
 
@@ -390,11 +396,19 @@ async function simChat(c, st) {
   return db.prepare('SELECT * FROM chats WHERE store_id = ? AND wa_id = ?').bind(st.id, wa).first();
 }
 
+function parseExtra(x) {
+  try {
+    return x ? JSON.parse(x) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function simState(env, chatId) {
   const db = env.DB;
   const chat = await db.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
   const { results: messages } = await db.prepare(
-    'SELECT id, direction, sender, type, body, media_mime, media_key, bot_node, created_at FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 200'
+    'SELECT id, direction, sender, type, body, media_mime, media_key, bot_node, extra, created_at FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 200'
   ).bind(chatId).all();
   const { results: labels } = await db.prepare('SELECT l.name, l.color FROM chat_labels cl JOIN labels l ON l.id = cl.label_id WHERE cl.chat_id = ?').bind(chatId).all();
   const { results: jobs } = await db.prepare(
@@ -405,7 +419,7 @@ async function simState(env, chatId) {
   const node = flow && chat.bot_node ? flow.graph.nodes.find((n) => n.id === chat.bot_node) : null;
   return {
     chat: { id: chat.id, flow_id: chat.bot_flow_id, node: chat.bot_node, node_title: node?.title || null, wait: chat.bot_wait, paused: chat.bot_paused, vars: JSON.parse(chat.bot_vars || '{}') },
-    messages: messages.reverse().map((m) => ({ ...m, media: !!m.media_key, media_key: undefined })),
+    messages: messages.reverse().map((m) => ({ ...m, media: !!m.media_key, media_key: undefined, extra: parseExtra(m.extra) })),
     labels,
     jobs: jobs.map((j) => {
       const seq = flow?.graph.sequences?.find((s) => s.id === j.seq_id);

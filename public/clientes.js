@@ -1,10 +1,27 @@
-// Clientes: el CRM de cada clienta (datos, etiquetas, lo que guardó el bot, borrar)
+// Clientes: el CRM de cada clienta (datos, etiquetas, lo que guardó el bot, compras, borrar)
+import { fichaPedidos } from './pedidos.js';
 let H; // ayudantes de app.js
 export function initClientes(ctx) {
   H = ctx;
 }
 const e = (s) => H.esc(s);
-const K = { list: [], total: 0, q: '', labels: [], origen: '', offset: 0, sel: null, loading: false, storeId: null, edit: null };
+const K = { list: [], total: 0, q: '', labels: [], origen: '', seg: '', kpis: null, offset: 0, sel: null, loading: false, storeId: null, edit: null };
+const SEGS = [
+  ['', 'Todas', 'total'],
+  ['nueva', 'Nuevas', 'nueva', 'Escribieron y todavía no compran'],
+  ['una', 'Compraron 1 vez', 'una', 'Candidatas a la segunda compra'],
+  ['frecuente', 'Frecuentes', 'frecuente', '2 o 3 compras'],
+  ['vip', 'VIP', 'vip', '4+ compras o S/500 a más'],
+  ['reactivar', 'Para reactivar', 'reactivar', 'Compraron y no vuelven hace 60+ días'],
+];
+const money = (n) => 'S/' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-PE');
+function segOf(c) {
+  if (!c.compras) return null;
+  if (c.ultima_compra && Date.now() - c.ultima_compra > 60 * 864e5) return ['reactivar', 'Para reactivar'];
+  if (c.compras >= 4 || c.gastado >= 500) return ['vip', 'VIP'];
+  if (c.compras >= 2) return ['frecuente', 'Frecuente'];
+  return ['una', '1 compra'];
+}
 const MAIN_KEYS = ['talla', 'colores', 'cantidad', 'destino', 'distrito', 'nombre', 'celular', 'dni', 'direccion', 'sede_shalom'];
 const KEY_NAMES = { talla: 'Talla', colores: 'Colores', cantidad: 'Cantidad', destino: 'Destino', distrito: 'Distrito', nombre: 'Nombre (pedido)', celular: 'Celular (pedido)', dni: 'DNI', direccion: 'Dirección', sede_shalom: 'Sede Shalom' };
 const vars = (c) => {
@@ -29,7 +46,7 @@ export function openCliente(id) {
 
 export async function renderClientes(content) {
   if (K.storeId !== H.S.storeId) {
-    Object.assign(K, { list: [], total: 0, q: '', labels: [], origen: '', offset: 0, sel: null, storeId: H.S.storeId });
+    Object.assign(K, { list: [], total: 0, q: '', labels: [], origen: '', seg: '', kpis: null, offset: 0, sel: null, storeId: H.S.storeId });
   }
   content.innerHTML = `<div class="cli">
     <div class="clihead">
@@ -39,10 +56,20 @@ export async function renderClientes(content) {
       <select id="cliorigen" aria-label="Origen"><option value="">Todas</option><option value="anuncio" ${K.origen === 'anuncio' ? 'selected' : ''}>Llegaron por anuncio</option><option value="directo" ${K.origen === 'directo' ? 'selected' : ''}>Escribieron directo</option></select>
       ${H.owner() ? `<a class="iconbtn" href="/api/stores/${H.S.storeId}/clientes.csv" download>Descargar Excel</a>` : ''}
     </div>
+    <div class="clikpis" id="clikpis"></div>
+    <div class="cliseg" id="cliseg" role="tablist" aria-label="Segmentos"></div>
     <div class="clitags" id="clitags" aria-label="Filtrar por etiqueta"></div>
     <div class="cliwrap"><div class="clilist" id="clilist"></div><aside class="clidet" id="clidet" aria-label="Ficha de la clienta"></aside></div>
   </div>`;
   drawTags();
+  drawKpis();
+  H.$('#cliseg').onclick = (ev) => {
+    const b = ev.target.closest('[data-seg]');
+    if (!b) return;
+    K.seg = b.dataset.seg;
+    drawKpis();
+    load();
+  };
   let tm;
   H.$('#cliq').oninput = (ev) => {
     clearTimeout(tm);
@@ -77,6 +104,23 @@ export async function renderClientes(content) {
   await load();
 }
 
+function drawKpis() {
+  const k = K.kpis;
+  const box = H.$('#clikpis');
+  if (box) {
+    box.innerHTML = k
+      ? [
+          ['Compraron', k.compraron, k.total ? `${Math.round((k.compraron / k.total) * 100)} % de ${k.total.toLocaleString('es-PE')}` : ''],
+          ['Volvieron a comprar', k.recompra, k.compraron ? `${Math.round((k.recompra / k.compraron) * 100)} % de las que compraron` : ''],
+          ['Ticket promedio', money(k.ticket), `${k.pedidos.toLocaleString('es-PE')} pedidos`],
+          ['Para reactivar', k.reactivar, `Sin comprar hace ${k.reactivar_dias}+ días`],
+        ].map(([l, v, sub]) => `<div class="clikpi"><span>${l}</span><b>${typeof v === 'number' ? v.toLocaleString('es-PE') : v}</b><small>${e(sub)}</small></div>`).join('')
+      : '';
+  }
+  const sb = H.$('#cliseg');
+  if (sb) sb.innerHTML = SEGS.map(([key, label, kk, tip]) => `<button data-seg="${key}" aria-pressed="${K.seg === key}" ${tip ? `title="${e(tip)}"` : ''}>${label}${k ? ` <b>${(k[kk] || 0).toLocaleString('es-PE')}</b>` : ''}</button>`).join('');
+}
+
 function drawTags() {
   const box = H.$('#clitags');
   if (!box) return;
@@ -90,11 +134,16 @@ async function load(more = false) {
   if (K.q) p.set('q', K.q);
   if (K.labels.length) p.set('labels', K.labels.join(','));
   if (K.origen) p.set('origen', K.origen);
+  if (K.seg) p.set('seg', K.seg);
   if (!more && !K.list.length) H.$('#clilist').innerHTML = '<div class="empty" style="padding:40px"><span class="spin"></span></div>';
   try {
     const r = await H.api('GET', `/stores/${H.S.storeId}/clientes?${p}`);
     K.list = more ? [...K.list, ...r.clientes] : r.clientes;
     K.total = r.total;
+    if (r.kpis) {
+      K.kpis = r.kpis;
+      drawKpis();
+    }
   } catch (er) {
     H.toast(er.message, 5000);
   }
@@ -128,11 +177,11 @@ function drawList() {
   const t = H.$('#clitotal');
   if (t) t.textContent = `${K.total.toLocaleString('es-PE')} ${K.total === 1 ? 'clienta' : 'clientas'}`;
   if (!K.list.length) {
-    box.innerHTML = `<div class="empty" style="padding:48px 16px"><b>${K.q || K.labels.length || K.origen ? 'Nadie con ese filtro' : 'Todavía no hay clientas'}</b><span>${K.q || K.labels.length || K.origen ? 'Prueba con otra búsqueda o quita etiquetas.' : 'Cada persona que te escribe por WhatsApp aparece aquí con sus datos.'}</span></div>`;
+    box.innerHTML = `<div class="empty" style="padding:48px 16px"><b>${K.q || K.labels.length || K.origen || K.seg ? 'Nadie con ese filtro' : 'Todavía no hay clientas'}</b><span>${K.q || K.labels.length || K.origen || K.seg ? 'Prueba con otra búsqueda, otro segmento o quita etiquetas.' : 'Cada persona que te escribe por WhatsApp aparece aquí con sus datos.'}</span></div>`;
     return;
   }
   const lab = Object.fromEntries(H.S.labels.map((l) => [l.id, l]));
-  box.innerHTML = `<table class="clitable"><thead><tr><th>Clienta</th><th>Celular</th><th>Etiquetas</th><th>Datos que guardó</th><th>Origen</th><th class="r">Último mensaje</th></tr></thead><tbody>
+  box.innerHTML = `<table class="clitable"><thead><tr><th>Clienta</th><th>Celular</th><th>Etiquetas</th><th>Datos que guardó</th><th>Compras</th><th>Origen</th><th class="r">Último mensaje</th></tr></thead><tbody>
     ${K.list.map((c) => {
       const v = vars(c);
       return `<tr data-cli="${c.id}" class="${c.id === K.sel ? 'sel' : ''}" tabindex="0">
@@ -140,6 +189,7 @@ function drawList() {
         <td class="mono nowrap">${e(H.fmtPhone(c.wa_id))}</td>
         <td><div class="clichips">${c.labels.map((id) => H.tagHTML(lab[id])).join('') || '<span class="note">—</span>'}</div></td>
         <td class="clisum" title="${e(summary(v))}">${e(summary(v)) || '<span class="note">—</span>'}</td>
+        <td class="nowrap">${c.compras ? `<b class="mono">${c.compras}</b> · ${money(c.gastado)}${segOf(c) ? ` <span class="pillsm seg-${segOf(c)[0]}">${segOf(c)[1]}</span>` : ''}` : '<span class="note">—</span>'}</td>
         <td>${c.ad_id ? '<span class="pillsm ad">Anuncio</span>' : '<span class="pillsm">Directo</span>'}</td>
         <td class="r note nowrap">${e(H.listTime(c.last_msg_at || c.created_at))}</td></tr>`;
     }).join('')}</tbody></table>
@@ -192,12 +242,13 @@ function drawDetail() {
       <datalist id="clikeys">${MAIN_KEYS.map((k) => `<option value="${k}">${e(KEY_NAMES[k])}</option>`).join('')}</datalist>
       <div class="clivbtns"><button class="send sm" data-cd="savevars" ${K.dirty ? '' : 'disabled'}>Guardar datos</button>${c.bot_vars && c.bot_vars !== '{}' || c.bot_flow_id ? '<button class="iconbtn sm" data-cd="clearbot">Borrar todo lo del bot</button>' : ''}</div></section>
     <section class="clisec"><h3>Notas</h3><textarea class="notesbox" id="cdnotes" placeholder="Solo las ve tu equipo">${e(c.notes || '')}</textarea></section>
-    <section class="clisec"><h3>Pedidos</h3><p class="note" style="margin:0">Aquí saldrán sus pedidos y cuánto ha comprado cuando esté la sección Pedidos.</p></section>
+    <section class="clisec"><h3>Pedidos${c.compras ? ` · ${c.compras} ${c.compras === 1 ? 'compra' : 'compras'} · ${money(c.gastado)}` : ''}</h3><div id="clipeds"><span class="spin"></span></div></section>
     ${own ? `<section class="clisec danger"><h3>Borrar</h3>
       <div class="clidanger"><div><b>Vaciar conversación</b><span class="note">Borra los mensajes, fotos y audios. Se quedan su celular, etiquetas y datos.</span></div><button class="iconbtn bad" data-cd="wipe">Vaciar</button></div>
       <div class="clidanger"><div><b>Borrar clienta</b><span class="note">Borra todo: conversación, etiquetas, datos, llamadas y seguimientos. No se puede deshacer.</span></div><button class="iconbtn bad" data-cd="delete">Borrar</button></div>
     </section>` : ''}`;
   wireDetail(box, c);
+  fichaPedidos(c.id, H.$('#clipeds'));
 }
 
 function wireDetail(box, c) {

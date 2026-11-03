@@ -2,8 +2,6 @@
 import { Hono } from 'hono';
 import { now, fail, tzOffset, localDay, localParts } from './util.js';
 import { storeFor } from './auth.js';
-import { recognize } from './bot.js';
-import { TALLAS } from './bot-template.js';
 
 const r = new Hono();
 const DAY = 864e5;
@@ -16,38 +14,8 @@ function dayStart(s, tz) {
   return guess - tzOffset(guess, tz);
 }
 
-const strip = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-const title = (s) => String(s || '').trim().toLowerCase().replace(/(^|\s)\p{L}/gu, (m) => m.toUpperCase());
-
-// Colores oficiales y sinónimos (los mismos que usa la IA)
-const COLOR_RULES = [
-  [/gris\s*claro|plomo\s*claro/, 'Gris claro'],
-  [/gris\s*oscuro|plomo\s*oscuro|plomo/, 'Gris oscuro'],
-  [/azul|marino/, 'Azul noche'],
-  [/vino|guinda|rojo|granate/, 'Vino'],
-  [/perla|blanco|hueso|crema/, 'Perla'],
-  [/beige|nude|camel/, 'Beige'],
-  [/negro/, 'Negro'],
-  [/gris/, 'Gris claro'],
-];
-export function colorsOf(text) {
-  const out = [];
-  for (const part of String(text || '').split(/,|\sy\s|\+|\/|;|\n/)) {
-    const p = strip(part).replace(/^\d+\s*(x\s*)?/, '');
-    if (!p) continue;
-    const hit = COLOR_RULES.find(([re]) => re.test(p));
-    out.push(hit ? hit[1] : title(p).slice(0, 24));
-  }
-  return out;
-}
-
-export function tallaOf(text) {
-  if (!text) return null;
-  const t = String(text).trim();
-  const up = t.toUpperCase();
-  if (/^(XXL|XL|L|M|S|XS)$/.test(up)) return up === 'XXL' ? 'XL' : up;
-  return recognize(t, TALLAS) || null;
-}
+import { colorsOf, tallaOf, strip, title } from './catalogo.js';
+export { colorsOf, tallaOf };
 
 function destinoOf(v, labels) {
   if (labels.includes('✅ PROVINCIA') || v.sede_shalom) return 'Provincia';
@@ -85,12 +53,19 @@ r.get('/stores/:id/reporte', async (c) => {
   }
   const bucketOf = (t) => (oneDay ? String(localParts(t, tz).h) : localDay(t, tz));
 
+  // Si la tienda ya usa Pedidos, las ventas salen de los pedidos; si no, de las etiquetas COMPRÓ / ✅ LIMA / ✅ PROVINCIA
+  const usaPedidos = !!(await db.prepare('SELECT 1 AS x FROM orders WHERE store_id = ? LIMIT 1').bind(st.id).first());
   const [msgs, chats, sales, calls] = await Promise.all([
     db.prepare(`SELECT m.created_at FROM messages m JOIN chats c ON c.id = m.chat_id
       WHERE c.store_id = ? AND c.sim = 0 AND m.direction = 'in' AND m.created_at >= ? AND m.created_at < ? LIMIT 50000`).bind(st.id, t0, t1).all(),
     db.prepare(`SELECT id, ad_id, ad_headline, created_at, first_reply_at FROM chats
       WHERE store_id = ? AND sim = 0 AND created_at >= ? AND created_at < ? LIMIT 20000`).bind(st.id, t0, t1).all(),
-    db.prepare(`SELECT c.id, c.ad_id, c.ad_headline, c.bot_vars, MIN(cl.created_at) AS sold_at,
+    usaPedidos
+      ? db.prepare(`SELECT o.id, o.modo, o.status, o.items, o.unidades, o.total, o.distrito, o.ciudad, o.created_at AS sold_at,
+          COALESCE(o.ad_id, c.ad_id) AS ad_id, c.ad_headline
+        FROM orders o LEFT JOIN chats c ON c.id = o.chat_id
+        WHERE o.store_id = ? AND o.status != 'cancelado' AND o.created_at >= ? AND o.created_at < ? LIMIT 20000`).bind(st.id, t0, t1).all()
+      : db.prepare(`SELECT c.id, c.ad_id, c.ad_headline, c.bot_vars, MIN(cl.created_at) AS sold_at,
         (SELECT GROUP_CONCAT(l2.name, '|') FROM chat_labels x JOIN labels l2 ON l2.id = x.label_id WHERE x.chat_id = c.id) AS labels
       FROM chat_labels cl JOIN labels l ON l.id = cl.label_id JOIN chats c ON c.id = cl.chat_id
       WHERE c.store_id = ? AND c.sim = 0 AND l.name IN (?, ?, ?) AND cl.created_at >= ? AND cl.created_at < ?
@@ -116,7 +91,35 @@ r.get('/stores/:id/reporte', async (c) => {
   };
   for (const ch of chats.results) ad(ch.ad_id, ch.ad_headline).chats++;
 
-  for (const s of sales.results) {
+  let monto = 0;
+  let entregados = 0;
+  let perdidos = 0;
+  if (usaPedidos) for (const o of sales.results) {
+    const b = series.get(bucketOf(o.sold_at));
+    if (b) b.ventas++;
+    ad(o.ad_id, o.ad_headline).ventas++;
+    const dest = o.modo === 'lima' ? 'Lima' : 'Provincia';
+    destino[dest]++;
+    monto += Number(o.total) || 0;
+    if (['entregado', 'recogido'].includes(o.status)) entregados++;
+    if (['rechazado', 'no_recogido'].includes(o.status)) perdidos++;
+    let items = [];
+    try { items = JSON.parse(o.items || '[]') || []; } catch {}
+    const qty = o.unidades || items.reduce((a, it) => a + (Number(it.cantidad) || 0), 0) || 1;
+    unidades += qty;
+    count(promos, qty >= 5 ? '5 o más (por mayor)' : `${qty} ${qty === 1 ? 'pantalón' : 'pantalones'}`);
+    if (items.length) for (const it of items) {
+      const n = Number(it.cantidad) || 1;
+      count(tallas, tallaOf(it.talla) || 'Sin dato', n);
+      count(colores, colorsOf(it.color)[0] || (it.color ? title(it.color) : 'Sin dato'), n);
+    } else {
+      count(tallas, 'Sin dato', qty);
+      count(colores, 'Sin dato', qty);
+    }
+    const lugar = title(dest === 'Lima' ? o.distrito || '' : o.ciudad || o.distrito || '');
+    count(lugares, lugar ? `${lugar}${dest === 'Provincia' ? ' (prov.)' : ''}` : 'Sin dato');
+  }
+  else for (const s of sales.results) {
     let v = {};
     try { v = JSON.parse(s.bot_vars || '{}') || {}; } catch {}
     const labels = String(s.labels || '').split('|');
@@ -150,8 +153,11 @@ r.get('/stores/:id/reporte', async (c) => {
   const replied = chats.results.filter((x) => x.first_reply_at).length;
 
   return c.json({
-    desde, hasta, oneDay, tz, store: st.name,
+    desde, hasta, oneDay, tz, store: st.name, fuente: usaPedidos ? 'pedidos' : 'etiquetas',
     totales: {
+      monto: usaPedidos ? Math.round(monto * 100) / 100 : null,
+      entregados: usaPedidos ? entregados : null,
+      perdidos: usaPedidos ? perdidos : null,
       mensajes: msgs.results.length,
       chats: nChats,
       chats_anuncio: fromAd,

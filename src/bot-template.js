@@ -318,6 +318,7 @@ export const TALLAS = [
 ];
 
 const t = (text) => ({ kind: 'text', text });
+export const TALLA_OPCIONES = ['XS · Jean 26-27', 'S · Jean 28-30', 'M · Jean 31-33', 'L · Jean 34-37', 'XL · Jean 38-40'];
 const f = (kind, asset, caption) => ({ kind, asset, ...(caption ? { caption } : {}) });
 
 export function flowPantalon() {
@@ -335,7 +336,7 @@ export function flowPantalon() {
         next: 'seg' },
       { id: 'seg', type: 'action', x: 360, y: 360, title: 'Inicia seguimiento talla', ops: [{ op: 'start_seq', seq: 'seg_talla' }], next: 'talla' },
       { id: 'talla', type: 'send', x: 360, y: 490, title: '¿Qué talla usas?',
-        items: [t('¿Qué talla usas normalmente? 🤗 (XS, S, M, L, XL o tu talla de jean)')], wait: true, save_to: 'respuesta', next: 'reconocer' },
+        items: [{ ...t('¿Qué talla usas normalmente? 🤗 Elígela aquí abajo o escríbeme tu talla de jean 👇'), opciones: TALLA_OPCIONES, boton: 'Elegir mi talla' }], wait: true, save_to: 'respuesta', next: 'reconocer' },
       { id: 'reconocer', type: 'recognize', x: 360, y: 640, title: 'Reconocer talla', from: 'respuesta', var: 'talla', options: TALLAS, next: 'etiqueta_talla', next_other: 'ia' },
       { id: 'etiqueta_talla', type: 'action', x: 360, y: 790, title: 'Etiqueta Talla X', ops: [{ op: 'add_label', label: 'Talla {talla}' }], next: 'colores' },
       { id: 'colores', type: 'send', x: 360, y: 920, title: 'Colores de su talla',
@@ -364,7 +365,7 @@ export function flowPantalon() {
       { id: 'seg_talla', name: 'Seguimiento talla', cancel_on: 'reply', steps: [
         { after_min: 15, items: [t('Preciosa, para mostrarte los colores que te quedan, solo respóndeme con tu talla de jean 👇\n(por ejemplo: 28, 30, 32…)\n\nSi no la sabes, escríbeme TABLA y te ayudo 😊')] },
         { after_min: 40, items: [f('audio', 'audio-talla')] },
-        { after_min: 180, from_h: 8, to_h: 22, items: [f('video', 'video-puesto'), t('Así se ve puesto 😍 Formal para la oficina y cómodo todo el día 🙌\n\n¿Qué talla usas? Te muestro tus colores 👇')] },
+        { after_min: 180, from_h: 8, to_h: 22, items: [f('video', 'video-puesto'), { ...t('Así se ve puesto 😍 Formal para la oficina y cómodo todo el día 🙌\n\n¿Qué talla usas? Te muestro tus colores 👇'), opciones: TALLA_OPCIONES, boton: 'Elegir mi talla' }] },
         { after_min: 900, from_h: 8, to_h: 22, items: [f('image', 'fotos-pedidos'), t('Estos son algunos pedidos que salieron esta semana 📦💕\n\nTodavía puedes separar el tuyo con envío gratis a todo el Perú 🚚\n\nSolo dime tu talla de jean y te ayudo 😊')] },
       ] },
       { id: 'rec_yape', name: 'Recordatorio Yape', cancel_on: 'image', steps: [

@@ -3,6 +3,7 @@ import { webmOpusToOgg } from './ogg.js';
 import { initBot, renderBotTab, renderAvisos, botFicha, botDirty, resetBot } from './bot.js';
 import { initClientes, renderClientes, resetClientes, openCliente } from './clientes.js';
 import { initReportes, renderReportes, resetReportes } from './reportes.js';
+import { initPedidos, renderPedidos, resetPedidos, fichaPedidos, renderPedidosConfig } from './pedidos.js';
 
 /* =================== Utilidades =================== */
 const $ = (s, el = document) => el.querySelector(s);
@@ -417,6 +418,7 @@ function enterStore() {
   resetBot();
   resetClientes();
   resetReportes();
+  resetPedidos();
   if (S.storeId) pref.set('store', S.storeId);
   if (S.view === 'chats' && store() && !canChats()) S.view = 'pedidos';
   render();
@@ -447,8 +449,8 @@ function navItems() {
   const items = [];
   if (canChats() || !store()) items.push(['chats', 'Chats', ICON.chat, S.unread[S.storeId] || 0]);
   if (store() && canChats()) items.push(['clientes', 'Clientes', ICON.users, 0]);
+  if (store()) items.push(['pedidos', 'Pedidos', ICON.box, 0]);
   if (store() && canChats()) items.push(['avisos', 'Avisos', ICON.bell, S.avisos[S.storeId] || 0]);
-  if (store() && !canChats()) items.push(['pedidos', 'Pedidos', ICON.box, 0]);
   if (owner() || (!S.me.stores.length && S.me.companies.some((c) => c.role === 'dueno'))) items.push(['config', 'Configuración', ICON.gear, 0]);
   else items.push(['config', 'Mi cuenta', ICON.user, 0]);
   if (store() && canChats()) items.push(['reportes', 'Reportes', ICON.chart, 0]);
@@ -478,7 +480,7 @@ function render() {
   else if (S.view === 'avisos') renderAvisos(content);
   else if (S.view === 'clientes') renderClientes(content);
   else if (S.view === 'reportes') renderReportes(content);
-  else if (S.view === 'pedidos') content.innerHTML = `<div class="empty" style="height:100%"><b>Pedidos</b><span>La lista de pedidos para despacho llega en la fase 4.</span></div>`;
+  else if (S.view === 'pedidos') renderPedidos(content);
   else renderConfig();
   drawStoreMenu();
   updateTitle();
@@ -857,6 +859,7 @@ function msgRow(m, list) {
   } else {
     inner += esc(m.body || (m.type === 'unsupported' ? 'Mensaje que WhatsApp no deja ver aquí (ábrelo en el celular).' : ''));
   }
+  if (Array.isArray(m.extra?.opciones)) inner += `<span class="bopts-out">${m.extra.opciones.map((o) => `<span>${esc(String(o).split(' · ')[0])}</span>`).join('')}</span>`;
   const meta = `<span class="meta">${hhmm(m.created_at)} ${tick(m)}</span>`;
   const bubble = `<div class="bub ${media ? 'mediab' : ''}">${inner}${meta}${m.extra?.reaction ? `<span class="react">${esc(m.extra.reaction)}</span>` : ''}</div>`;
   const canReply = !!m.wamid;
@@ -1241,6 +1244,7 @@ function renderFicha() {
       <p class="note" style="margin:8px 0 0">Toca para poner o quitar. Borde punteado: las pondrá el bot solo.</p></div>
     <div class="sec"><h3>De dónde vino</h3>${c.ad_id ? `<dl class="kv"><dt>Anuncio</dt><dd>${esc(c.ad_headline || '—')}</dd><dt>ID anuncio</dt><dd class="mono">${esc(c.ad_id)}</dd><dt>Llegó</dt><dd>${esc(listTime(c.referral_at))}</dd></dl>` : '<p class="note" style="margin:0">Escribió directo, no desde un anuncio.</p>'}</div>
     ${botFicha(c)}
+    <div class="sec"><h3>Pedidos</h3><div id="fpeds"><span class="note">Cargando…</span></div></div>
     <div class="sec"><h3>Notas</h3><textarea class="notesbox" id="cnotes" placeholder="Solo las ve tu equipo">${esc(c.notes || '')}</textarea></div>
     <div class="sec" style="display:flex;gap:8px;flex-wrap:wrap"><button class="iconbtn" data-act="markunread">Marcar como no leído</button><button class="iconbtn" data-act="vercliente">Ficha completa en Clientes</button></div>`;
   const save = async (field, value) => {
@@ -1260,6 +1264,14 @@ function renderFicha() {
   nm.addEventListener('keydown', (e) => e.key === 'Enter' && nm.blur());
   const nt = $('#cnotes');
   nt.addEventListener('change', () => save('notes', nt.value.trim()));
+  const fp = $('#fpeds');
+  if (S.fpCache?.id === c.id && Date.now() - S.fpCache.at < 20000) {
+    fp.innerHTML = S.fpCache.html;
+    fichaPedidos(c.id, fp, true);
+  } else {
+    S.fpCache = { id: c.id, at: Date.now(), html: '' };
+    fichaPedidos(c.id, fp).then(() => (S.fpCache = { id: c.id, at: Date.now(), html: fp.innerHTML }));
+  }
 }
 
 async function toggleTag(labelId) {
@@ -1572,7 +1584,7 @@ function addStoreModal() {
 /* =================== CONFIGURACIÓN =================== */
 function cfgTabs() {
   const tabs = [];
-  if (owner()) tabs.push(['general', 'General'], ['numero', 'Número de WhatsApp'], ['perfil', 'Perfil de WhatsApp'], ['etiquetas', 'Etiquetas'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
+  if (owner()) tabs.push(['general', 'General'], ['numero', 'Número de WhatsApp'], ['perfil', 'Perfil de WhatsApp'], ['pedidoscfg', 'Pedidos y Shopify'], ['etiquetas', 'Etiquetas'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
   if (S.me.companies.some((c) => c.role === 'dueno')) tabs.push(['empresa', 'Empresas']);
   tabs.push(['cuenta', 'Mi cuenta']);
   return tabs;
@@ -1588,7 +1600,7 @@ function renderConfig() {
     <nav class="cfgnav" aria-label="Secciones">${tabs.map(([k, l]) => `<button data-cfg="${k}" aria-current="${S.cfgTab === k}">${l}</button>`).join('')}
       ${st && owner() ? `<div class="cfgnote">Lo de General, Número, Perfil, Etiquetas, Bot y Equipo es de <b>${esc(st.name)}</b>${S.cfgTab === 'equipo' ? ` y su empresa` : ''}. Cambia de tienda arriba a la izquierda.</div>` : ''}</nav>
     <div id="cfgbody"></div></div></div>`;
-  ({ general: cfgGeneral, numero: cfgNumero, perfil: cfgPerfil, etiquetas: cfgEtiquetas, bot: () => renderBotTab($('#cfgbody')), equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta })[S.cfgTab]();
+  ({ general: cfgGeneral, numero: cfgNumero, perfil: cfgPerfil, pedidoscfg: () => renderPedidosConfig($('#cfgbody')), etiquetas: cfgEtiquetas, bot: () => renderBotTab($('#cfgbody')), equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta })[S.cfgTab]();
 }
 
 function cfgGeneral() {
@@ -2324,6 +2336,7 @@ initClientes({
 });
 
 initReportes({ api, esc, $, S, store });
+initPedidos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, listTime, canChats });
 
 function applyTheme(t) {
   if (t === 'auto') delete document.documentElement.dataset.theme;

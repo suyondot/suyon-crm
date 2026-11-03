@@ -1,8 +1,9 @@
 // Bot Suyon AI: corre los flujos (bloques), los seguimientos y la IA Suyon.
 // Todo es por tienda. Se activa desde el webhook (mensaje entrante) y desde el cron de cada minuto.
 import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay } from './util.js';
-import { sendText, uploadMedia, sendMediaById, kindForMime } from './whatsapp.js';
+import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON } from './bot-template.js';
+import { draftFromChat, insertOrder } from './orders.js';
 
 const MIN = 60e3;
 const MAX_STEPS = 40;
@@ -221,11 +222,14 @@ export async function botSend(env, store, chat, item, { flowId, node, sender = '
     type = item.kind === 'file' ? kindForMime(asset.mime) : item.kind || kindForMime(asset.mime);
     body = item.caption ? fill(item.caption, vars) : null;
   }
+  // Botones para tocar (solo en textos): hasta 3 = botones, 4 a 10 = lista
+  const opciones = type === 'text' && Array.isArray(item.opciones) ? item.opciones.map((o) => fill(String(o), vars).trim()).filter(Boolean).slice(0, 10) : [];
+  const extra = opciones.length ? JSON.stringify({ opciones, boton: item.boton || null }) : null;
   const t = now();
   const r = await env.DB.prepare(
-    `INSERT INTO messages (chat_id, store_id, direction, sender, type, body, media_key, media_mime, media_name, media_size, media_status, status, bot_flow_id, bot_node, created_at, updated_at)
-     VALUES (?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?, 'sending', ?, ?, ?, ?)`
-  ).bind(chat.id, store.id, sender, type, body, asset?.r2_key || null, asset?.mime || null, asset?.name || null, asset?.size || null, asset ? 'ok' : null, sim ? null : flowId || null, node || null, t, t).run();
+    `INSERT INTO messages (chat_id, store_id, direction, sender, type, body, media_key, media_mime, media_name, media_size, media_status, status, bot_flow_id, bot_node, extra, created_at, updated_at)
+     VALUES (?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?, 'sending', ?, ?, ?, ?, ?)`
+  ).bind(chat.id, store.id, sender, type, body, asset?.r2_key || null, asset?.mime || null, asset?.name || null, asset?.size || null, asset ? 'ok' : null, sim ? null : flowId || null, node || null, extra, t, t).run();
   const msgId = r.meta.last_row_id;
   let ok = true;
   if (sim) {
@@ -235,7 +239,8 @@ export async function botSend(env, store, chat, item, { flowId, node, sender = '
   }
   try {
     let wamid;
-    if (type === 'text') wamid = await sendText(env, store, chat.wa_id, body);
+    if (type === 'text' && opciones.length) wamid = await sendChoices(env, store, chat.wa_id, body, opciones, item.boton);
+    else if (type === 'text') wamid = await sendText(env, store, chat.wa_id, body);
     else {
       let mediaId = asset.wa_media_id;
       if (!mediaId || !asset.wa_media_at || t - asset.wa_media_at > 20 * 864e5) {
@@ -260,6 +265,18 @@ export async function botSend(env, store, chat, item, { flowId, node, sender = '
   ).bind(now(), pv, now(), now(), chat.id).run();
   await bump(env, store.id);
   return { ok, id: msgId };
+}
+
+// «M · Jean 31-33» → título «M» y descripción «Jean 31-33» (la descripción solo se ve en listas)
+export function splitOpt(o) {
+  const [title, ...rest] = String(o).split(' · ');
+  return { title: title.trim(), description: rest.join(' · ').trim() || null };
+}
+
+export function sendChoices(env, store, to, body, opciones, boton) {
+  const opts = opciones.map(splitOpt);
+  if (opts.length <= 3) return sendButtons(env, store, to, body, opts.map((o, i) => ({ id: `opt:${i}:${o.title}`.slice(0, 256), title: o.title })));
+  return sendList(env, store, to, body, boton || 'Elegir', opts.map((o, i) => ({ id: `opt:${i}:${o.title}`.slice(0, 200), title: o.title, description: o.description })));
 }
 
 async function sendItems(env, store, chat, items, meta) {
@@ -373,6 +390,8 @@ export async function runFrom(env, ctx, store, chatId, flow, nodeId, vars, trigg
         await cancelJobs(env, chat.id);
         await saveState(env, chat.id, { bot_flow_id: flow.id, bot_node: node.id, bot_wait: 0, bot_vars: vars, bot_paused: 1, handler: 'asesora' });
         await env.DB.prepare('UPDATE chats SET unread = MAX(unread, 1), updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
+        // Compró: la IA deja el pedido armado con lo que guardó (la asesora lo revisa y lo valida)
+        if ((node.labels || []).some((l) => /COMPR[OÓ]/i.test(l)) && !node.no_order) await orderFromBot(env, store, chat.id, vars);
         await alertFor(env, store, chat, { kind: 'asesora', title: chat.sim ? `Pasó a asesora: ${fill(node.reason || '', vars)}` : `${chat.name || chat.profile_name || '+' + chat.wa_id}: ${fill(node.reason || 'Pasó a asesora', vars)}` });
         return;
       }
@@ -392,6 +411,26 @@ export async function runFrom(env, ctx, store, chatId, flow, nodeId, vars, trigg
     if (chat.bot_paused) return;
   }
   await saveState(env, chatId, { bot_node: null, bot_wait: 0, bot_vars: vars });
+}
+
+async function orderFromBot(env, store, chatId, vars) {
+  const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
+  const draft = draftFromChat({ ...chat, bot_vars: JSON.stringify(vars) }, store);
+  if (chat.sim) {
+    const t = now();
+    await env.DB.prepare(`INSERT INTO messages (chat_id, store_id, direction, sender, type, body, status, created_at, updated_at) VALUES (?, ?, 'out', 'sys', 'text', ?, 'sent', ?, ?)`)
+      .bind(chat.id, store.id, `Aquí se crearía el pedido (en el simulador no se guarda): ${draft.items.map((i) => `${i.cantidad} × ${[i.talla, i.color].filter(Boolean).join(' ')}`).join(', ')} · S/${draft.total} · ${draft.modo === 'agencia' ? 'Agencia' : 'Lima'}`, t, t).run();
+    return;
+  }
+  const open = await env.DB.prepare(
+    "SELECT id FROM orders WHERE chat_id = ? AND status IN ('nuevo', 'por_pagar') AND created_at > ? LIMIT 1"
+  ).bind(chat.id, now() - 3 * 864e5).first();
+  if (open) return;
+  try {
+    await insertOrder(env, store, draft, { source: 'ia' });
+  } catch (e) {
+    await notify(env, store.id, { kind: 'error', chatId: chat.id, title: 'La IA no pudo crear el pedido', body: e.message });
+  }
 }
 
 /* ---------------- Mensaje entrante ---------------- */

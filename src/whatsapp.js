@@ -246,3 +246,44 @@ export async function setProfilePhoto(env, store, bytes, mime) {
   if (!res.ok || !data?.h) throw new HttpError(502, friendlyMetaError(data?.error || { message: `No se pudo subir la foto (HTTP ${res.status})` }));
   await setProfile(env, store, { profile_picture_handle: data.h });
 }
+
+/* ---------- Botones, listas y plantillas ---------- */
+
+const cut = (s, n) => String(s || '').slice(0, n);
+
+// Hasta 3 botones de respuesta (gratis dentro de la ventana de 24 h)
+export function sendButtons(env, store, to, body, buttons) {
+  return sendMessage(env, store, to, {
+    type: 'interactive',
+    interactive: { type: 'button', body: { text: cut(body, 1024) }, action: { buttons: buttons.slice(0, 3).map((b) => ({ type: 'reply', reply: { id: cut(b.id, 256), title: cut(b.title, 20) } })) } },
+  });
+}
+
+// Lista de hasta 10 opciones (ej. tallas o colores)
+export function sendList(env, store, to, body, button, rows) {
+  return sendMessage(env, store, to, {
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      body: { text: cut(body, 1024) },
+      action: { button: cut(button || 'Elegir', 20), sections: [{ title: cut(button || 'Opciones', 24), rows: rows.slice(0, 10).map((r) => ({ id: cut(r.id, 200), title: cut(r.title, 24), ...(r.description ? { description: cut(r.description, 72) } : {}) })) }] },
+    },
+  });
+}
+
+export function sendTemplate(env, store, to, name, lang, params = []) {
+  const components = params.length ? [{ type: 'body', parameters: params.map((p) => ({ type: 'text', text: cut(p || '-', 1024) })) }] : [];
+  return sendMessage(env, store, to, { type: 'template', template: { name, language: { code: lang || 'es' }, components } });
+}
+
+export async function createTemplate(env, store, { name, category, body, example, buttons }) {
+  if (!store.waba_id) throw new HttpError(400, 'Falta el identificador de la cuenta de WhatsApp Business de esta tienda.');
+  const components = [{ type: 'BODY', text: body, ...(example?.length ? { example: { body_text: [example] } } : {}) }];
+  if (buttons?.length) components.push({ type: 'BUTTONS', buttons: buttons.map((t) => ({ type: 'QUICK_REPLY', text: cut(t, 25) })) });
+  return graph(env, store, `${store.waba_id}/message_templates`, { method: 'POST', json: { name, language: 'es', category, components } });
+}
+
+export async function templateStatus(env, store, name) {
+  const d = await graph(env, store, `${store.waba_id}/message_templates?name=${encodeURIComponent(name)}&fields=name,status,language,rejected_reason`);
+  return (d?.data || []).find((t) => t.name === name) || null;
+}

@@ -115,10 +115,11 @@ function draw() {
     <div class="rtiles">
       ${tile('Mensajes recibidos', fmt(t.mensajes), 'de tus clientas')}
       ${tile('Conversaciones nuevas', fmt(t.chats), `${fmt(t.chats_anuncio)} por anuncio`)}
-      ${tile('Ventas cerradas', fmt(t.ventas), `${fmt(t.unidades)} pantalones`, 'hi')}
+      ${tile(d.fuente === 'pedidos' ? 'Pedidos' : 'Ventas cerradas', fmt(t.ventas), d.fuente === 'pedidos' ? `${fmt(t.unidades)} pantalones · S/${fmt(t.monto)}` : `${fmt(t.unidades)} pantalones`, 'hi')}
       ${tile('Tasa de cierre', pct(t.tasa), 'ventas ÷ conversaciones nuevas')}
       ${tile('Lima', fmt(t.lima), lp ? `${Math.round((t.lima / lp) * 100)} % de las ventas` : '—')}
       ${tile('Provincia', fmt(t.provincia), lp ? `${Math.round((t.provincia / lp) * 100)} % de las ventas` : '—')}
+      ${d.fuente === 'pedidos' ? tile('Entregados', fmt(t.entregados), t.ventas ? `${Math.round((t.entregados / t.ventas) * 100)} % de los pedidos` : '—') + tile('Rechazados o no recogidos', fmt(t.perdidos), t.ventas ? `${Math.round((t.perdidos / t.ventas) * 100)} % de los pedidos` : '—') : ''}
     </div>
     <section class="rcard rwide"><div class="rch"><h3>${d.oneDay ? 'Por hora' : 'Por día'}</h3>
       <div class="seg sm" role="tablist">${metricNames.map(([k, l]) => `<button data-rm="${k}" aria-pressed="${R.metric === k}">${l}</button>`).join('')}</div></div>
@@ -136,7 +137,9 @@ function draw() {
     </section>
     <section class="rcard rwide"><h3>Llamadas</h3><div class="rtiles sm">
       ${tile('Cerró', fmt(d.llamadas.cerro), '')}${tile('Lo piensa', fmt(d.llamadas.lo_piensa), '')}${tile('No contestó', fmt(d.llamadas.no_contesto), '')}</div></section>
-    <p class="note rnote">Ventas = chats que recibieron la etiqueta COMPRÓ, ✅ LIMA o ✅ PROVINCIA en este periodo. Talla, colores, cantidad y distrito salen de los datos que guardó el bot (los puedes corregir en Clientes). Cuando esté la sección Pedidos, saldrá de los pedidos.${t.sin_destino ? ` ${fmt(t.sin_destino)} venta(s) sin saber si es Lima o provincia.` : ''}</p>`;
+    <p class="note rnote">${d.fuente === 'pedidos'
+      ? 'Ventas = pedidos creados en este periodo (sin contar los cancelados), de la IA, de Shopify o hechos a mano. Talla, colores y cantidad salen de los productos de cada pedido.'
+      : `Ventas = chats que recibieron la etiqueta COMPRÓ, ✅ LIMA o ✅ PROVINCIA en este periodo. Talla, colores, cantidad y distrito salen de los datos que guardó el bot (los puedes corregir en Clientes). Apenas crees tu primer pedido, los reportes salen de Pedidos.${t.sin_destino ? ` ${fmt(t.sin_destino)} venta(s) sin saber si es Lima o provincia.` : ''}`}</p>`;
   box.querySelector('.rch .seg').onclick = (ev) => {
     const b = ev.target.closest('[data-rm]');
     if (!b) return;

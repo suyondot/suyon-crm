@@ -6,12 +6,14 @@ import api from './api.js';
 import { verifySignature, processWebhook, logWebhook } from './webhook.js';
 import { privacyPage, deletionPage, termsPage } from './pages.js';
 import { runJobs } from './bot.js';
+import { runOrderJobs } from './automations.js';
+import { handleShopify } from './shopify.js';
 
 const app = new Hono();
 
 app.use('*', async (c, next) => {
   const p = new URL(c.req.url).pathname;
-  if (p.startsWith('/api/') || p === '/webhook') await ensureSchema(c.env.DB);
+  if (p.startsWith('/api/') || p === '/webhook' || p.startsWith('/shopify/')) await ensureSchema(c.env.DB);
   await next();
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', 'same-origin');
@@ -32,10 +34,17 @@ app.route('/api', api);
 app.post('/__test/jobs', async (c) => {
   if (!c.env.TEST_MODE) return c.text('No existe', 404);
   await ensureSchema(c.env.DB);
-  if (c.req.query('shift')) await c.env.DB.prepare('UPDATE bot_jobs SET run_at = run_at - ? WHERE done_at IS NULL').bind(Number(c.req.query('shift'))).run();
+  if (c.req.query('shift')) {
+    await c.env.DB.prepare('UPDATE bot_jobs SET run_at = run_at - ? WHERE done_at IS NULL').bind(Number(c.req.query('shift'))).run();
+    await c.env.DB.prepare('UPDATE order_jobs SET run_at = run_at - ? WHERE done_at IS NULL').bind(Number(c.req.query('shift'))).run();
+  }
   await runJobs(c.env);
+  await runOrderJobs(c.env);
   return c.json({ ok: true });
 });
+
+/* ---------- Shopify (pedidos y carritos) ---------- */
+app.post('/shopify/:storeId/:key', handleShopify);
 
 /* ---------- Webhook de Meta ---------- */
 
@@ -90,7 +99,11 @@ export default {
   // Cada minuto: seguimientos y esperas del bot. Una vez al día: limpieza.
   async scheduled(event, env) {
     await ensureSchema(env.DB);
-    if (event.cron !== '0 8 * * *') return runJobs(env);
+    if (event.cron !== '0 8 * * *') {
+      await runJobs(env);
+      await runOrderJobs(env);
+      return;
+    }
     const t = now();
     await env.DB.batch([
       env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(t),

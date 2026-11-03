@@ -430,11 +430,19 @@ function assetList() {
   return `<datalist id="bassets">${[...keys].map((k) => `<option value="${e(k)}">`).join('')}<option value="colores-{talla}"></datalist>`;
 }
 
+function optLines(v) {
+  const a = String(v || '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 10);
+  return a.length ? a : undefined;
+}
+
 function itemsEditor(items, path) {
   return `<div class="bitems" data-items="${path}">${(items || []).map((it, i) => `<div class="bitem">
       <div class="brow"><select data-ik="kind" data-i="${i}" aria-label="Tipo">${Object.entries(KINDS).map(([k, l]) => `<option value="${k}" ${it.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <button class="iconbtn" data-iup="${i}" aria-label="Subir" ${i ? '' : 'disabled'}>↑</button><button class="iconbtn" data-idel="${i}" aria-label="Quitar">×</button></div>
-      ${it.kind === 'text' ? `<textarea data-ik="text" data-i="${i}" rows="4" aria-label="Texto">${e(it.text || '')}</textarea>` : `<input data-ik="asset" data-i="${i}" list="bassets" value="${e(it.asset || '')}" placeholder="Clave del archivo (ej: colores-{talla})" aria-label="Archivo">${assetOk(it.asset)}`}
+      ${it.kind === 'text' ? `<textarea data-ik="text" data-i="${i}" rows="4" aria-label="Texto">${e(it.text || '')}</textarea>
+        <label class="bopts"><span>Botones para tocar <i class="note">(opcional · uno por línea · hasta 3 salen como botones, hasta 10 como lista)</i></span>
+        <textarea data-ik="opciones" data-i="${i}" rows="${Math.min(6, Math.max(2, (it.opciones || []).length + 1))}" placeholder="Ej.&#10;S · Jean 28-30&#10;M · Jean 31-33" aria-label="Botones">${e((it.opciones || []).join('\n'))}</textarea></label>
+        ${(it.opciones || []).length > 3 ? `<input data-ik="boton" data-i="${i}" value="${e(it.boton || '')}" maxlength="20" placeholder="Texto del botón de la lista (ej. Elegir talla)" aria-label="Botón de la lista">` : ''}` : `<input data-ik="asset" data-i="${i}" list="bassets" value="${e(it.asset || '')}" placeholder="Clave del archivo (ej: colores-{talla})" aria-label="Archivo">${assetOk(it.asset)}`}
     </div>`).join('')}
     <div class="brow"><button class="iconbtn" data-iadd="text">+ Texto</button><button class="iconbtn" data-iadd="image">+ Foto</button><button class="iconbtn" data-iadd="video">+ Video</button><button class="iconbtn" data-iadd="audio">+ Audio</button></div>
     <p class="note" style="margin:0">Usa {talla}, {colores}, {nombre}… para poner datos guardados de la clienta.</p></div>`;
@@ -578,6 +586,7 @@ function wirePanel(p, n) {
       return;
     }
     if (d.ik) {
+      if (d.ik === 'opciones') v = optLines(t.value);
       n.items[i][d.ik] = v;
       if (d.ik === 'kind') {
         if (v === 'text') n.items[i] = { kind: 'text', text: '' };
@@ -729,7 +738,7 @@ function drawSeqs() {
     else if (d.ik && st) {
       const i = Number(d.i);
       if (d.ik === 'kind') st.items[i] = t.value === 'text' ? { kind: 'text', text: '' } : { kind: t.value, asset: st.items[i].asset || '' };
-      else st.items[i][d.ik] = t.value;
+      else st.items[i][d.ik] = d.ik === 'opciones' ? optLines(t.value) : t.value;
       if (d.ik === 'kind') return markDirty(), drawSeqs();
     } else return;
     markDirty();
@@ -812,6 +821,10 @@ async function drawSim() {
     const t = C.$('#simtxt').value.trim();
     if (t) simSend(t);
   };
+  C.$('#simmsgs').onclick = (ev) => {
+    const b = ev.target.closest('[data-simq]');
+    if (b && !SIM.busy) simSend(b.dataset.simq);
+  };
   C.$('#simquick').onclick = (ev) => {
     const b = ev.target.closest('[data-simq]');
     if (b) simSend(b.dataset.simq);
@@ -847,8 +860,11 @@ function simMsg(m) {
   const by = m.sender === 'ia' ? 'IA Suyon' : 'Bot';
   const nn = simNodeName(m.bot_node);
   const who = mine ? '' : `<span class="simby ${m.sender}">${nn && nn.startsWith(by) ? e(nn) : by + (nn ? ` · ${e(nn)}` : '')}</span>`;
-  return `<div class="simm ${mine ? 'me' : 'them s-' + m.sender}">${who}<div class="simb">${media}${m.body ? `<span>${e(m.body)}</span>` : ''}<i>${hm(m.created_at)}</i></div></div>`;
+  const opts = !mine && Array.isArray(m.extra?.opciones) ? `<div class="simopts">${m.extra.opciones.map((o) => `<button type="button" data-simq="${e(optTitle(o))}">${e(optTitle(o))}</button>`).join('')}</div>` : '';
+  return `<div class="simm ${mine ? 'me' : 'them s-' + m.sender}">${who}<div class="simb">${media}${m.body ? `<span>${e(m.body)}</span>` : ''}<i>${hm(m.created_at)}</i></div>${opts}</div>`;
 }
+
+const optTitle = (o) => String(o).split(' · ')[0].trim();
 
 function simNodeName(id) {
   if (!id) return '';

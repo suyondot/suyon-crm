@@ -1,0 +1,270 @@
+// API de Pedidos y de Configuración → Pedidos y Shopify
+import { Hono } from 'hono';
+import { now, fail, clip, localDay, tzOffset, randomToken } from './util.js';
+import { storeFor, chatFor, requireUser } from './auth.js';
+import {
+  MODOS, ESTADOS, FLUJO, VENDIDO, PERDIDO, cfgOf, DEFAULT_CFG, cleanOrder, insertOrder, getOrder, shape, draftFromChat, defaultEntrega, addEvent, orderText, firstStatus,
+} from './orders.js';
+import { loadAutos, saveAuto, submitTemplate, syncTemplates, setOrderStatus, AUTO_VARS } from './automations.js';
+import { loadSettings } from './bot.js';
+
+const r = new Hono();
+const body = async (c) => {
+  try {
+    return await c.req.json();
+  } catch {
+    return {};
+  }
+};
+const DAY = 864e5;
+const bump = (env, id) => env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE id = ?').bind(id).run();
+const dayStart = (s, tz) => {
+  const [y, m, d] = s.split('-').map(Number);
+  const g = Date.UTC(y, m - 1, d);
+  return g - tzOffset(g, tz);
+};
+const FINAL = [...VENDIDO, ...PERDIDO];
+const inList = (n) => Array(n).fill('?').join(',');
+
+// Qué pedidos ve cada rol: despacho de provincia solo provincia y agencia
+function modosFor(role) {
+  return role === 'despacho_prov' ? ['ce_prov', 'agencia'] : Object.keys(MODOS);
+}
+
+async function orderFor(c, id) {
+  const o = await getOrder(c.env, id);
+  if (!o) fail(404, 'Ese pedido no existe.');
+  const store = await storeFor(c, o.store_id, 'any');
+  if (!modosFor(store.role).includes(o.modo)) fail(403, 'Tu rol no ve este tipo de pedido.');
+  return { order: o, store };
+}
+
+r.get('/stores/:id/pedidos', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'any');
+  const q = c.req.query();
+  const tz = st.timezone || 'America/Lima';
+  const today = localDay(now(), tz);
+  const dia = /^\d{4}-\d{2}-\d{2}$/.test(q.dia || '') ? q.dia : today;
+  const modos = modosFor(st.role).filter((m) => (q.grupo === 'lima' ? m === 'lima' : q.grupo === 'prov' ? m !== 'lima' : true));
+  if (!modos.length) return c.json({ pedidos: [], estados: {}, dias: [], dia });
+  const db = c.env.DB;
+  const where = ['store_id = ?', `modo IN (${inList(modos.length)})`];
+  const vals = [st.id, ...modos];
+  if (q.vista === 'pendientes') {
+    where.push(`status NOT IN (${inList(FINAL.length)})`);
+    vals.push(...FINAL);
+  } else if (!q.q) {
+    where.push('created_at >= ? AND created_at < ?');
+    vals.push(dayStart(dia, tz), dayStart(dia, tz) + DAY);
+  }
+  if (q.q) {
+    const like = `%${String(q.q).trim().replace(/[%_]/g, '')}%`;
+    const n = Number(String(q.q).replace(/\D/g, ''));
+    where.push('(nombre LIKE ? OR celular LIKE ? OR dni LIKE ? OR distrito LIKE ? OR ciudad LIKE ? OR ext_name LIKE ? OR number = ?)');
+    vals.push(like, like, like, like, like, like, n || -1);
+  }
+  const base = where.join(' AND ');
+  const { results: byStatus } = await db.prepare(`SELECT status, COUNT(*) AS n, SUM(total) AS total FROM orders WHERE ${base} GROUP BY status`).bind(...vals).all();
+  const sw = [...where];
+  const sv = [...vals];
+  if (q.estado) {
+    sw.push('status = ?');
+    sv.push(q.estado);
+  }
+  const { results } = await db.prepare(`SELECT * FROM orders WHERE ${sw.join(' AND ')} ORDER BY created_at DESC LIMIT 500`).bind(...sv).all();
+  // Tira de días: pedidos de los últimos 14 días (sin el filtro de estado)
+  const from = dayStart(localDay(now() - 13 * DAY, tz), tz);
+  const { results: rows } = await db.prepare(
+    `SELECT created_at, status FROM orders WHERE store_id = ? AND modo IN (${inList(modos.length)}) AND created_at >= ? LIMIT 20000`
+  ).bind(st.id, ...modos, from).all();
+  const dias = [];
+  for (let i = 13; i >= 0; i--) dias.push({ dia: localDay(now() - i * DAY, tz), n: 0, perdidos: 0 });
+  const idx = Object.fromEntries(dias.map((d, i) => [d.dia, i]));
+  for (const x of rows) {
+    const k = idx[localDay(x.created_at, tz)];
+    if (k == null) continue;
+    if (PERDIDO.includes(x.status)) dias[k].perdidos++;
+    else dias[k].n++;
+  }
+  return c.json({
+    dia, today,
+    pedidos: results.map(shape),
+    estados: Object.fromEntries(byStatus.map((x) => [x.status, { n: x.n, total: x.total || 0 }])),
+    dias,
+  });
+});
+
+r.get('/pedidos/:id', async (c) => {
+  const { order } = await orderFor(c, c.req.param('id'));
+  const { results: events } = await c.env.DB.prepare(
+    'SELECT e.kind, e.detail, e.created_at, u.name AS user_name FROM order_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.order_id = ? ORDER BY e.id DESC LIMIT 100'
+  ).bind(order.id).all();
+  const s = await loadSettings(c.env, order.store_id);
+  return c.json({ pedido: shape(order), events, texto: orderText(order, { horario: s.entrega_horario }) });
+});
+
+r.post('/stores/:id/pedidos', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'any');
+  const u = await requireUser(c);
+  const b = await body(c);
+  if (b.chat_id) {
+    const ch = await c.env.DB.prepare('SELECT id, ad_id FROM chats WHERE id = ? AND store_id = ?').bind(Number(b.chat_id), st.id).first();
+    if (!ch) fail(400, 'Ese chat no es de esta tienda.');
+    b.chat_id = ch.id;
+    if (!b.ad_id) b.ad_id = ch.ad_id;
+  }
+  if (b.modo && !modosFor(st.role).includes(b.modo)) fail(403, 'Tu rol no puede crear ese tipo de pedido.');
+  const o = await insertOrder(c.env, st, b, { userId: u.id, source: b.chat_id ? 'whatsapp' : 'manual' });
+  return c.json({ pedido: shape(o) });
+});
+
+r.get('/chats/:id/pedido-borrador', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const d = draftFromChat(chat, store);
+  const e = await defaultEntrega(c.env, store);
+  return c.json({ borrador: { ...d, entrega: d.modo === 'agencia' ? null : e.dia }, horario: e.horario });
+});
+
+r.get('/chats/:id/pedidos', async (c) => {
+  const { chat } = await chatFor(c, c.req.param('id'));
+  const { results } = await c.env.DB.prepare('SELECT * FROM orders WHERE chat_id = ? ORDER BY id DESC LIMIT 30').bind(chat.id).all();
+  return c.json({ pedidos: results.map(shape) });
+});
+
+r.patch('/pedidos/:id', async (c) => {
+  const { order, store } = await orderFor(c, c.req.param('id'));
+  const u = await requireUser(c);
+  const b = await body(c);
+  const cfg = cfgOf(store);
+  const patch = cleanOrder(b, cfg, order);
+  if (patch.modo && !modosFor(store.role).includes(patch.modo)) fail(403, 'Tu rol no puede pasar el pedido a ese tipo.');
+  const status = patch.status;
+  delete patch.status;
+  const keys = Object.keys(patch).filter((k) => String(patch[k] ?? '') !== String(order[k] ?? ''));
+  if (keys.length) {
+    await c.env.DB.prepare(`UPDATE orders SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`).bind(...keys.map((k) => patch[k]), now(), order.id).run();
+    const names = { items: 'productos', modo: 'tipo de envío', total: 'total', adelanto: 'adelanto', entrega: 'día de entrega' };
+    await addEvent(c.env, order.id, 'edicion', `Cambió ${keys.map((k) => names[k] || k).join(', ')}`, u.id);
+  }
+  let cur = await getOrder(c.env, order.id);
+  if (patch.modo && !FLUJO[cur.modo].includes(cur.status)) cur = await setOrderStatus(c.env, store, cur, firstStatus(cur.modo), u.id, 'Cambió el tipo de envío');
+  if (status && status !== cur.status) cur = await setOrderStatus(c.env, store, cur, status, u.id);
+  await bump(c.env, store.id);
+  const s = await loadSettings(c.env, store.id);
+  return c.json({ pedido: shape(cur), texto: orderText(cur, { horario: s.entrega_horario }) });
+});
+
+// Recompra: el mismo pedido otra vez, con los mismos datos de entrega
+r.post('/pedidos/:id/duplicar', async (c) => {
+  const { order, store } = await orderFor(c, c.req.param('id'));
+  const u = await requireUser(c);
+  const s = shape(order);
+  const o = await insertOrder(c.env, store, {
+    chat_id: s.chat_id, modo: s.modo, nombre: s.nombre, celular: s.celular, dni: s.dni, distrito: s.distrito, direccion: s.direccion, referencia: s.referencia,
+    ciudad: s.ciudad, sede: s.sede, items: s.items, ad_id: s.ad_id, notas: `Recompra del pedido #${s.number}`,
+  }, { userId: u.id, source: s.chat_id ? 'whatsapp' : 'manual' });
+  await addEvent(c.env, order.id, 'nota', `Se duplicó como pedido #${o.number} (recompra)`, u.id);
+  return c.json({ pedido: shape(o) });
+});
+
+r.delete('/pedidos/:id', async (c) => {
+  const { order } = await orderFor(c, c.req.param('id'));
+  const store = await storeFor(c, order.store_id, 'config');
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM order_jobs WHERE order_id = ?').bind(order.id),
+    c.env.DB.prepare('DELETE FROM order_events WHERE order_id = ?').bind(order.id),
+    c.env.DB.prepare('DELETE FROM orders WHERE id = ?').bind(order.id),
+  ]);
+  await bump(c.env, store.id);
+  return c.json({ ok: true });
+});
+
+/* ---------- Configuración → Pedidos y Shopify ---------- */
+
+function shopifyInfo(c, st) {
+  const origin = new URL(c.req.url).origin;
+  const secret = st.shopify_secret || 'SHOPIFY_SECRET';
+  return { url: st.shopify_key ? `${origin}/shopify/${st.id}/${st.shopify_key}` : null, secret_name: secret, secret_ok: !!c.env[secret], last_at: st.shopify_last_at || null };
+}
+
+r.get('/stores/:id/pedidos-config', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  return c.json({
+    cfg: cfgOf(st), defaults: DEFAULT_CFG, modos: MODOS, estados: ESTADOS, flujo: FLUJO,
+    shopify: shopifyInfo(c, st), autos: await loadAutos(c.env, st.id), vars: AUTO_VARS,
+    plantillas_ok: !!st.waba_id && st.status === 'activo',
+  });
+});
+
+r.patch('/stores/:id/pedidos-config', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const b = await body(c);
+  const cfg = cfgOf(st);
+  const n = (v, d) => (Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : d);
+  if ('producto' in b) cfg.producto = clip(String(b.producto || '').trim(), 80) || DEFAULT_CFG.producto;
+  if (b.precios && typeof b.precios === 'object') {
+    const p = {};
+    for (const [k, v] of Object.entries(b.precios)) if (/^\d{1,2}$/.test(k) && Number(v) > 0) p[k] = Math.round(Number(v) * 100) / 100;
+    if (!Object.keys(p).length) fail(400, 'Pon al menos el precio de 1 unidad.');
+    cfg.precios = p;
+  }
+  if ('mayor_desde' in b) cfg.mayor_desde = Math.round(n(b.mayor_desde, 0));
+  if ('mayor_unit' in b) cfg.mayor_unit = n(b.mayor_unit, 0);
+  if ('adelanto' in b) cfg.adelanto = n(b.adelanto, 30);
+  if ('prov_modo' in b) cfg.prov_modo = b.prov_modo === 'ce_prov' ? 'ce_prov' : 'agencia';
+  if ('sin_cobertura' in b) cfg.sin_cobertura = clip(String(b.sin_cobertura || ''), 2000);
+  if ('recompra_dias' in b) cfg.recompra_dias = Math.min(Math.max(Math.round(n(b.recompra_dias, 20)), 1), 365);
+  if ('carrito_min' in b) cfg.carrito_min = Math.min(Math.max(Math.round(n(b.carrito_min, 60)), 15), 1440);
+  const sets = ['order_cfg = ?'];
+  const vals = [JSON.stringify(cfg)];
+  if ('shopify_secret' in b) {
+    const v = String(b.shopify_secret || 'SHOPIFY_SECRET').trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9_]{1,40}$/.test(v)) fail(400, 'El nombre del secreto solo puede tener letras, números y _.');
+    sets.push('shopify_secret = ?');
+    vals.push(v);
+  }
+  await c.env.DB.prepare(`UPDATE stores SET ${sets.join(', ')}, rev = rev + 1 WHERE id = ?`).bind(...vals, st.id).run();
+  const fresh = await c.env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(st.id).first();
+  return c.json({ cfg: cfgOf(fresh), shopify: shopifyInfo(c, fresh) });
+});
+
+r.post('/stores/:id/shopify/enlace', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const key = randomToken(18);
+  await c.env.DB.prepare('UPDATE stores SET shopify_key = ? WHERE id = ?').bind(key, st.id).run();
+  const fresh = await c.env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(st.id).first();
+  return c.json({ shopify: shopifyInfo(c, fresh) });
+});
+
+r.patch('/stores/:id/autos/:key', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const key = c.req.param('key');
+  const cur = (await loadAutos(c.env, st.id)).find((a) => a.key === key);
+  if (!cur) fail(404, 'Ese mensaje automático no existe.');
+  const b = await body(c);
+  const patch = {};
+  if ('on' in b) patch.on = !!b.on;
+  if ('text' in b) {
+    const t = String(b.text || '').trim();
+    if (!t) fail(400, 'El mensaje no puede quedar vacío.');
+    if (t.length > 900) fail(400, 'El mensaje puede tener hasta 900 letras.');
+    patch.text = t;
+    if (t !== cur.text && cur.tpl_name) Object.assign(patch, { tpl_name: null, tpl_status: null, tpl_vars: null, tpl_reason: null }); // cambió el texto: hay que pedir otra plantilla
+  }
+  if ('delay_min' in b) patch.delay_min = Math.min(Math.max(Math.round(Number(b.delay_min) || 0), 15), 365 * 1440);
+  return c.json({ auto: await saveAuto(c.env, st.id, key, patch) });
+});
+
+r.post('/stores/:id/autos/:key/plantilla', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  if (st.status !== 'activo' || !st.waba_id) fail(409, 'Primero conecta el número de WhatsApp de esta tienda.');
+  return c.json({ auto: await submitTemplate(c.env, st, c.req.param('key')) });
+});
+
+r.post('/stores/:id/autos/sync', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  if (st.status !== 'activo' || !st.waba_id) return c.json({ autos: await loadAutos(c.env, st.id) });
+  return c.json({ autos: await syncTemplates(c.env, st) });
+});
+
+export default r;
