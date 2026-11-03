@@ -2,6 +2,7 @@
 import { now, clip, windowOpen, localDay } from './util.js';
 import { sendText, sendButtons, sendTemplate, createTemplate, templateStatus } from './whatsapp.js';
 import { notify, loadSettings, addLabel, cancelJobs } from './bot.js';
+import { sendPurchase } from './capi.js';
 import { shape, itemsText, cfgOf, normPhone, addEvent, getOrder, ESTADOS, VENDIDO } from './orders.js';
 
 export const AUTOS = [
@@ -127,6 +128,7 @@ const STATUS_AUTO = { confirmado: 'agendado', validado: 'agendado', en_ruta: 'en
 
 // Al crear un pedido (de Shopify sale el aviso para confirmar o pedir el adelanto)
 export async function onOrderCreated(env, store, order) {
+  await sendPurchase(env, store, order);
   if (order.checkout_token) await env.DB.prepare('UPDATE carts SET order_id = ? WHERE store_id = ? AND token = ?').bind(order.id, store.id, order.checkout_token).run();
   if (order.source !== 'shopify') return;
   await sendAuto(env, store, order.modo === 'agencia' ? 'adelanto' : 'confirmar', { order });

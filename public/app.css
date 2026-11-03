@@ -1078,3 +1078,5 @@ a.iconbtn{text-decoration:none;color:inherit}
   .side .side-foot b{color:var(--sb-fg)}
   .side .side-foot button:hover{color:var(--sb-fg)}
 }
+.trans{display:block;margin-top:6px;padding:6px 9px;border-radius:8px;background:color-mix(in srgb,var(--info) 9%,transparent);color:var(--fg);font-size:13px;font-style:italic;line-height:1.4;max-width:320px}
+.trans.off{color:var(--muted);background:var(--surface-2);font-style:normal;font-size:12px}

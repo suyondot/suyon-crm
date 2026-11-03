@@ -404,6 +404,18 @@ export const MIGRATIONS = [
     name: 'cómo vende la tienda: mensajes o shopify',
     sql: [`ALTER TABLE stores ADD COLUMN canal TEXT NOT NULL DEFAULT 'mensajes'`],
   },
+  {
+    id: 9,
+    name: 'notas de voz a texto y compra a Meta (CAPI)',
+    sql: [
+      `ALTER TABLE messages ADD COLUMN transcript TEXT`,
+      `ALTER TABLE bot_settings ADD COLUMN voz_on INTEGER`,
+      `ALTER TABLE stores ADD COLUMN capi_on INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE stores ADD COLUMN capi_dataset TEXT`,
+      `ALTER TABLE stores ADD COLUMN capi_last TEXT`,
+      `ALTER TABLE orders ADD COLUMN capi_at INTEGER`,
+    ],
+  },
 ];
 
 let ready = null;

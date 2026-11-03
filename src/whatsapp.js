@@ -66,6 +66,11 @@ async function graph(env, store, path, { method = 'GET', json, form } = {}) {
   return data;
 }
 
+// Llamada genérica a la Graph API con el token de la tienda (para la Compra a Meta, etc.)
+export function graphCall(env, store, path, opts) {
+  return graph(env, store, path, opts);
+}
+
 // Datos del token para diagnosticar permisos (no expone el token)
 export async function tokenInfo(env, store) {
   const token = tokenFor(env, store);

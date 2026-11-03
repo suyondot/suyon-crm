@@ -1,7 +1,8 @@
 // Webhook de Meta: mensajes entrantes, estados de entrega y ecos de la app del celular
 import { now, hmacSha256hex, safeEqual, clip } from './util.js';
 import { downloadMedia, friendlyMetaError } from './whatsapp.js';
-import { onInbound, notify } from './bot.js';
+import { onInbound, notify, loadSettings } from './bot.js';
+import { transcribe } from './voz.js';
 import { handleOrderReply } from './automations.js';
 
 const MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
@@ -158,11 +159,17 @@ async function handleInbound(env, ctx, store, msg, profileName) {
   // Bot Suyon AI: corre después de responder a Meta (las fotos se bajan primero para que la IA pueda verlas)
   const work = (async () => {
     if (isMedia && media.id) await fetchMediaToR2(env, store, { id: msgId, chat_id: chat.id, media_id: media.id }).catch(() => {});
+    // Nota de voz → texto (si hay clave de OpenAI y está encendido): el bot y la IA usan lo que dijo
+    let said = body;
+    if (msg.type === 'audio' && media.id) {
+      const vs = await loadSettings(env, store.id).catch(() => null);
+      if (vs?.voz_on) said = (await transcribe(env, store, msgId, { notify })) || body;
+    }
     try {
       const payload = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || msg.button?.payload || null;
       // Respuesta a «¿Confirmas tu pedido?»: la maneja Pedidos, no el bot
-      if (await handleOrderReply(env, store, chat, { type: msg.type, body, payload })) return;
-      await onInbound(env, ctx, store, chat.id, { id: msgId, type: msg.type, body, payload });
+      if (await handleOrderReply(env, store, chat, { type: msg.type, body: said, payload })) return;
+      await onInbound(env, ctx, store, chat.id, { id: msgId, type: msg.type, body: said, payload });
     } catch (e) {
       console.error('bot', e);
       await notify(env, store.id, { kind: 'error', chatId: chat.id, title: 'El bot tuvo un error', body: e.message }).catch(() => {});

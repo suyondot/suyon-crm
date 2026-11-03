@@ -44,6 +44,7 @@ const SETTING_RULES = {
   entrega_sab: (v) => (v ? 1 : 0),
   entrega_dom: (v) => (v ? 1 : 0),
   entrega_horario: (v) => clip(String(v || '').trim(), 60) || 'entre 2 y 8 p.m.',
+  voz_on: (v) => (v ? 1 : 0),
 };
 
 async function saveSettings(env, storeId, patch) {

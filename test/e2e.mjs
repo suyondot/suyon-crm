@@ -51,7 +51,15 @@ const meta = http.createServer(async (req, res) => {
     if (auth !== 'OAuth test-token' || req.headers.file_offset !== '0' || !raw.length) return json(400, { error: { code: 100, message: 'bad upload' } });
     return json(200, { h: 'HANDLE1' });
   }
+  if (p === 'v1/audio/transcriptions') {
+    // OpenAI falso: pasa la nota de voz a texto
+    if (auth !== 'Bearer oa-test-key') return json(401, { error: { message: 'bad key' } });
+    if (!String(req.headers['content-type'] || '').includes('multipart/form-data') || !raw.includes(Buffer.from('gpt-4o-mini-transcribe'))) return json(400, { error: { message: 'falta archivo o modelo' } });
+    return json(200, { text: 'Hola, soy talla M y quiero el negro para Los Olivos' });
+  }
   if (auth !== 'Bearer test-token') return json(401, { error: { code: 190, message: 'Invalid OAuth access token' } });
+  if (req.method === 'POST' && p === `${WABA_ID}/dataset`) return json(200, { id: 'DS777' });
+  if (req.method === 'POST' && p === 'DS777/events') return json(200, { events_received: body?.data?.length || 0 });
   if (req.method === 'POST' && p === 'APP123/uploads') return json(200, { id: 'upload:abc123' });
   if (req.method === 'GET' && p === `${PHONE_ID}/whatsapp_business_profile`) return json(200, { data: [{ about: 'Hola', vertical: 'APPAREL', websites: ['https://instagram.com/x'], messaging_product: 'whatsapp' }] });
   if (req.method === 'POST' && p === `${PHONE_ID}/whatsapp_business_profile`) return json(200, { success: true });
@@ -113,6 +121,7 @@ await new Promise((r) => meta.listen(META_PORT, '127.0.0.1', r));
 const VARS = {
   GRAPH_API: `http://127.0.0.1:${META_PORT}`, ANTHROPIC_API: `http://127.0.0.1:${META_PORT}`, TEST_MODE: '1',
   WA_TOKEN: 'test-token', WA_VERIFY_TOKEN: 'verifica123', META_APP_SECRET: SECRET, SETUP_CODE: 'inicio-prueba', ANTHROPIC_API_KEY: 'ia-test-key', SHOPIFY_SECRET: 'shp-secret',
+  OPENAI_API: `http://127.0.0.1:${META_PORT}`, OPENAI_API_KEY: 'oa-test-key',
 };
 const wd = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--persist-to', persist, ...Object.entries(VARS).flatMap(([k, v]) => ['--var', `${k}:${v}`]), '--show-interactive-dev-session=false'], { stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
 let log = '';
@@ -812,6 +821,34 @@ try {
     assert.match(r.texto, /Surco/);
     assert.equal((await call('PATCH', `/api/pedidos/${limaOrder.id}`, { status: 'recogido' })).status, 400, 'estado de agencia no vale en Lima');
   });
+  await step('Compra a Meta: se avisa con el anuncio de origen, una sola vez', async () => {
+    let r = await call('PATCH', `/api/stores/${store.id}/capi`, { on: true });
+    assert.equal(r.status, 200, JSON.stringify(r));
+    assert.equal(r.capi.on, true);
+    assert.equal(r.capi.dataset, 'DS777');
+    // clienta que llegó por anuncio (tiene ctwa_clid) → Purchase con su valor
+    r = await call('POST', `/api/stores/${store.id}/pedidos`, { chat_id: botChat.id, modo: 'lima', nombre: 'Prueba Meta', distrito: 'Lince', direccion: 'Av. 1', items: [{ talla: 'S', color: 'Negro', cantidad: 1 }] });
+    const ev = await until(async () => calls.find((x) => x.path === 'DS777/events' && x.body?.data?.[0]?.custom_data?.value === r.pedido.total));
+    const d = ev.body.data[0];
+    assert.equal(d.event_name, 'Purchase');
+    assert.equal(d.action_source, 'business_messaging');
+    assert.equal(d.messaging_channel, 'whatsapp');
+    assert.equal(d.user_data.ctwa_clid, 'abc');
+    assert.equal(d.user_data.whatsapp_business_account_id, WABA_ID);
+    assert.equal(d.custom_data.currency, 'PEN');
+    await until(async () => (await call('GET', `/api/pedidos/${r.pedido.id}`)).events.some((e) => /Compra avisada a Meta/.test(e.detail)));
+    // clienta sin anuncio → no se manda
+    const before = calls.filter((x) => x.path === 'DS777/events').length;
+    const c2 = (await call('GET', `/api/stores/${store.id}/chats?limit=200`)).chats.find((x) => !x.ad_id);
+    const r2 = await call('POST', `/api/stores/${store.id}/pedidos`, { chat_id: c2.id, modo: 'lima', nombre: 'Sin anuncio', distrito: 'Lince', direccion: 'Av. 2', items: [{ talla: 'S', color: 'Negro', cantidad: 1 }] });
+    await until(async () => (await call('GET', `/api/pedidos/${r2.pedido.id}`)).events.some((e) => /no llegó por un anuncio/.test(e.detail)));
+    assert.equal(calls.filter((x) => x.path === 'DS777/events').length, before);
+    const cfg = await call('GET', `/api/stores/${store.id}/pedidos-config`);
+    assert.equal(cfg.capi.last.ok, true);
+    // se borran para no cambiar las cuentas de las pruebas siguientes
+    for (const id of [r.pedido.id, r2.pedido.id]) assert.equal((await call('DELETE', `/api/pedidos/${id}`)).ok, true);
+    assert.equal((await call('PATCH', `/api/stores/${store.id}/capi`, { on: false })).capi.on, false);
+  });
   await step('mensajes por estado: apagados no salen; encendidos salen gratis en la ventana', async () => {
     const before = calls.filter((x) => x.path === `${PHONE_ID}/messages`).length;
     await call('PATCH', `/api/pedidos/${limaOrder.id}`, { status: 'confirmado' });
@@ -997,6 +1034,21 @@ try {
     const after = (await call('GET', `/api/chats/${c.id}`)).chat;
     assert.equal(after.bot_vars, null);
     assert.equal(after.bot_flow_id, null);
+  });
+  await step('notas de voz: se pasan a texto y se ven en el chat', async () => {
+    const wa = '51933333333';
+    await hook(md({ contacts: [{ profile: { name: 'Voz' }, wa_id: wa }], messages: [{ from: wa, id: 'wamid.VOZ1', timestamp: ts(), type: 'audio', audio: { id: 'MEDIA_AUD1', mime_type: 'audio/ogg; codecs=opus', voice: true } }] }));
+    const c = await until(async () => chatOf(wa));
+    const m = await until(async () => (await msgsOf(c.id)).find((x) => x.type === 'audio' && x.transcript));
+    assert.match(m.transcript, /talla M/);
+    assert.match((await chatOf(wa)).last_preview, /^🎤 Hola, soy talla M/);
+    // apagado: llega el audio sin texto
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { voz_on: false });
+    await hook(md({ contacts: [{ profile: { name: 'Voz' }, wa_id: wa }], messages: [{ from: wa, id: 'wamid.VOZ2', timestamp: ts(), type: 'audio', audio: { id: 'MEDIA_AUD2', mime_type: 'audio/ogg', voice: true } }] }));
+    const m2 = await until(async () => (await msgsOf(c.id)).find((x) => x.wamid === 'wamid.VOZ2' && x.media_status === 'ok'));
+    await wait(500);
+    assert.equal((await msgsOf(c.id)).find((x) => x.id === m2.id).transcript, null);
+    assert.equal((await call('PATCH', `/api/stores/${store.id}/bot/settings`, { voz_on: true })).settings.voz_on, 1);
   });
   await step('Clientes: vaciar conversación y borrar clienta', async () => {
     const c = await chatOf('51911111114');

@@ -5,7 +5,8 @@ import { storeFor, chatFor, requireUser } from './auth.js';
 import {
   MODOS, ESTADOS, FLUJO, VENDIDO, PERDIDO, cfgOf, DEFAULT_CFG, cleanOrder, insertOrder, getOrder, shape, draftFromChat, defaultEntrega, addEvent, orderText, firstStatus,
 } from './orders.js';
-import { loadAutos, saveAuto, submitTemplate, syncTemplates, setOrderStatus, AUTO_VARS } from './automations.js';
+import { loadAutos, saveAuto, submitTemplate, syncTemplates, setOrderStatus, onOrderCreated, AUTO_VARS } from './automations.js';
+import { ensureDataset } from './capi.js';
 import { loadSettings } from './bot.js';
 
 const r = new Hono();
@@ -115,6 +116,7 @@ r.post('/stores/:id/pedidos', async (c) => {
   }
   if (b.modo && !modosFor(st.role).includes(b.modo)) fail(403, 'Tu rol no puede crear ese tipo de pedido.');
   const o = await insertOrder(c.env, st, b, { userId: u.id, source: b.chat_id ? 'whatsapp' : 'manual' });
+  c.executionCtx.waitUntil(onOrderCreated(c.env, st, o).catch((e) => console.error('pedido', e)));
   return c.json({ pedido: shape(o) });
 });
 
@@ -164,6 +166,7 @@ r.post('/pedidos/:id/duplicar', async (c) => {
     ciudad: s.ciudad, sede: s.sede, items: s.items, ad_id: s.ad_id, notas: `Recompra del pedido #${s.number}`,
   }, { userId: u.id, source: s.chat_id ? 'whatsapp' : 'manual' });
   await addEvent(c.env, order.id, 'nota', `Se duplicó como pedido #${o.number} (recompra)`, u.id);
+  c.executionCtx.waitUntil(onOrderCreated(c.env, store, o).catch((e) => console.error('pedido', e)));
   return c.json({ pedido: shape(o) });
 });
 
@@ -193,7 +196,37 @@ r.get('/stores/:id/pedidos-config', async (c) => {
     cfg: cfgOf(st), defaults: DEFAULT_CFG, modos: MODOS, estados: ESTADOS, flujo: FLUJO,
     shopify: shopifyInfo(c, st), autos: await loadAutos(c.env, st.id), vars: AUTO_VARS,
     plantillas_ok: !!st.waba_id && st.status === 'activo',
+    capi: capiInfo(st),
   });
+});
+
+/* ---------- Compra a Meta (CAPI) ---------- */
+
+function capiInfo(st) {
+  let last = null;
+  try {
+    last = st.capi_last ? JSON.parse(st.capi_last) : null;
+  } catch {}
+  return { on: !!st.capi_on, dataset: st.capi_dataset || null, last, conectado: !!st.waba_id && st.status === 'activo' };
+}
+
+r.patch('/stores/:id/capi', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const b = await body(c);
+  const on = !!b.on;
+  let error = null;
+  if (on) {
+    if (!st.waba_id || st.status !== 'activo') fail(400, 'Primero conecta el número de WhatsApp de esta tienda.');
+    try {
+      await ensureDataset(c.env, st);
+    } catch (e) {
+      error = e.message;
+    }
+  }
+  await c.env.DB.prepare('UPDATE stores SET capi_on = ?, capi_last = COALESCE(?, capi_last), rev = rev + 1 WHERE id = ?')
+    .bind(on && !error ? 1 : 0, error ? JSON.stringify({ at: now(), ok: false, msg: clip(error, 300) }) : null, st.id).run();
+  const fresh = await c.env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(st.id).first();
+  return c.json({ capi: capiInfo(fresh), error });
 });
 
 r.patch('/stores/:id/pedidos-config', async (c) => {

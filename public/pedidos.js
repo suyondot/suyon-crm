@@ -444,12 +444,20 @@ function drawConfig(body) {
             <button class="iconbtn sm" data-asave>Guardar</button>
           </div></div>`;
       }).join('')}</div></div>`;
+  const cp = CFG.capi || {};
+  const capi = `<div class="card"><h3>Compra a Meta (anuncios)</h3>
+      <p class="sub">Cuando se crea un pedido de una clienta que llegó por un anuncio de clic a WhatsApp, se avisa a Meta la <b>Compra</b> con el valor del pedido. Así en el Administrador de anuncios ves cuántas ventas y cuánto costó cada una, y Meta optimiza para traer compradoras.</p>
+      <label class="bswitch"><input type="checkbox" data-capi ${cp.on ? 'checked' : ''} ${cp.conectado ? '' : 'disabled'}><span>Avisar las compras a Meta</span></label>
+      ${!cp.conectado ? '<div class="warnbox" style="margin-top:10px">Primero conecta el número de WhatsApp de esta tienda.</div>' : ''}
+      ${cp.last ? `<div class="${cp.last.ok ? 'okbox' : 'warnbox'}" style="margin-top:10px">${cp.last.ok ? `✓ Última compra avisada: ${e(cp.last.msg)} · ${e(H.listTime(cp.last.at))}` : `<b>No funcionó:</b> ${e(cp.last.msg)}`}</div>` : ''}
+      ${cp.last && !cp.last.ok ? `<ol class="steps"><li>En Meta → Configuración del negocio → Usuarios del sistema → <b>suyon-crm</b> → Generar token nuevo.</li><li>Marca también el permiso <b class="mono">whatsapp_business_manage_events</b> (además de los que ya tiene).</li><li>Pon ese token nuevo en Cloudflare en el mismo secreto del número y vuelve a encender aquí.</li></ol>` : ''}
+      <p class="note" style="margin:8px 0 0">Solo se avisa una vez por pedido. Los pedidos de clientas que escribieron directo (sin anuncio) no se mandan.</p></div>`;
   body.innerHTML = shop
     ? `<div class="ph"><div><h2>Shopify</h2><p>Esta tienda vende por su web. Aquí conectas Shopify y eliges los mensajes de WhatsApp que salen solos con cada pedido.</p></div></div>
-      <div class="grid" style="gap:14px">${shopify}${mensajes}${precios}
+      <div class="grid" style="gap:14px">${shopify}${mensajes}${capi}${precios}
         <p class="note">¿Esta tienda vende por chat? Cámbiala a «Por mensajes de WhatsApp» en <button class="linkbtn" data-cfg="general">General</button>.</p></div>`
     : `<div class="ph"><div><h2>Pedidos</h2><p>Precios, envíos y los mensajes que salen solos según el estado del pedido.</p></div></div>
-      <div class="grid" style="gap:14px">${precios}${mensajes}
+      <div class="grid" style="gap:14px">${precios}${mensajes}${capi}
         <p class="note">¿Esta tienda vende por su web? Cámbiala a «Por Shopify» en <button class="linkbtn" data-cfg="general">General</button>.</p></div>`;
   const f = body.querySelector('#pcf');
   f.onsubmit = async (ev) => {
@@ -466,6 +474,18 @@ function drawConfig(body) {
       x.textContent = er.message;
       x.hidden = false;
     }
+  };
+  const cb = body.querySelector('[data-capi]');
+  if (cb) cb.onchange = async () => {
+    cb.disabled = true;
+    try {
+      const r = await H.api('PATCH', `/stores/${H.S.storeId}/capi`, { on: cb.checked });
+      CFG.capi = r.capi;
+      H.toast(r.error ? 'Meta no lo permitió todavía: revisa los pasos' : r.capi.on ? 'Listo: las compras se avisarán a Meta' : 'Apagado', r.error ? 5000 : 2500);
+    } catch (er) {
+      H.toast(er.message, 5000);
+    }
+    drawConfig(body);
   };
   body.onclick = async (ev) => {
     const t = ev.target;

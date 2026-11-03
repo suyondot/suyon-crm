@@ -859,6 +859,8 @@ function msgRow(m, list) {
     inner += `<a class="doc" href="https://www.google.com/maps?q=${l.latitude},${l.longitude}" target="_blank" rel="noopener">${ICON.pin}<span style="min-width:0"><b>${esc(m.body || 'Ubicación')}</b><span>Abrir en Google Maps</span></span></a>`;
   } else if (media) {
     inner += mediaHTML(m) + (m.body ? `<span class="cap">${esc(m.body)}</span>` : '');
+    if (m.type === 'audio' && m.transcript) inner += `<span class="trans" title="Lo que dijo (pasado a texto)">«${esc(m.transcript)}»</span>`;
+    else if (m.type === 'audio' && m.direction === 'in' && /^Nota de voz sin texto/.test(m.error || '')) inner += '<span class="trans off">No se pudo pasar a texto. Escúchala.</span>';
   } else {
     inner += esc(m.body || (m.type === 'unsupported' ? 'Mensaje que WhatsApp no deja ver aquí (ábrelo en el celular).' : ''));
   }
@@ -918,7 +920,7 @@ function renderMsgs({ toBottom = false, older = false } = {}) {
       const r = m.extra.referral;
       rows.push({ key: 'ad' + m.id, sig: '1', html: `<div class="adcard">Llegó desde un anuncio<b>${esc(r.headline || 'Anuncio de Meta')}</b>${r.source_id ? `<span class="mono">ID ${esc(r.source_id)}</span>` : ''}</div>` });
     }
-    const sig = [m.status, m.media_status, m.extra?.reaction, m.error, m.user_name, m.local_url ? 'L' : '', ms.list.some((x) => x.wamid && x.wamid === m.context_wamid) ? 'q' : ''].join('|');
+    const sig = [m.status, m.media_status, m.extra?.reaction, m.error, m.transcript ? 'T' + m.transcript.length : '', m.user_name, m.local_url ? 'L' : '', ms.list.some((x) => x.wamid && x.wamid === m.context_wamid) ? 'q' : ''].join('|');
     rows.push({ key: 'm' + m.id, sig, html: msgRow(m, ms.list) });
   }
   if (!ms.list.length) rows.push({ key: 'none', sig: '', html: '<div class="sysm">Sin mensajes todavía</div>' });

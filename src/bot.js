@@ -4,6 +4,7 @@ import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay } fro
 import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON } from './bot-template.js';
 import { draftFromChat, insertOrder } from './orders.js';
+import { onOrderCreated } from './automations.js';
 
 const MIN = 60e3;
 const MAX_STEPS = 40;
@@ -37,6 +38,7 @@ export const DEFAULT_SETTINGS = {
   entrega_sab: 1, // sábado se entrega (con la misma hora de corte)
   entrega_dom: 0, // domingo no se entrega
   entrega_horario: 'entre 2 y 8 p.m.',
+  voz_on: 1, // notas de voz → texto (necesita el secreto OPENAI_API_KEY)
 };
 
 /* ---------------- Utilidades ---------------- */
@@ -427,7 +429,8 @@ async function orderFromBot(env, store, chatId, vars) {
   ).bind(chat.id, now() - 3 * 864e5).first();
   if (open) return;
   try {
-    await insertOrder(env, store, draft, { source: 'ia' });
+    const o = await insertOrder(env, store, draft, { source: 'ia' });
+    if (o) await onOrderCreated(env, store, o);
   } catch (e) {
     await notify(env, store.id, { kind: 'error', chatId: chat.id, title: 'La IA no pudo crear el pedido', body: e.message });
   }
@@ -586,7 +589,7 @@ function historyFor(rows) {
   for (const m of rows) {
     const role = m.direction === 'in' ? 'user' : 'assistant';
     const tag = { image: '[foto]', video: '[video]', audio: '[nota de voz]', document: '[documento]', sticker: '[sticker]', location: '[ubicación]' }[m.type];
-    const text = [tag, m.body].filter(Boolean).join(' ').trim() || '[mensaje]';
+    const text = [tag, m.transcript ? `(dijo: «${m.transcript}»)` : null, m.body].filter(Boolean).join(' ').trim() || '[mensaje]';
     const last = out[out.length - 1];
     if (last && last.role === role) last.text += '\n' + text;
     else out.push({ role, text, imgKey: null });
@@ -705,7 +708,7 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   }
   const limit = Math.min(Math.max(Number(settings.ia_history) || 50, 4), 100);
   const { results } = await env.DB.prepare(
-    "SELECT direction, sender, type, body, media_key, media_mime FROM messages WHERE chat_id = ? AND sender != 'sys' ORDER BY id DESC LIMIT ?"
+    "SELECT direction, sender, type, body, transcript, media_key, media_mime FROM messages WHERE chat_id = ? AND sender != 'sys' ORDER BY id DESC LIMIT ?"
   ).bind(chat.id, limit).all();
   const hist = historyFor(results.reverse());
   if (!hist.length) return { ok: false };

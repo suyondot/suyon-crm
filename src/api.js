@@ -996,7 +996,7 @@ api.get('/stores/:id/clientes.csv', async (c) => {
 /* ---------------- Mensajes ---------------- */
 
 const MSG_COLS = `m.id, m.wamid, m.direction, m.sender, m.user_id, u.name AS user_name, m.type, m.body, m.media_mime, m.media_name, m.media_size,
-  m.media_status, m.status, m.error, m.context_wamid, m.extra, m.created_at, m.updated_at`;
+  m.media_status, m.status, m.error, m.context_wamid, m.extra, m.transcript, m.created_at, m.updated_at`;
 
 function shapeMsg(m) {
   const x = { ...m, extra: m.extra ? JSON.parse(m.extra) : null };

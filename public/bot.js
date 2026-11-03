@@ -983,7 +983,14 @@ function drawIA() {
       <div class="field"><label for="bh">Memoria del chat (mensajes)</label><input id="bh" name="ia_history" type="number" min="4" max="100" value="${s.ia_history}"></div>
       <div class="field"><label for="bf">Si no contesta, seguir a los (min, 0 = no)</label><input id="bf" name="ia_follow_min" type="number" min="0" value="${s.ia_follow_min}"></div></div>
       <div class="field"><label for="bft">Mensaje de ese seguimiento</label><input id="bft" name="ia_follow_text" value="${e(s.ia_follow_text || '')}"></div>
-      <p class="note" style="margin:6px 0 0">La IA manda cada mensaje por separado, como en tu prompt («3 mensajes separados»). Las fotos de la clienta las puede ver; las notas de voz todavía no.</p></div>
+      <p class="note" style="margin:6px 0 0">La IA manda cada mensaje por separado, como en tu prompt («3 mensajes separados»). Ve las fotos de la clienta y, si está encendido abajo, entiende sus notas de voz.</p></div>
+    <div class="card"><h3>Notas de voz a texto</h3>
+      <label class="bswitch"><input type="checkbox" name="voz_on" ${s.voz_on ? 'checked' : ''}><span>Pasar las notas de voz a texto</span></label>
+      <p class="sub" style="margin:8px 0">Cuando la clienta manda un audio, se pasa a texto: tu asesora lo lee debajo del audio y el bot y la IA entienden la talla, el color o el distrito que dijo. Cuesta más o menos US$0.003 por minuto de audio y se suma al gasto de hoy.</p>
+      <div class="${B.data.secrets.OPENAI_API_KEY ? 'okbox' : 'warnbox'}">${B.data.secrets.OPENAI_API_KEY ? '✓ Clave de OpenAI lista (secreto «OPENAI_API_KEY»).' : `<b>Falta la clave de OpenAI.</b> Sin ella los audios llegan igual, pero sin texto.
+        <ol><li>Saca una clave en platform.openai.com → API keys (con tu tarjeta y un tope de gasto).</li>
+        <li>En Cloudflare: Workers → suyon-crm → Configuración → Variables y secretos → Agregar.</li>
+        <li>Tipo «Secreto», nombre <b class="mono">OPENAI_API_KEY</b>, pega la clave y guarda. No la pegues en este chat ni aquí.</li></ol>`}</div></div>
     <div class="card"><div class="brow"><h3 style="flex:1">Prompt (copiado de tu Botcake)</h3><span class="note mono" id="bpc">${(s.ia_prompt || '').length.toLocaleString('en-US')} caracteres</span><button type="button" class="iconbtn" data-bact="resetprompt">Restaurar el de Botcake</button></div>
       <p class="sub">Para otro producto, copia este y cambia solo lo del producto (precios, tallas, colores, stock, archivos). Escribe <b class="mono">{</b> para insertar un dato que se llena solo (fecha, hora, día de entrega, etiquetas, talla…).</p>
       <div class="bvars">${(B.data.prompt_vars || []).map(([k, d]) => `<button type="button" data-pvar="${k}" title="${e(d)}">{${k}}</button>`).join('')}</div>
@@ -999,6 +1006,7 @@ function drawIA() {
     const d = Object.fromEntries(new FormData(f));
     d.entrega_sab = !!d.entrega_sab;
     d.entrega_dom = !!d.entrega_dom;
+    d.voz_on = !!d.voz_on;
     await saveSettings(d, 'IA Suyon guardada');
   };
 }
