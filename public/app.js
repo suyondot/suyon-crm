@@ -1572,7 +1572,7 @@ function addStoreModal() {
 /* =================== CONFIGURACIÓN =================== */
 function cfgTabs() {
   const tabs = [];
-  if (owner()) tabs.push(['general', 'General'], ['numero', 'Número de WhatsApp'], ['etiquetas', 'Etiquetas'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
+  if (owner()) tabs.push(['general', 'General'], ['numero', 'Número de WhatsApp'], ['perfil', 'Perfil de WhatsApp'], ['etiquetas', 'Etiquetas'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
   if (S.me.companies.some((c) => c.role === 'dueno')) tabs.push(['empresa', 'Empresas']);
   tabs.push(['cuenta', 'Mi cuenta']);
   return tabs;
@@ -1586,9 +1586,9 @@ function renderConfig() {
   const st = store();
   content.innerHTML = `<div class="page${S.cfgTab === 'bot' ? ' full' : ''}"><div class="cfg">
     <nav class="cfgnav" aria-label="Secciones">${tabs.map(([k, l]) => `<button data-cfg="${k}" aria-current="${S.cfgTab === k}">${l}</button>`).join('')}
-      ${st && owner() ? `<div class="cfgnote">Lo de General, Número, Etiquetas, Bot y Equipo es de <b>${esc(st.name)}</b>${S.cfgTab === 'equipo' ? ` y su empresa` : ''}. Cambia de tienda arriba a la izquierda.</div>` : ''}</nav>
+      ${st && owner() ? `<div class="cfgnote">Lo de General, Número, Perfil, Etiquetas, Bot y Equipo es de <b>${esc(st.name)}</b>${S.cfgTab === 'equipo' ? ` y su empresa` : ''}. Cambia de tienda arriba a la izquierda.</div>` : ''}</nav>
     <div id="cfgbody"></div></div></div>`;
-  ({ general: cfgGeneral, numero: cfgNumero, etiquetas: cfgEtiquetas, bot: () => renderBotTab($('#cfgbody')), equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta })[S.cfgTab]();
+  ({ general: cfgGeneral, numero: cfgNumero, perfil: cfgPerfil, etiquetas: cfgEtiquetas, bot: () => renderBotTab($('#cfgbody')), equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta })[S.cfgTab]();
 }
 
 function cfgGeneral() {
@@ -1656,6 +1656,82 @@ function tzOff(tz) {
   } catch {
     return '';
   }
+}
+
+async function cfgPerfil() {
+  const st = store();
+  const body = $('#cfgbody');
+  if (!st) return (body.innerHTML = '<div class="empty"><b>Sin tienda</b><span>Agrega una tienda desde el selector.</span></div>');
+  body.innerHTML = '<div class="empty" style="padding:40px"><span class="spin"></span></div>';
+  let r;
+  try {
+    r = await api('GET', `/stores/${st.id}/perfil`);
+  } catch (er) {
+    body.innerHTML = `<div class="ph"><div><h2>Perfil de WhatsApp</h2></div></div><div class="card"><div class="err">${esc(er.message)}</div></div>`;
+    return;
+  }
+  if (S.cfgTab !== 'perfil' || store()?.id !== st.id) return;
+  const p = r.profile;
+  const w = [...p.websites, '', ''].slice(0, 2);
+  const cnt = (id, n) => `<span class="note mono" data-cnt="${id}" data-max="${n}"></span>`;
+  body.innerHTML = `
+  <div class="ph"><div><h2>Perfil de WhatsApp</h2><p>Lo que ven tus clientas al tocar el nombre de <b>${esc(r.name || st.name)}</b> en WhatsApp.</p></div></div>
+  <form id="wpf" class="grid" style="gap:14px">
+    <div class="card wprof">
+      <div class="wpic"><span class="wpimg">${p.photo ? `<img src="${esc(p.photo)}" alt="Foto de perfil" referrerpolicy="no-referrer">` : '<b>S</b>'}</span>
+        <label class="iconbtn">Cambiar foto<input type="file" id="wpfile" accept="image/jpeg,image/png" hidden></label>
+        <span class="note">JPG o PNG cuadrada, mínimo 192×192 (ideal 640×640). Máx. 5 MB.</span></div>
+      <div class="wpinfo"><b class="wpname">${esc(r.name || st.name)}</b><span class="note mono">${esc(r.phone || st.phone_display || '')}</span>
+        <span class="note">El nombre no se cambia aquí: lo revisa Meta (Administrador de WhatsApp → Números de teléfono).</span></div>
+    </div>
+    <div class="card"><h3>Datos del perfil</h3><div class="grid" style="gap:12px">
+      <div class="field"><label for="wp-about">Info (frase corta debajo del nombre) ${cnt('wp-about', 139)}</label><input id="wp-about" name="about" maxlength="139" value="${esc(p.about)}" placeholder="Pantalones formales stretch · Envío gratis a todo el Perú 🇵🇪"></div>
+      <div class="field"><label for="wp-desc">Descripción ${cnt('wp-desc', 512)}</label><textarea id="wp-desc" name="description" maxlength="512" rows="4" placeholder="Qué vendes, horarios, cómo comprar…">${esc(p.description)}</textarea></div>
+      <div class="fields">
+        <div class="field"><label for="wp-cat">Categoría</label><select id="wp-cat" name="vertical">${Object.entries(r.verticals).map(([k, l]) => `<option value="${k}" ${k === p.vertical ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+        <div class="field"><label for="wp-mail">Correo</label><input id="wp-mail" name="email" type="email" maxlength="128" value="${esc(p.email)}"></div>
+      </div>
+      <div class="field"><label for="wp-addr">Dirección</label><input id="wp-addr" name="address" maxlength="256" value="${esc(p.address)}" placeholder="Los Olivos, Lima"></div>
+      <div class="fields">
+        <div class="field"><label for="wp-w1">Enlace 1 (ej. Instagram)</label><input id="wp-w1" name="w1" value="${esc(w[0])}" placeholder="https://instagram.com/porteperu"></div>
+        <div class="field"><label for="wp-w2">Enlace 2 (ej. Facebook o tu web)</label><input id="wp-w2" name="w2" value="${esc(w[1])}" placeholder="https://facebook.com/porteperu"></div>
+      </div>
+      <div class="err" hidden></div>
+      <div><button class="send" type="submit">Guardar perfil</button></div></div></div>
+    <div class="card"><h3>Conectar Facebook e Instagram</h3>
+      <p class="sub">Esto no se puede hacer desde la API: Meta lo pide en sus propias apps. Lo que sí puedes poner aquí son los enlaces de arriba, que salen como botones en el perfil.</p>
+      <ol class="steps">
+        <li><b>Página de Facebook</b> (para anuncios de clic a WhatsApp): en tu página → Configuración → <b>WhatsApp</b> → agrega este número y confirma con el código.</li>
+        <li><b>Instagram</b>: en la app → Editar perfil → <b>Agregar enlace</b> o <b>Botones de contacto</b> → WhatsApp → elige este número.</li>
+        <li>Si usas Meta Business Suite, también lo encuentras en Configuración → <b>Cuentas</b> → Cuentas de WhatsApp.</li>
+      </ol></div>
+  </form>`;
+  const counters = () => $$('[data-cnt]').forEach((el) => (el.textContent = `${$('#' + el.dataset.cnt).value.length}/${el.dataset.max}`));
+  counters();
+  $('#wpf').addEventListener('input', counters);
+  formHandler($('#wpf'), async (d) => {
+    await api('PATCH', `/stores/${st.id}/perfil`, { about: d.about, description: d.description, vertical: d.vertical, email: d.email, address: d.address, websites: [d.w1, d.w2] });
+    toast('Perfil guardado en WhatsApp');
+  });
+  $('#wpfile').onchange = async (ev) => {
+    const f = ev.target.files[0];
+    ev.target.value = '';
+    if (!f) return;
+    const img = $('.wpimg');
+    const url = URL.createObjectURL(f);
+    const prev = img.innerHTML;
+    img.innerHTML = `<img src="${url}" alt="Foto nueva"><span class="spin wpspin"></span>`;
+    const fd = new FormData();
+    fd.append('file', f);
+    try {
+      await api('POST', `/stores/${st.id}/perfil/foto`, fd);
+      img.querySelector('.wpspin')?.remove();
+      toast('Foto de perfil cambiada. En WhatsApp puede tardar unos minutos en verse.', 5000);
+    } catch (er) {
+      img.innerHTML = prev;
+      toast(er.message, 6000);
+    }
+  };
 }
 
 function statusPill(s) {

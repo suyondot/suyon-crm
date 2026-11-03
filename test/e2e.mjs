@@ -47,12 +47,19 @@ const meta = http.createServer(async (req, res) => {
       : { mensajes: [{ texto: '¡Lindo! 😍 1 pantalón Negro talla S: S/89', archivo: null }, { texto: '¿A qué ciudad o distrito te lo enviamos? 😊', archivo: 'tabla-tallas' }], caso: null, datos: { colores: 'Negro', cantidad: '1' } };
     return json(200, { content: [{ type: 'text', text: JSON.stringify(out) }], usage: { input_tokens: 5000, output_tokens: 120 } });
   }
+  if (req.method === 'POST' && p === 'upload:abc123') {
+    if (auth !== 'OAuth test-token' || req.headers.file_offset !== '0' || !raw.length) return json(400, { error: { code: 100, message: 'bad upload' } });
+    return json(200, { h: 'HANDLE1' });
+  }
   if (auth !== 'Bearer test-token') return json(401, { error: { code: 190, message: 'Invalid OAuth access token' } });
+  if (req.method === 'POST' && p === 'APP123/uploads') return json(200, { id: 'upload:abc123' });
+  if (req.method === 'GET' && p === `${PHONE_ID}/whatsapp_business_profile`) return json(200, { data: [{ about: 'Hola', vertical: 'APPAREL', websites: ['https://instagram.com/x'], messaging_product: 'whatsapp' }] });
+  if (req.method === 'POST' && p === `${PHONE_ID}/whatsapp_business_profile`) return json(200, { success: true });
   if (p.startsWith('file/')) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(IMG); }
   if (req.method === 'GET' && p === PHONE_ID) return json(200, { display_phone_number: '+51 924 000 111', verified_name: 'Porte Perú', quality_rating: 'GREEN', id: PHONE_ID });
   if (req.method === 'POST' && p === `${WABA_ID}/subscribed_apps`) return json(200, { success: true });
   if (req.method === 'POST' && p.endsWith('/subscribed_apps')) return json(400, { error: { code: 100, message: 'Unsupported post request. Object does not exist' } });
-  if (req.method === 'GET' && p === 'debug_token') return json(200, { data: { granular_scopes: [{ scope: 'whatsapp_business_management', target_ids: ['555', WABA_ID] }] } });
+  if (req.method === 'GET' && p === 'debug_token') return json(200, { data: { app_id: 'APP123', granular_scopes: [{ scope: 'whatsapp_business_management', target_ids: ['555', WABA_ID] }] } });
   if (req.method === 'GET' && p === '555/phone_numbers') return json(200, { data: [{ id: '777' }] });
   if (req.method === 'GET' && p === `${WABA_ID}/phone_numbers`) return json(200, { data: [{ id: PHONE_ID }] });
   if (req.method === 'POST' && p === `${PHONE_ID}/register`) return json(200, { success: body?.pin === '123456' });
@@ -836,6 +843,27 @@ try {
     assert.equal((await call('DELETE', `/api/chats/${d.id}`)).ok, true);
     assert.equal(await chatOf('51911111115'), undefined);
     assert.equal((await call('GET', `/api/chats/${d.id}`)).status, 404);
+  });
+  await step('Perfil de WhatsApp: leer, guardar y cambiar foto', async () => {
+    let r = await call('GET', `/api/stores/${store.id}/perfil`);
+    assert.equal(r.status, 200, JSON.stringify(r));
+    assert.equal(r.profile.about, 'Hola');
+    assert.equal(r.profile.vertical, 'APPAREL');
+    assert.ok(r.verticals.APPAREL);
+    assert.equal((await call('PATCH', `/api/stores/${store.id}/perfil`, { about: 'x'.repeat(140) })).status, 400);
+    assert.equal((await call('PATCH', `/api/stores/${store.id}/perfil`, { websites: ['instagram.com/x'] })).status, 400);
+    assert.equal((await call('PATCH', `/api/stores/${store.id}/perfil`, { vertical: 'RARO' })).status, 400);
+    r = await call('PATCH', `/api/stores/${store.id}/perfil`, { about: 'Pantalones formales', description: 'Envío gratis', websites: ['https://instagram.com/porte', ''], vertical: 'APPAREL', email: 'hola@porte.pe' });
+    assert.equal(r.ok, true);
+    const sent = calls.filter((x) => x.method === 'POST' && x.path === `${PHONE_ID}/whatsapp_business_profile`).pop();
+    assert.equal(sent.body.messaging_product, 'whatsapp');
+    assert.deepEqual(sent.body.websites, ['https://instagram.com/porte']);
+    const fd = new FormData();
+    fd.append('file', new Blob([IMG], { type: 'image/jpeg' }), 'perfil.jpg');
+    r = await call('POST', `/api/stores/${store.id}/perfil/foto`, undefined, { form: fd });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const pic = calls.filter((x) => x.method === 'POST' && x.path === `${PHONE_ID}/whatsapp_business_profile`).pop();
+    assert.equal(pic.body.profile_picture_handle, 'HANDLE1');
   });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos']) assert.equal((await fetch(BASE + p)).status, 200);

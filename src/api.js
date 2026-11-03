@@ -5,7 +5,7 @@ import {
   ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError, windowOpen, GENERAL, localDay,
 } from './util.js';
 import { createSession, destroySession, currentUser, requireUser, checkPassword, loadAccess, storeFor, companyFor, chatFor } from './auth.js';
-import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES } from './whatsapp.js';
+import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES, getProfile, setProfile, setProfilePhoto, VERTICALS } from './whatsapp.js';
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
 import reportesApi from './api-reportes.js';
@@ -539,6 +539,56 @@ api.post('/stores/:id/register', async (c) => {
   if (!/^\d{6}$/.test(pin)) fail(400, 'El PIN debe tener 6 números.');
   await registerNumber(c.env, st, pin);
   await bump(c.env, st.id);
+  return c.json({ ok: true });
+});
+
+/* ---------------- Perfil de WhatsApp ---------------- */
+
+function profileStore(st) {
+  if (!st.phone_number_id || st.status !== 'activo') fail(409, 'Primero conecta este número a WhatsApp (Configuración → Número de WhatsApp).');
+  return st;
+}
+
+api.get('/stores/:id/perfil', async (c) => {
+  const st = profileStore(await storeFor(c, c.req.param('id'), 'config'));
+  const p = await getProfile(c.env, st);
+  return c.json({ profile: { about: p.about || '', description: p.description || '', address: p.address || '', email: p.email || '', websites: p.websites || [], vertical: p.vertical || 'UNDEFINED', photo: p.profile_picture_url || null }, verticals: VERTICALS, name: st.verified_name, phone: st.phone_display });
+});
+
+api.patch('/stores/:id/perfil', async (c) => {
+  const st = profileStore(await storeFor(c, c.req.param('id'), 'config'));
+  const b = await body(c);
+  const out = {};
+  const lim = { about: 139, description: 512, address: 256, email: 128 };
+  for (const [k, n] of Object.entries(lim)) {
+    if (!(k in b)) continue;
+    const v = String(b[k] ?? '').trim();
+    if (v.length > n) fail(400, `«${{ about: 'Info', description: 'Descripción', address: 'Dirección', email: 'Correo' }[k]}» puede tener hasta ${n} letras.`);
+    if (k === 'about' && !v) fail(400, 'La «Info» no puede quedar vacía (es la frase corta debajo del nombre).');
+    if (k === 'email' && v && !validEmail(v)) fail(400, 'Ese correo no es válido.');
+    out[k] = v;
+  }
+  if ('websites' in b) {
+    const w = (Array.isArray(b.websites) ? b.websites : []).map((x) => String(x || '').trim()).filter(Boolean).slice(0, 2);
+    for (const u of w) if (!/^https?:\/\/[^\s]+\.[^\s]+$/i.test(u) || u.length > 256) fail(400, `«${u}» no es un enlace válido. Debe empezar con https://`);
+    out.websites = w;
+  }
+  if ('vertical' in b) {
+    if (!VERTICALS[b.vertical]) fail(400, 'Elige una categoría de la lista.');
+    out.vertical = b.vertical;
+  }
+  if (Object.keys(out).length) await setProfile(c.env, st, out);
+  return c.json({ ok: true });
+});
+
+api.post('/stores/:id/perfil/foto', async (c) => {
+  const st = profileStore(await storeFor(c, c.req.param('id'), 'config'));
+  const form = await c.req.formData();
+  const f = form.get('file');
+  if (!f || typeof f === 'string') fail(400, 'Elige una foto.');
+  if (!/^image\/(jpeg|png)$/.test(f.type)) fail(400, 'La foto debe ser JPG o PNG.');
+  if (f.size > 5 * 1048576) fail(413, 'La foto pasa de 5 MB.');
+  await setProfilePhoto(c.env, st, await f.arrayBuffer(), f.type);
   return c.json({ ok: true });
 });
 

@@ -211,3 +211,38 @@ export function kindForMime(mime) {
   if (m === 'audio/x-m4a' || m === 'audio/m4a') return 'audio';
   return 'document';
 }
+
+/* ---------- Perfil de WhatsApp (foto, info, descripción, dirección, correo, webs, categoría) ---------- */
+
+export const VERTICALS = {
+  APPAREL: 'Ropa y accesorios', BEAUTY: 'Belleza, spa y salón', RETAIL: 'Tienda / compras', EDU: 'Educación', PROF_SERVICES: 'Servicios profesionales',
+  EVENT_PLAN: 'Eventos', FINANCE: 'Finanzas', GROCERY: 'Alimentos y abarrotes', HEALTH: 'Salud', RESTAURANT: 'Restaurante', TRAVEL: 'Viajes y transporte',
+  AUTO: 'Vehículos', ENTERTAIN: 'Entretenimiento', HOTEL: 'Hotel y alojamiento', NONPROFIT: 'Sin fines de lucro', OTHER: 'Otro', UNDEFINED: 'Sin categoría',
+};
+
+export async function getProfile(env, store) {
+  const d = await graph(env, store, `${store.phone_number_id}/whatsapp_business_profile?fields=about,address,description,email,profile_picture_url,websites,vertical`);
+  return d?.data?.[0] || {};
+}
+
+export async function setProfile(env, store, fields) {
+  return graph(env, store, `${store.phone_number_id}/whatsapp_business_profile`, { method: 'POST', json: { messaging_product: 'whatsapp', ...fields } });
+}
+
+// Foto de perfil: se sube con la «subida reanudable» de Meta y se usa el código que devuelve
+export async function setProfilePhoto(env, store, bytes, mime) {
+  const token = tokenFor(env, store);
+  let appId = env.META_APP_ID;
+  if (!appId) appId = (await graph(env, store, `debug_token?input_token=${encodeURIComponent(token)}`))?.data?.app_id;
+  if (!appId) throw new HttpError(400, 'No se encontró el ID de la app de Meta. Ponlo en Cloudflare como variable META_APP_ID.');
+  const ext = mime === 'image/png' ? 'png' : 'jpg';
+  const s = await graph(env, store, `${appId}/uploads?file_name=perfil.${ext}&file_length=${bytes.byteLength}&file_type=${encodeURIComponent(mime)}`, { method: 'POST' });
+  if (!s?.id) throw new HttpError(502, 'Meta no abrió la subida de la foto.');
+  const res = await fetch(`${env.GRAPH_API}/${s.id}`, { method: 'POST', headers: { Authorization: `OAuth ${token}`, file_offset: '0', 'Content-Type': mime }, body: bytes });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {}
+  if (!res.ok || !data?.h) throw new HttpError(502, friendlyMetaError(data?.error || { message: `No se pudo subir la foto (HTTP ${res.status})` }));
+  await setProfile(env, store, { profile_picture_handle: data.h });
+}
