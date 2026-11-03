@@ -1,6 +1,6 @@
 // API de Bot Suyon AI (Configuración → Herramientas) y de Avisos
 import { Hono } from 'hono';
-import { now, fail, clip, windowOpen } from './util.js';
+import { now, fail, clip, windowOpen, localDay } from './util.js';
 import { storeFor, chatFor, requireUser } from './auth.js';
 import { mediaKey } from './webhook.js';
 import { kindForMime, SEND_RULES } from './whatsapp.js';
@@ -19,7 +19,7 @@ const body = async (c) => {
 };
 const bump = (env, storeId) => env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE id = ?').bind(storeId).run();
 const inList = (n) => Array(n).fill('?').join(',');
-const today = () => new Date(now() - 5 * 3600e3).toISOString().slice(0, 10);
+const today = (tz) => localDay(now(), tz);
 
 /* ---------- Ajustes ---------- */
 
@@ -73,7 +73,7 @@ r.get('/stores/:id/bot', async (c) => {
     template_assets: TEMPLATE_ASSETS.map(([key, desc]) => ({ key, desc, ok: assets.some((a) => a.key === key) })),
     secrets: Object.fromEntries(secretNames.map((n) => [n, !!c.env[n]])),
     usage,
-    today: today(),
+    today: today(st.timezone),
     models: Object.entries(IA_MODELS).map(([id, m]) => ({ id, ...m })),
   });
 });

@@ -124,3 +124,82 @@ export function windowOpen(chat) {
   }
   return false;
 }
+
+/* ---------- Zona horaria por tienda ---------- */
+
+export const DEFAULT_TZ = 'America/Lima';
+const tzFmt = new Map();
+
+export function validTz(tz) {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Hora local de la tienda: { y, mo, d, h, m, dow }
+export function localParts(t = now(), tz = DEFAULT_TZ) {
+  if (!validTz(tz)) tz = DEFAULT_TZ;
+  let f = tzFmt.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', weekday: 'short' });
+    tzFmt.set(tz, f);
+  }
+  const p = Object.fromEntries(f.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+  return { y: +p.year, mo: +p.month, d: +p.day, h: +p.hour % 24, m: +p.minute, dow: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday) };
+}
+
+// Diferencia (ms) entre la hora local de la tienda y UTC en ese momento
+export function tzOffset(t, tz = DEFAULT_TZ) {
+  const p = localParts(t, tz);
+  return Date.UTC(p.y, p.mo - 1, p.d, p.h, p.m) - Math.floor(t / 60000) * 60000;
+}
+
+// Fecha local 'YYYY-MM-DD'
+export function localDay(t = now(), tz = DEFAULT_TZ) {
+  const p = localParts(t, tz);
+  return `${p.y}-${String(p.mo).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
+}
+
+// Opciones de Configuración → General (país sugiere zona horaria y moneda)
+export const GENERAL = {
+  countries: [
+    { id: 'PE', name: 'Perú', tz: 'America/Lima', currency: 'PEN' },
+    { id: 'MX', name: 'México', tz: 'America/Mexico_City', currency: 'MXN' },
+    { id: 'CO', name: 'Colombia', tz: 'America/Bogota', currency: 'COP' },
+    { id: 'EC', name: 'Ecuador', tz: 'America/Guayaquil', currency: 'USD' },
+    { id: 'CL', name: 'Chile', tz: 'America/Santiago', currency: 'CLP' },
+    { id: 'BO', name: 'Bolivia', tz: 'America/La_Paz', currency: 'BOB' },
+    { id: 'AR', name: 'Argentina', tz: 'America/Argentina/Buenos_Aires', currency: 'ARS' },
+    { id: 'VE', name: 'Venezuela', tz: 'America/Caracas', currency: 'USD' },
+    { id: 'PA', name: 'Panamá', tz: 'America/Panama', currency: 'USD' },
+    { id: 'GT', name: 'Guatemala', tz: 'America/Guatemala', currency: 'GTQ' },
+    { id: 'DO', name: 'República Dominicana', tz: 'America/Santo_Domingo', currency: 'DOP' },
+    { id: 'ES', name: 'España', tz: 'Europe/Madrid', currency: 'EUR' },
+    { id: 'US', name: 'Estados Unidos', tz: 'America/New_York', currency: 'USD' },
+  ],
+  timezones: [
+    'America/Lima', 'America/Bogota', 'America/Guayaquil', 'America/Panama', 'America/Mexico_City', 'America/Guatemala',
+    'America/La_Paz', 'America/Caracas', 'America/Santo_Domingo', 'America/Santiago', 'America/Argentina/Buenos_Aires',
+    'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/Madrid',
+  ],
+  currencies: [
+    { id: 'PEN', name: 'Sol peruano', symbol: 'S/' },
+    { id: 'USD', name: 'Dólar', symbol: 'US$' },
+    { id: 'MXN', name: 'Peso mexicano', symbol: 'MX$' },
+    { id: 'COP', name: 'Peso colombiano', symbol: 'COL$' },
+    { id: 'CLP', name: 'Peso chileno', symbol: 'CLP$' },
+    { id: 'BOB', name: 'Boliviano', symbol: 'Bs' },
+    { id: 'ARS', name: 'Peso argentino', symbol: 'AR$' },
+    { id: 'GTQ', name: 'Quetzal', symbol: 'Q' },
+    { id: 'DOP', name: 'Peso dominicano', symbol: 'RD$' },
+    { id: 'EUR', name: 'Euro', symbol: '€' },
+  ],
+  languages: [
+    { id: 'es', name: 'Español' },
+    { id: 'pt', name: 'Portugués' },
+    { id: 'en', name: 'Inglés' },
+  ],
+};

@@ -1539,7 +1539,7 @@ function addStoreModal() {
 /* =================== CONFIGURACIÓN =================== */
 function cfgTabs() {
   const tabs = [];
-  if (owner()) tabs.push(['numero', 'Número de WhatsApp'], ['etiquetas', 'Etiquetas'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
+  if (owner()) tabs.push(['general', 'General'], ['numero', 'Número de WhatsApp'], ['etiquetas', 'Etiquetas'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
   if (S.me.companies.some((c) => c.role === 'dueno')) tabs.push(['empresa', 'Empresas']);
   tabs.push(['cuenta', 'Mi cuenta']);
   return tabs;
@@ -1553,9 +1553,76 @@ function renderConfig() {
   const st = store();
   content.innerHTML = `<div class="page${S.cfgTab === 'bot' ? ' full' : ''}"><div class="cfg">
     <nav class="cfgnav" aria-label="Secciones">${tabs.map(([k, l]) => `<button data-cfg="${k}" aria-current="${S.cfgTab === k}">${l}</button>`).join('')}
-      ${st && owner() ? `<div class="cfgnote">Lo de Número, Etiquetas, Bot y Equipo es de <b>${esc(st.name)}</b>${S.cfgTab === 'equipo' ? ` y su empresa` : ''}. Cambia de tienda arriba a la izquierda.</div>` : ''}</nav>
+      ${st && owner() ? `<div class="cfgnote">Lo de General, Número, Etiquetas, Bot y Equipo es de <b>${esc(st.name)}</b>${S.cfgTab === 'equipo' ? ` y su empresa` : ''}. Cambia de tienda arriba a la izquierda.</div>` : ''}</nav>
     <div id="cfgbody"></div></div></div>`;
-  ({ numero: cfgNumero, etiquetas: cfgEtiquetas, bot: () => renderBotTab($('#cfgbody')), equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta })[S.cfgTab]();
+  ({ general: cfgGeneral, numero: cfgNumero, etiquetas: cfgEtiquetas, bot: () => renderBotTab($('#cfgbody')), equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta })[S.cfgTab]();
+}
+
+function cfgGeneral() {
+  const st = store();
+  const body = $('#cfgbody');
+  if (!st) return (body.innerHTML = '<div class="empty"><b>Sin tienda</b><span>Agrega una tienda desde el selector.</span><button class="send" data-act="addstore">Agregar tienda</button></div>');
+  const G = S.me.general;
+  const opt = (list, cur, label = (x) => x.name) => list.map((x) => `<option value="${esc(x.id)}" ${x.id === cur ? 'selected' : ''}>${esc(label(x))}</option>`).join('');
+  const tzName = (tz) => tz.split('/').pop().replace(/_/g, ' ');
+  const cur = G.currencies.find((x) => x.id === st.currency) || G.currencies[0];
+  body.innerHTML = `
+  <div class="ph"><div><h2>General</h2><p>Idioma, país, zona horaria y moneda de <b>${esc(st.name)}</b>. El bot, los seguimientos y la IA usan estos datos.</p></div></div>
+  <form id="gf" class="grid" style="gap:14px">
+    <div class="card"><h3>Idioma y región</h3>
+      <div class="fields3">
+        <div class="field"><label for="g-country">País</label><select id="g-country" name="country">${opt(G.countries, st.country)}</select></div>
+        <div class="field"><label for="g-tz">Zona horaria</label><select id="g-tz" name="timezone">${G.timezones.map((tz) => `<option value="${tz}" ${tz === st.timezone ? 'selected' : ''}>${esc(tzName(tz))} (${esc(tzOff(tz))})</option>`).join('')}</select></div>
+        <div class="field"><label for="g-cur">Moneda</label><select id="g-cur" name="currency">${opt(G.currencies, st.currency, (x) => `${x.symbol} · ${x.name}`)}</select></div>
+        <div class="field"><label for="g-h12">Formato de hora</label><select id="g-h12" name="hour12"><option value="1" ${st.hour12 ? 'selected' : ''}>12 horas (3:30 p. m.)</option><option value="0" ${st.hour12 ? '' : 'selected'}>24 horas (15:30)</option></select></div>
+        <div class="field"><label for="g-lang">Idioma del bot y la IA</label><select id="g-lang" name="language">${opt(G.languages, st.language)}</select></div>
+        <div class="field"><label>Hora ahora en la tienda</label><div class="mono" id="g-now" style="padding:8px 0"></div></div>
+      </div>
+      <p class="note" style="margin:6px 0 0">La zona horaria decide los horarios del bot (por ejemplo, seguimientos solo de 8 a. m. a 10 p. m.), la hora que ve la IA para el corte HOY/MAÑANA y el gasto de IA por día. La app se ve en español.</p>
+    </div>
+    <div class="card"><h3>Punto de venta</h3>
+      <p class="sub">No va aparte: los pedidos se harán aquí mismo, en la sección <b>Pedidos</b>, y ya quedan vinculados a esta tienda.</p>
+      <ul class="stlist">
+        <li><span class="y">✓</span><span>Cada pedido sale de su chat, con los datos que guardó la IA (talla, colores, distrito, nombre, DNI…).</span></li>
+        <li><span class="y">✓</span><span>Precios en ${esc(cur.symbol)} y fechas con la hora de ${esc(tzName(st.timezone))}.</span></li>
+        <li><span class="y">✓</span><span>Guarda el anuncio de origen para mandar la Compra a Meta y ver el costo real por venta.</span></li>
+        <li><span class="n">•</span><span>Pendiente de construir: Pedidos (Lima y Provincia), Copiar orden y Sheet de Shalom.</span></li>
+      </ul>
+    </div>
+    <div class="err" hidden></div>
+    <div class="savebar"><span class="note"></span><button class="send" type="submit">Guardar</button></div>
+  </form>`;
+  const tick = () => {
+    const el = $('#g-now');
+    if (!el) return clearInterval(tm);
+    const tz = $('#g-tz').value;
+    el.textContent = new Date().toLocaleString('es-PE', { timeZone: tz, weekday: 'long', hour: 'numeric', minute: '2-digit', hour12: $('#g-h12').value === '1' });
+  };
+  const tm = setInterval(tick, 15000);
+  tick();
+  $('#g-tz').onchange = tick;
+  $('#g-h12').onchange = tick;
+  $('#g-country').onchange = (e) => {
+    const c = G.countries.find((x) => x.id === e.target.value);
+    if (!c) return;
+    $('#g-tz').value = c.tz;
+    $('#g-cur').value = c.currency;
+    tick();
+  };
+  formHandler($('#gf'), async (d) => {
+    const r = await api('PATCH', `/stores/${st.id}`, { ...d, hour12: d.hour12 === '1' });
+    setMe(r);
+    toast('Guardado');
+    render();
+  });
+}
+
+function tzOff(tz) {
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(new Date()).find((p) => p.type === 'timeZoneName').value.replace('GMT', 'GMT');
+  } catch {
+    return '';
+  }
 }
 
 function statusPill(s) {

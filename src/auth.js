@@ -69,7 +69,8 @@ export async function loadAccess(c) {
   if (mem.length) {
     const { results } = await db.prepare(
       `SELECT s.id, s.company_id, s.name, s.color, s.phone_display, s.phone_number_id, s.waba_id, s.status, s.verified_name,
-              s.read_receipts, s.rev, s.last_webhook_at, s.connect_error, s.token_secret
+              s.read_receipts, s.rev, s.last_webhook_at, s.connect_error, s.token_secret,
+              s.timezone, s.country, s.currency, s.language, s.hour12
        FROM stores s JOIN memberships m ON m.company_id = s.company_id AND m.user_id = ?
        WHERE m.all_stores = 1 OR m.role = 'dueno'
           OR s.id IN (SELECT store_id FROM member_stores WHERE user_id = ?)

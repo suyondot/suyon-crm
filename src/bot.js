@@ -1,11 +1,10 @@
 // Bot Suyon AI: corre los flujos (bloques), los seguimientos y la IA Suyon.
 // Todo es por tienda. Se activa desde el webhook (mensaje entrante) y desde el cron de cada minuto.
-import { now, clip, windowOpen } from './util.js';
+import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay } from './util.js';
 import { sendText, uploadMedia, sendMediaById, kindForMime } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON } from './bot-template.js';
 
 const MIN = 60e3;
-const LIMA_OFFSET = -5 * 3600e3; // Perú no cambia de hora
 const MAX_STEPS = 40;
 
 export const NODE_TYPES = ['start', 'send', 'recognize', 'condition', 'action', 'delay', 'ia', 'handoff', 'goto'];
@@ -39,21 +38,17 @@ export const DEFAULT_SETTINGS = {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export function limaParts(t = now()) {
-  const d = new Date(t + LIMA_OFFSET);
-  return { h: d.getUTCHours(), m: d.getUTCMinutes(), dow: d.getUTCDay(), d };
+export function limaParts(t = now(), tz = DEFAULT_TZ) {
+  return localParts(t, tz);
 }
 
-// Si la hora cae fuera del horario permitido, la pasa al siguiente inicio de horario (hora de Lima)
-export function fitWindow(t, fromH, toH) {
+// Si la hora cae fuera del horario permitido, la pasa al siguiente inicio de horario (hora de la tienda)
+export function fitWindow(t, fromH, toH, tz = DEFAULT_TZ) {
   if (fromH == null || toH == null) return t;
-  const { h } = limaParts(t);
-  if (h >= fromH && h < toH) return t;
-  const d = new Date(t + LIMA_OFFSET);
-  d.setUTCMinutes(0, 0, 0);
-  if (h >= toH) d.setUTCDate(d.getUTCDate() + 1);
-  d.setUTCHours(fromH);
-  return d.getTime() - LIMA_OFFSET;
+  const p = localParts(t, tz);
+  if (p.h >= fromH && p.h < toH) return t;
+  const off = tzOffset(t, tz);
+  return Date.UTC(p.y, p.mo - 1, p.d + (p.h >= toH ? 1 : 0), fromH) - off;
 }
 
 export function norm(s) {
@@ -101,7 +96,8 @@ export function recognize(text, options) {
 
 export async function loadSettings(env, storeId) {
   const row = await env.DB.prepare('SELECT * FROM bot_settings WHERE store_id = ?').bind(storeId).first();
-  return { ...DEFAULT_SETTINGS, ...(row || {}), store_id: storeId };
+  const st = await env.DB.prepare('SELECT timezone, language, hour12 FROM stores WHERE id = ?').bind(storeId).first();
+  return { ...DEFAULT_SETTINGS, ...(row || {}), timezone: st?.timezone || DEFAULT_TZ, language: st?.language || 'es', hour12: st?.hour12 ?? 1, store_id: storeId };
 }
 
 export async function loadFlow(env, flowId) {
@@ -280,7 +276,7 @@ async function startSequence(env, store, chat, flow, seqId, t0 = now()) {
   const stmts = (seq.steps || []).map((st, i) =>
     env.DB.prepare(
       `INSERT INTO bot_jobs (store_id, chat_id, flow_id, kind, seq_id, step, cancel_on, run_at, created_at) VALUES (?, ?, ?, 'seq', ?, ?, ?, ?, ?)`
-    ).bind(store.id, chat.id, flow.id, seqId, i, seq.cancel_on || 'reply', fitWindow(t0 + (Number(st.after_min) || 0) * MIN, st.from_h, st.to_h), now())
+    ).bind(store.id, chat.id, flow.id, seqId, i, seq.cancel_on || 'reply', fitWindow(t0 + (Number(st.after_min) || 0) * MIN, st.from_h, st.to_h, store.timezone), now())
   );
   if (stmts.length) await env.DB.batch(stmts);
 }
@@ -360,7 +356,7 @@ export async function runFrom(env, ctx, store, chatId, flow, nodeId, vars, trigg
         id = node.target;
         break;
       case 'delay': {
-        const at = fitWindow(now() + (Number(node.minutes) || 1) * MIN, node.from_h, node.to_h);
+        const at = fitWindow(now() + (Number(node.minutes) || 1) * MIN, node.from_h, node.to_h, store.timezone);
         await env.DB.prepare(`INSERT INTO bot_jobs (store_id, chat_id, flow_id, kind, node_id, cancel_on, run_at, created_at) VALUES (?, ?, ?, 'resume', ?, ?, ?, ?)`)
           .bind(store.id, chat.id, flow.id, node.next || null, node.cancel_on_reply ? 'reply' : 'none', at, now()).run();
         await saveState(env, chat.id, { bot_flow_id: flow.id, bot_node: node.id, bot_wait: 3, bot_vars: vars, handler: 'bot' });
@@ -459,19 +455,22 @@ export async function onInbound(env, ctx, store, chatId, msg, { sim = false } = 
 
 /* ---------------- IA Suyon ---------------- */
 
-function limaNowText() {
-  const { d } = limaParts();
+const LANGS = { es: 'español', pt: 'portugués', en: 'inglés' };
+
+function nowText(tz = DEFAULT_TZ, hour12 = true) {
+  const p = localParts(now(), tz);
   const dias = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-  const h = d.getUTCHours();
-  const hh = ((h + 11) % 12) + 1;
-  return `${dias[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}, ${hh}:${String(d.getUTCMinutes()).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'} (${String(h).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')})`;
+  const hh = ((p.h + 11) % 12) + 1;
+  const mm = String(p.m).padStart(2, '0');
+  const h24 = `${String(p.h).padStart(2, '0')}:${mm}`;
+  return `${dias[p.dow]} ${String(p.d).padStart(2, '0')}/${String(p.mo).padStart(2, '0')}/${p.y}, ${hour12 ? `${hh}:${mm} ${p.h < 12 ? 'a. m.' : 'p. m.'} (${h24})` : h24}`;
 }
 
 export function buildSystem(settings, node, labels, vars, assets) {
   const base = settings.ia_prompt || PROMPT_PANTALON;
   const knowledge = settings.ia_knowledge ?? KNOWLEDGE_PANTALON;
   const filled = base
-    .replace(/\{ahora\}/g, limaNowText())
+    .replace(/\{ahora\}/g, nowText(settings.timezone, settings.hour12 !== 0))
     .replace(/\{etiquetas\}/g, labels.length ? labels.join(', ') : 'ninguna')
     .replace(/\{yape\}/g, settings.pay_yape || '[FALTA YAPE]')
     .replace(/\{titular\}/g, settings.pay_titular || '[FALTA TITULAR]')
@@ -493,7 +492,7 @@ Responde SOLO con un JSON válido, sin texto antes ni después:
 - "mensajes": cada elemento es un mensaje de WhatsApp separado, en orden. "archivo": la clave de un archivo para adjuntar en ese mensaje, o null. Si solo envías el archivo, deja "texto" vacío.
 - "caso": si la clienta está en uno de estos casos, pon su clave exacta; si no, null.
 ${cases || '(sin casos)'}
-- "datos": lo que la clienta ya dijo de: talla, colores, cantidad, destino, distrito, nombre, celular, dni, direccion, sede_shalom. Solo lo que dijo; no inventes.`;
+- "datos": lo que la clienta ya dijo de: talla, colores, cantidad, destino, distrito, nombre, celular, dni, direccion, sede_shalom. Solo lo que dijo; no inventes.${settings.language && settings.language !== 'es' && LANGS[settings.language] ? `\n\nIDIOMA: escribe los "texto" siempre en ${LANGS[settings.language]}.` : ''}`;
 }
 
 function historyFor(rows) {
@@ -600,7 +599,7 @@ export function parseReply(text, validCases = null) {
   return { valid: true, mensajes, caso, datos };
 }
 
-const today = () => new Date(now() + LIMA_OFFSET).toISOString().slice(0, 10);
+const today = (tz) => localDay(now(), tz);
 
 async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId) {
   // Espera unos segundos por si la clienta manda varios mensajes seguidos
@@ -612,7 +611,7 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   }
   const cap = Number(settings.ia_daily_cap) || 0;
   if (cap > 0) {
-    const u = await env.DB.prepare('SELECT cost FROM ia_usage WHERE store_id = ? AND day = ?').bind(store.id, today()).first();
+    const u = await env.DB.prepare('SELECT cost FROM ia_usage WHERE store_id = ? AND day = ?').bind(store.id, today(store.timezone)).first();
     if (u && u.cost >= cap) {
       await alertFor(env, store, chat, { kind: 'ia', chatId: null, title: `La IA llegó al tope de US$${cap} de hoy`, body: 'Las clientas pasan a la asesora hasta mañana, o sube el tope.', dedupe: true });
       return { ok: false };
@@ -645,7 +644,7 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
     await env.DB.prepare(
       `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 1, ?, ?, ?)
        ON CONFLICT (store_id, day) DO UPDATE SET calls = calls + 1, in_tokens = in_tokens + excluded.in_tokens, out_tokens = out_tokens + excluded.out_tokens, cost = cost + excluded.cost`
-    ).bind(store.id, today(), out.inTok, out.outTok, cost).run();
+    ).bind(store.id, today(store.timezone), out.inTok, out.outTok, cost).run();
     const p = parseReply(out.text, caseIds);
     if (p.valid && (p.mensajes.length || p.caso)) reply = p;
     else lastErr = { raw: clip(out.text, 1500) };

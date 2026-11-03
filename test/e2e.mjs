@@ -519,6 +519,11 @@ try {
     for (const [t, v] of Object.entries(cases)) assert.equal(recognize(t, TALLAS), v, t);
     const t = Date.UTC(2026, 10, 3, 4, 0); // 11 p. m. en Lima
     assert.equal(new Date(fitWindow(t, 8, 22) - 5 * 3600e3).getUTCHours(), 8);
+    assert.equal(fitWindow(t, 8, 22), Date.UTC(2026, 10, 3, 13, 0), 'Lima: 8 a. m. = 13:00 UTC');
+    assert.equal(fitWindow(Date.UTC(2026, 10, 3, 12, 0), 8, 22, 'America/Mexico_City'), Date.UTC(2026, 10, 3, 14, 0), 'México: 6 a. m. → 8 a. m.');
+    assert.equal(fitWindow(Date.UTC(2026, 10, 3, 15, 0), 8, 22, 'America/Bogota'), Date.UTC(2026, 10, 3, 15, 0), 'dentro del horario no cambia');
+    const { localDay } = await import('../src/util.js');
+    assert.equal(localDay(Date.UTC(2026, 10, 3, 3, 0)), '2026-11-02', 'el día es el de Lima');
     assert.equal(parseReply('hola').valid, false, 'texto suelto no se manda');
     assert.equal(parseReply('Te paso: {"mensajes": [roto').valid, false);
     const ok = parseReply('```json\n{"mensajes":[{"texto":"Hola"},{"texto":"{\\"caso\\": 1}"}],"caso":"inventado","datos":{"talla":"M","x":{"y":1}}}\n```', ['yape_sede']);
@@ -709,6 +714,27 @@ try {
     assert.equal(f.stats.precios.sent, 5, 'los números por bloque no cuentan el simulador');
     assert.equal((await call('POST', `/api/stores/${store.id}/sim/send`, { text: '' })).status, 400);
     await call('PATCH', `/api/stores/${store.id}/bot/settings`, { bot_on: true });
+  });
+  await step('Configuración General: zona horaria, país, moneda e idioma', async () => {
+    let me = await call('GET', '/api/me');
+    let st = me.stores.find((s) => s.id === store.id);
+    assert.equal(st.timezone, 'America/Lima');
+    assert.equal(st.currency, 'PEN');
+    assert.ok(me.general.countries.some((c) => c.id === 'MX'));
+    assert.equal((await call('PATCH', `/api/stores/${store.id}`, { timezone: 'Marte/Base' })).status, 400);
+    assert.equal((await call('PATCH', `/api/stores/${store.id}`, { language: 'xx' })).status, 400);
+    me = await call('PATCH', `/api/stores/${store.id}`, { country: 'MX', timezone: 'America/Mexico_City', currency: 'MXN', language: 'en', hour12: false });
+    st = me.stores.find((s) => s.id === store.id);
+    assert.deepEqual([st.country, st.timezone, st.currency, st.language, st.hour12], ['MX', 'America/Mexico_City', 'MXN', 'en', 0]);
+    const n = iaCalls.length;
+    await call('POST', `/api/stores/${store.id}/sim/reset`, { flow_id: flowId });
+    await call('POST', `/api/stores/${store.id}/sim/send`, { text: 'soy M' });
+    await call('POST', `/api/stores/${store.id}/sim/send`, { text: 'me gusta el negro' });
+    const sys = iaCalls.slice(n).pop().system;
+    assert.match(sys, /IDIOMA: escribe los "texto" siempre en inglés/);
+    assert.ok(!/a\. m\.|p\. m\./.test(sys.match(/AHORA[^\n]*/)?.[0] || ''), 'hora en 24 h');
+    me = await call('PATCH', `/api/stores/${store.id}`, { country: 'PE', timezone: 'America/Lima', currency: 'PEN', language: 'es', hour12: true });
+    assert.equal(me.stores.find((s) => s.id === store.id).timezone, 'America/Lima');
   });
   await step('guardar el lienzo valida los bloques', async () => {
     const f = await call('GET', `/api/bot/flows/${flowId}`);

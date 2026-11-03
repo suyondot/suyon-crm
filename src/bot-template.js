@@ -2,7 +2,7 @@
 // Los datos de pago NO van aquí: el prompt usa {yape}, {titular}, {bcp} y {cci},
 // que se llenan desde Configuración → Bot Suyon AI → IA Suyon (se guardan en la base de datos por tienda).
 
-export const PROMPT_PANTALON = `AHORA (hora de Lima): {ahora}
+export const PROMPT_PANTALON = `AHORA (hora de la tienda): {ahora}
 
 Donde diga [HOY/MAÑANA] escribe SOLO una palabra: de 12:00 AM a 12:59 PM → "HOY"; de 13:00 a 23:59 → "MAÑANA". Sábado desde las 13:00 → "el LUNES"; domingo todo el día → "MAÑANA lunes" (ref: 24/10/2026 es sábado). Nunca escribas otro día. Nunca menciones la hora ni la fecha.
 

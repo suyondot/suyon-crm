@@ -2,7 +2,7 @@
 import { Hono } from 'hono';
 import {
   now, fail, randomToken, sha256hex, hashPassword, safeEqual, cleanEmail, validEmail, clip,
-  ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError, windowOpen,
+  ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError, windowOpen, GENERAL,
 } from './util.js';
 import { createSession, destroySession, currentUser, requireUser, checkPassword, loadAccess, storeFor, companyFor, chatFor } from './auth.js';
 import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES } from './whatsapp.js';
@@ -32,6 +32,7 @@ function publicStore(s) {
   const out = {
     id: s.id, company_id: s.company_id, name: s.name, color: s.color, phone_display: s.phone_display,
     status: s.status, verified_name: s.verified_name, role: s.role, rev: s.rev,
+    timezone: s.timezone, country: s.country, currency: s.currency, language: s.language, hour12: s.hour12,
   };
   if (s.role === 'dueno') {
     Object.assign(out, {
@@ -49,6 +50,7 @@ async function mePayload(c) {
     companies: a.companies,
     stores: a.stores.map(publicStore),
     roles: ROLES,
+    general: GENERAL,
   };
 }
 
@@ -371,6 +373,24 @@ function storeInput(b, partial) {
     out.token_secret = v;
   }
   if ('read_receipts' in b) out.read_receipts = b.read_receipts ? 1 : 0;
+  // Ajustes generales de la tienda
+  if ('timezone' in b) {
+    if (!GENERAL.timezones.includes(b.timezone)) fail(400, 'Elige una zona horaria de la lista.');
+    out.timezone = b.timezone;
+  }
+  if ('country' in b) {
+    if (!GENERAL.countries.some((x) => x.id === b.country)) fail(400, 'Elige un país de la lista.');
+    out.country = b.country;
+  }
+  if ('currency' in b) {
+    if (!GENERAL.currencies.some((x) => x.id === b.currency)) fail(400, 'Elige una moneda de la lista.');
+    out.currency = b.currency;
+  }
+  if ('language' in b) {
+    if (!GENERAL.languages.some((x) => x.id === b.language)) fail(400, 'Elige un idioma de la lista.');
+    out.language = b.language;
+  }
+  if ('hour12' in b) out.hour12 = b.hour12 ? 1 : 0;
   if (out.phone_number_id && out.waba_id && out.phone_number_id === out.waba_id) {
     fail(400, 'Los dos identificadores son iguales. El de la cuenta de WhatsApp Business es otro número: lo ves en la dirección del Administrador de WhatsApp (asset_id=…).');
   }

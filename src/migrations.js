@@ -295,6 +295,17 @@ export const MIGRATIONS = [
       `ALTER TABLE chats ADD COLUMN sim INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    id: 5,
+    name: 'ajustes generales por tienda',
+    sql: [
+      `ALTER TABLE stores ADD COLUMN timezone TEXT NOT NULL DEFAULT 'America/Lima'`,
+      `ALTER TABLE stores ADD COLUMN country TEXT NOT NULL DEFAULT 'PE'`,
+      `ALTER TABLE stores ADD COLUMN currency TEXT NOT NULL DEFAULT 'PEN'`,
+      `ALTER TABLE stores ADD COLUMN language TEXT NOT NULL DEFAULT 'es'`,
+      `ALTER TABLE stores ADD COLUMN hour12 INTEGER NOT NULL DEFAULT 1`,
+    ],
+  },
 ];
 
 let ready = null;
