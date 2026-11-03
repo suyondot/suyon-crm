@@ -8,6 +8,7 @@ import { createSession, destroySession, currentUser, requireUser, checkPassword,
 import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES } from './whatsapp.js';
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
+import reportesApi from './api-reportes.js';
 
 const api = new Hono();
 const H24 = 24 * 3600e3;
@@ -1073,5 +1074,6 @@ api.get('/media/:id', async (c) => {
 });
 
 api.route('/', botApi);
+api.route('/', reportesApi);
 
 export default api;

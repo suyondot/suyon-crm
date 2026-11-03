@@ -2,6 +2,7 @@
 import { webmOpusToOgg } from './ogg.js';
 import { initBot, renderBotTab, renderAvisos, botFicha, botDirty, resetBot } from './bot.js';
 import { initClientes, renderClientes, resetClientes, openCliente } from './clientes.js';
+import { initReportes, renderReportes, resetReportes } from './reportes.js';
 
 /* =================== Utilidades =================== */
 const $ = (s, el = document) => el.querySelector(s);
@@ -23,6 +24,7 @@ const ICON = {
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg>',
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 21s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>',
   phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/></svg>',
   bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="18" height="18"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
@@ -414,6 +416,7 @@ function enterStore() {
   S.connSteps = null;
   resetBot();
   resetClientes();
+  resetReportes();
   if (S.storeId) pref.set('store', S.storeId);
   if (S.view === 'chats' && store() && !canChats()) S.view = 'pedidos';
   render();
@@ -448,12 +451,13 @@ function navItems() {
   if (store() && !canChats()) items.push(['pedidos', 'Pedidos', ICON.box, 0]);
   if (owner() || (!S.me.stores.length && S.me.companies.some((c) => c.role === 'dueno'))) items.push(['config', 'Configuración', ICON.gear, 0]);
   else items.push(['config', 'Mi cuenta', ICON.user, 0]);
+  if (store() && canChats()) items.push(['reportes', 'Reportes', ICON.chart, 0]);
   return items;
 }
 
 function render() {
   const st = store();
-  const titles = { chats: 'Chats', clientes: 'Clientes', avisos: 'Avisos', pedidos: 'Pedidos', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
+  const titles = { chats: 'Chats', clientes: 'Clientes', reportes: 'Reportes', avisos: 'Avisos', pedidos: 'Pedidos', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
   const roleName = st ? S.me.roles[st.role] : '';
   root().innerHTML = `
   <nav class="side" aria-label="Principal">
@@ -473,6 +477,7 @@ function render() {
   if (S.view === 'chats') renderChatsView(content);
   else if (S.view === 'avisos') renderAvisos(content);
   else if (S.view === 'clientes') renderClientes(content);
+  else if (S.view === 'reportes') renderReportes(content);
   else if (S.view === 'pedidos') content.innerHTML = `<div class="empty" style="height:100%"><b>Pedidos</b><span>La lista de pedidos para despacho llega en la fase 4.</span></div>`;
   else renderConfig();
   drawStoreMenu();
@@ -1918,6 +1923,8 @@ function cfgCuenta() {
           ${perm === 'granted' ? '<span class="pillst st-on">Notificaciones activadas</span>' : perm === 'denied' ? '<span class="note">Notificaciones bloqueadas: actívalas en el candado de la barra de direcciones.</span>' : perm === 'unsupported' ? '<span class="note">En iPhone: primero agrega la app a la pantalla de inicio.</span>' : '<button class="iconbtn" data-act="notif">Activar notificaciones</button>'}
           <button class="iconbtn" data-act="testding">Probar sonido</button>
         </div></div>
+      <div class="card"><h3>Apariencia</h3><p class="sub">Cómo se ve la app en este equipo.</p>
+        <div class="seg" role="radiogroup" aria-label="Apariencia" id="themeseg">${[['light', 'Claro'], ['dark', 'Oscuro'], ['auto', 'Como mi celular']].map(([k, l]) => `<button type="button" data-theme="${k}" aria-pressed="${pref.get('theme', 'light') === k}">${l}</button>`).join('')}</div></div>
       <div class="card"><h3>Cambiar contraseña</h3><form id="pf" class="grid" style="gap:12px;margin-top:8px">
         <div class="fields"><div class="field"><label for="p1">Actual</label><input id="p1" name="current" type="password" required autocomplete="current-password"></div>
         <div class="field"><label for="p2">Nueva (mínimo 8)</label><input id="p2" name="password" type="password" minlength="8" required autocomplete="new-password"></div></div>
@@ -1925,6 +1932,13 @@ function cfgCuenta() {
       <div class="card"><h3>Instalar en el celular</h3><p class="sub" style="margin:0">Android (Chrome): menú ⋮ → «Instalar app». iPhone (Safari): botón Compartir → «Agregar a inicio».</p></div>
       <div><button class="iconbtn" data-act="logout">Salir de la cuenta</button></div>
     </div>`;
+  $('#themeseg').onclick = (ev) => {
+    const b = ev.target.closest('[data-theme]');
+    if (!b) return;
+    pref.set('theme', b.dataset.theme);
+    applyTheme(b.dataset.theme);
+    $$('#themeseg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  };
   formHandler($('#nf'), async (d) => {
     setMe(await api('PATCH', '/me', d));
     render();
@@ -2232,6 +2246,13 @@ initClientes({
     if (S.openId === id) S.openId = null;
   },
 });
+
+initReportes({ api, esc, $, S, store });
+
+function applyTheme(t) {
+  if (t === 'auto') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+}
 
 function goCliente(id) {
   openCliente(id);

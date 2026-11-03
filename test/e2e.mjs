@@ -784,6 +784,29 @@ try {
     assert.ok(after.labels.includes(labels.find((l) => l.name === '✅ LIMA').id));
     assert.equal((await call('POST', `/api/chats/${c.id}/llamada`, { result: 'raro' })).status, 400);
   });
+  await step('Reportes: mensajes, ventas, Lima/provincia, tallas, colores y anuncios', async () => {
+    const { colorsOf, tallaOf } = await import('../src/api-reportes.js');
+    assert.deepEqual(colorsOf('negro, plomo claro y guinda'), ['Negro', 'Gris claro', 'Vino']);
+    assert.deepEqual(colorsOf('2 azul + blanco'), ['Azul noche', 'Perla']);
+    assert.equal(tallaOf('m'), 'M');
+    assert.equal(tallaOf('30'), 'S');
+    const r = await call('GET', `/api/stores/${store.id}/reporte`);
+    assert.equal(r.status, 200, JSON.stringify(r));
+    assert.ok(r.oneDay && r.series.length === 24);
+    assert.ok(r.totales.mensajes > 0 && r.totales.chats > 0);
+    assert.equal(r.totales.ventas, 2, JSON.stringify(r.totales));
+    assert.equal(r.totales.lima, 1);
+    assert.equal(r.totales.provincia, 1);
+    assert.ok(r.tallas.some((x) => x.name === 'S'));
+    assert.ok(r.colores.some((x) => x.name === 'Negro'));
+    assert.ok(r.anuncios.some((a) => a.ventas > 0));
+    assert.equal(r.llamadas.cerro, 1);
+    assert.equal(r.series.reduce((a, x) => a + x.ventas, 0), 2);
+    const w = await call('GET', `/api/stores/${store.id}/reporte?desde=2026-01-01&hasta=2026-01-07`);
+    assert.equal(w.series.length, 7);
+    assert.equal(w.totales.ventas, 0);
+    assert.equal((await call('GET', `/api/stores/${store.id}/reporte?desde=2026-02-01&hasta=2026-01-01`)).status, 400);
+  });
   await step('Clientes: lista, buscar por datos, editar datos, borrar lo del bot', async () => {
     let r = await call('GET', `/api/stores/${store.id}/clientes?limit=200`);
     assert.ok(r.total >= 5 && r.clientes.every((c) => !c.wa_id.startsWith('sim')), 'el simulador no sale');
