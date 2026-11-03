@@ -1,4 +1,4 @@
-// Suyon CRM — punto de entrada del Worker
+// Control Total — punto de entrada del Worker
 import { Hono } from 'hono';
 import { ensureSchema } from './migrations.js';
 import { HttpError, safeEqual, now } from './util.js';

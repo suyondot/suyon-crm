@@ -1,5 +1,5 @@
 {
-  // Suyon CRM — Cloudflare Worker (API + webhook de Meta + app web)
+  // Control Total — Cloudflare Worker (API + webhook de Meta + app web)
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "suyon-crm",
   "main": "src/index.js",
@@ -33,7 +33,7 @@
 
   "vars": {
     "GRAPH_API": "https://graph.facebook.com/v23.0",
-    "APP_NAME": "Suyon CRM",
+    "APP_NAME": "Control Total",
     "CONTACT_EMAIL": "storesuyo@gmail.com"
   }
 

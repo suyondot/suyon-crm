@@ -2,7 +2,7 @@
 
 const shell = (title, inner) => `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} · Suyon CRM</title>
+<title>${title} · Control Total</title>
 <style>
 :root{--bg:#F4F2F3;--fg:#1F1A1D;--muted:#6D6469;--accent:#7A1F35;--surface:#fff;--line:#E1DADE}
 @media (prefers-color-scheme:dark){:root{--bg:#141113;--fg:#EFE9EC;--muted:#A79DA2;--accent:#E07A93;--surface:#1C181A;--line:#352E32}}
@@ -17,8 +17,8 @@ export function privacyPage(env) {
   const email = env.CONTACT_EMAIL || 'storesuyo@gmail.com';
   return shell('Política de privacidad', `
 <h1>Política de privacidad</h1>
-<small>Suyon CRM · Última actualización: noviembre de 2026</small>
-<p>Suyon CRM es el sistema de atención por WhatsApp que usan las tiendas de Jordan Suyon (Lima, Perú), como Porte Perú y Orión, para responder a sus clientas y gestionar sus pedidos. Esta política explica qué datos tratamos y cómo los cuidamos.</p>
+<small>Control Total · Última actualización: noviembre de 2026</small>
+<p>Control Total es el sistema de atención por WhatsApp que usan las tiendas de Jordan Suyon (Lima, Perú), como Porte Perú y Orión, para responder a sus clientas y gestionar sus pedidos. Esta política explica qué datos tratamos y cómo los cuidamos.</p>
 <h2>Qué datos tratamos</h2>
 <ul>
 <li>Tu número de WhatsApp y el nombre de tu perfil.</li>
@@ -49,7 +49,7 @@ export function deletionPage(env) {
   const email = env.CONTACT_EMAIL || 'storesuyo@gmail.com';
   return shell('Eliminar tus datos', `
 <h1>Cómo eliminar tus datos</h1>
-<p>Para que borremos tu conversación y los datos de tus pedidos en Suyon CRM:</p>
+<p>Para que borremos tu conversación y los datos de tus pedidos en Control Total:</p>
 <ol>
 <li>Escríbenos por el mismo WhatsApp de la tienda la frase <b>"Eliminar mis datos"</b>, o envía un correo a <a href="mailto:${email}">${email}</a> con tu número de celular.</li>
 <li>Confirmaremos tu identidad respondiendo a ese mismo número.</li>
@@ -62,7 +62,7 @@ export function termsPage(env) {
   const email = env.CONTACT_EMAIL || 'storesuyo@gmail.com';
   return shell('Términos de servicio', `
 <h1>Términos de servicio</h1>
-<p>Suyon CRM es una herramienta interna para que las tiendas de Jordan Suyon atiendan a sus clientas por WhatsApp. Al escribirnos aceptas que usemos tus mensajes para atender tu consulta y tu pedido, según nuestra <a href="/privacidad">política de privacidad</a>.</p>
+<p>Control Total es una herramienta interna para que las tiendas de Jordan Suyon atiendan a sus clientas por WhatsApp. Al escribirnos aceptas que usemos tus mensajes para atender tu consulta y tu pedido, según nuestra <a href="/privacidad">política de privacidad</a>.</p>
 <p>Puedes dejar de recibir mensajes en cualquier momento escribiendo "STOP" o bloqueando el número.</p>
 <p>Contacto: <a href="mailto:${email}">${email}</a></p>`);
 }

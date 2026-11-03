@@ -1,8 +1,11 @@
-// Suyon CRM — app web (bandeja de WhatsApp, etiquetas, configuración)
+// Control Total — app web (bandeja de WhatsApp, etiquetas, configuración)
 import { webmOpusToOgg } from './ogg.js';
 import { initBot, renderBotTab, renderAvisos, botFicha, botDirty, resetBot } from './bot.js';
 import { initClientes, renderClientes, resetClientes, openCliente } from './clientes.js';
 import { initReportes, renderReportes, resetReportes } from './reportes.js';
+
+// Marca: C y T (la T en rosado). Sin fondo: el fondo lo pone el contenedor.
+const LOGO = '<svg viewBox="38 90 400 332" aria-hidden="true" fill="none" stroke-linecap="round"><path d="M304 168A128 128 0 1 0 304 344" stroke="#fff" stroke-width="60"/><path d="M248 206H396M322 206V350" stroke="#F2B6C4" stroke-width="54"/></svg>';
 import { initPedidos, renderPedidos, resetPedidos, fichaPedidos, renderPedidosConfig } from './pedidos.js';
 
 /* =================== Utilidades =================== */
@@ -238,10 +241,10 @@ function authShell(inner) {
   root().className = 'bootx';
   root().innerHTML = `<div class="authx">
     <section class="authbrand">
-      <div class="ab-top"><span class="ab-mark">S</span><b>Suyon CRM</b></div>
+      <div class="ab-top"><span class="ab-mark">${LOGO}</span><b>Control Total</b></div>
       <div class="ab-copy">
         <span class="ab-kicker">Para marcas de ropa que venden por WhatsApp</span>
-        <h2>El CRM de WhatsApp hecho para vender ropa.</h2>
+        <h2>El sistema para vender ropa por WhatsApp.</h2>
         <p>Bandeja, bot con IA, etiquetas, llamadas y pedidos en un solo lugar. Creado por una marca que vende así todos los días.</p>
         <ul class="ab-list">
           <li>Reconoce tallas y colores sin gastar en IA</li>
@@ -281,7 +284,7 @@ function formHandler(form, fn) {
 }
 
 function showSetup(st) {
-  authShell(`<h1>Bienvenido a Suyon CRM</h1>
+  authShell(`<h1>Bienvenido a Control Total</h1>
     <p>Crea la cuenta del dueño. Esto se hace una sola vez.</p>
     ${st.code_set ? '' : '<div class="err">Falta poner la clave de inicio (SETUP_CODE) en Cloudflare. Sigue los pasos de la guía y recarga esta página.</div>'}
     <form id="f" class="grid" style="gap:12px">
@@ -463,7 +466,7 @@ function render() {
   const roleName = st ? S.me.roles[st.role] : '';
   root().innerHTML = `
   <nav class="side" aria-label="Principal">
-    <button class="brand" data-act="stores" aria-haspopup="true" aria-label="Cambiar tienda"><span class="brand-mark">S</span><span class="bt"><b>Suyon CRM</b><small>${st ? esc(storeLabel(st)) : 'Sin tienda'}</small></span><span class="caret">▾</span></button>
+    <button class="brand" data-act="stores" aria-haspopup="true" aria-label="Cambiar tienda"><span class="brand-mark">${LOGO}</span><span class="bt"><b>Control Total</b><small>${st ? esc(storeLabel(st)) : 'Sin tienda'}</small></span><span class="caret">▾</span></button>
     ${navItems().map(([v, l, ic, c]) => `<button class="navbtn" data-nav="${v}" ${S.view === v ? 'aria-current="page"' : ''}>${ic}<span>${l}</span>${c ? `<span class="cnt">${c > 99 ? '99+' : c}</span>` : ''}</button>`).join('')}
     <div class="side-foot"><button data-nav="config" data-tab="cuenta"><b>${esc(S.me.user.name)}</b>${roleName ? ' · ' + esc(roleName) : ''}<br>Mi cuenta</button></div>
   </nav>
@@ -510,7 +513,7 @@ function updateBadges() {
 
 function updateTitle() {
   const total = Object.entries(S.unread).reduce((a, [, n]) => a + n, 0);
-  document.title = total ? `(${total}) Suyon CRM` : 'Suyon CRM';
+  document.title = total ? `(${total}) Control Total` : 'Control Total';
 }
 
 function drawStoreMenu() {

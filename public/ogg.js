@@ -97,7 +97,7 @@ function opusHead(channels) {
 }
 
 function opusTags() {
-  const vendor = new TextEncoder().encode('Suyon CRM');
+  const vendor = new TextEncoder().encode('Control Total');
   const t = new Uint8Array(8 + 4 + vendor.length + 4);
   t.set(new TextEncoder().encode('OpusTags'));
   new DataView(t.buffer).setUint32(8, vendor.length, true);
