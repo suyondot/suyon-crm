@@ -666,3 +666,55 @@ body{margin:0}
 .avrow:hover{transform:translateX(3px)}
 .avev{animation:rise .25s var(--ease) both}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important}}
+
+/* ---------- Simulador del bot ---------- */
+.simwrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start}
+.simphone{display:flex;flex-direction:column;height:min(72vh,720px);min-height:460px;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.simhead{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.simhead b{display:block;font-weight:700}
+.simhead span{display:block;color:var(--muted);font-size:12px}
+.simav{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);flex:none}
+.simmsgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px;background:var(--bg)}
+.simm{display:flex;flex-direction:column;max-width:78%;animation:pop .22s ease-out}
+.simm.me{align-self:flex-end;align-items:flex-end}
+.simm.them{align-self:flex-start}
+.simb{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:7px 10px;white-space:pre-wrap;overflow-wrap:anywhere;display:grid;gap:5px}
+.simm.me .simb{background:var(--mine);border-color:transparent}
+.simm.s-ia .simb{background:color-mix(in srgb,var(--k-ia) 13%,var(--surface));border-color:color-mix(in srgb,var(--k-ia) 25%,transparent)}
+.simm.s-bot .simb{background:color-mix(in srgb,var(--k-free) 12%,var(--surface));border-color:color-mix(in srgb,var(--k-free) 25%,transparent)}
+.simb img,.simb video{display:block;max-width:min(260px,100%);max-height:300px;border-radius:8px;background:var(--surface-2)}
+.simb audio{width:240px;max-width:100%}
+.simb i{font-style:normal;font-family:var(--f-mono);font-size:10.5px;color:var(--muted);justify-self:end}
+.simby{font-size:11px;font-weight:600;color:var(--muted);margin:0 4px 2px}
+.simby.ia{color:var(--k-ia)}
+.simby.bot{color:var(--k-free)}
+.simsys{align-self:center;max-width:92%;font-size:12.5px;background:var(--warn-soft);color:var(--warn);border-radius:9px;padding:6px 10px;text-align:center;animation:pop .22s ease-out}
+.simtyping{display:flex;gap:4px;padding:11px 12px}
+.simtyping b{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:blink 1s infinite}
+.simtyping b:nth-child(2){animation-delay:.2s}
+.simtyping b:nth-child(3){animation-delay:.4s}
+.simempty{margin:auto;max-width:340px;text-align:center;display:grid;gap:8px;justify-items:center;color:var(--muted)}
+.simempty b{color:var(--fg);font-family:var(--f-display);font-size:16px}
+.simquick{display:flex;gap:6px;overflow-x:auto;padding:8px 12px 0;border-top:1px solid var(--line)}
+.simquick button{flex:none;border:1px solid var(--line);background:var(--surface);border-radius:16px;padding:4px 10px;font-size:12.5px;color:var(--fg)}
+.simquick button:hover:not(:disabled){background:var(--surface-2)}
+.simform{display:flex;gap:8px;padding:8px 12px 12px;align-items:center}
+.simform input#simtxt{flex:1;min-width:0;border:1px solid var(--line);border-radius:20px;padding:9px 14px;background:var(--surface);color:var(--fg);font:inherit}
+.simpic{cursor:pointer;flex:none}
+.simside{display:grid;gap:10px}
+.simside .card{padding:12px 14px}
+.simside h3{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.simside select{width:100%}
+.simstate{display:flex;gap:10px;align-items:flex-start}
+.simstate b{display:block}
+.simstate .dot{width:10px;height:10px;border-radius:50%;background:var(--t-grey);margin-top:5px;flex:none}
+.simstate .dot.on{background:var(--ok);animation:pulse 1.6s infinite;--c:var(--ok)}
+.simstate .dot.off{background:var(--warn)}
+.simtags{display:flex;flex-wrap:wrap;gap:5px}
+.simvars{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:0;font-size:13px}
+.simvars dt{font-family:var(--f-mono);color:var(--muted);font-size:12px}
+.simvars dd{margin:0;overflow-wrap:anywhere}
+.simjobs{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.simjobs li{display:flex;justify-content:space-between;gap:8px;font-size:13px}
+@media (max-width:900px){.simwrap{grid-template-columns:1fr}.simphone{height:70vh}}
+@media (prefers-reduced-motion:reduce){.simm,.simsys{animation:none}.simtyping b,.simstate .dot.on{animation:none}}

@@ -38,6 +38,10 @@ const meta = http.createServer(async (req, res) => {
     const last = body.messages[body.messages.length - 1];
     const txt = typeof last.content === 'string' ? last.content : last.content.map((x) => x.text || '').join(' ');
     if (/falla/i.test(txt)) return json(500, { error: { message: 'overloaded' } });
+    const all = body.messages.map((m) => (typeof m.content === 'string' ? m.content : m.content.map((x) => x.text || '').join(' '))).join('\n');
+    if (/siempre raro/i.test(all)) return json(200, { content: [{ type: 'text', text: 'Claro amiga, te paso: {"mensajes": [roto' }], usage: { input_tokens: 10, output_tokens: 10 } });
+    if (/rarito/i.test(txt)) return json(200, { content: [{ type: 'text', text: '¡Hola! Te cuento los precios 😊' }], usage: { input_tokens: 10, output_tokens: 10 } });
+    if (/cuenta bcp/i.test(txt)) return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: 'Cuenta BCP: [FALTA BCP]' }], caso: null, datos: {} }) }], usage: { input_tokens: 10, output_tokens: 10 } });
     const out = /yape/i.test(txt)
       ? { mensajes: [{ texto: '¡Perfecto! 📦 Sede: Av. Brasil. Mi compañera valida tu pago 💕', archivo: null }], caso: 'yape_sede', datos: { sede_shalom: 'Av. Brasil' } }
       : { mensajes: [{ texto: '¡Lindo! 😍 1 pantalón Negro talla S: S/89', archivo: null }, { texto: '¿A qué ciudad o distrito te lo enviamos? 😊', archivo: 'tabla-tallas' }], caso: null, datos: { colores: 'Negro', cantidad: '1' } };
@@ -515,7 +519,13 @@ try {
     for (const [t, v] of Object.entries(cases)) assert.equal(recognize(t, TALLAS), v, t);
     const t = Date.UTC(2026, 10, 3, 4, 0); // 11 p. m. en Lima
     assert.equal(new Date(fitWindow(t, 8, 22) - 5 * 3600e3).getUTCHours(), 8);
-    assert.equal(parseReply('hola').mensajes[0].texto, 'hola');
+    assert.equal(parseReply('hola').valid, false, 'texto suelto no se manda');
+    assert.equal(parseReply('Te paso: {"mensajes": [roto').valid, false);
+    const ok = parseReply('```json\n{"mensajes":[{"texto":"Hola"},{"texto":"{\\"caso\\": 1}"}],"caso":"inventado","datos":{"talla":"M","x":{"y":1}}}\n```', ['yape_sede']);
+    assert.equal(ok.valid, true);
+    assert.deepEqual(ok.mensajes.map((m) => m.texto), ['Hola'], 'restos de JSON no llegan a la clienta');
+    assert.equal(ok.caso, null, 'caso que no existe se ignora');
+    assert.deepEqual(ok.datos, { talla: 'M' });
   });
   await step('crea el flujo «Ventas pantalón» desde la plantilla', async () => {
     await call('POST', '/api/login', { email: 'jordan@test.pe', password: 'clave-segura-1' });
@@ -635,6 +645,70 @@ try {
     assert.ok(av.events.some((e) => e.kind === 'ia'));
     await call('POST', `/api/stores/${store.id}/avisos/read`, {});
     assert.ok((await call('GET', `/api/stores/${store.id}/avisos`)).events.every((e) => e.read_at));
+  });
+  await step('IA responde raro: reintenta y nunca manda texto suelto', async () => {
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { test_numbers: '911111111, 911111112, 911111113, 911111114, 911111115' });
+    await inbound('51911111114', 'wamid.E1', 'hola', { referral: { source_id: '1', source_type: 'ad', ctwa_clid: 'r' } });
+    await until(async () => (await chatOf('51911111114'))?.bot_node === 'talla');
+    await inbound('51911111114', 'wamid.E2', 'rarito, cuánto cuesta');
+    let c = await until(async () => { const c = await chatOf('51911111114'); return c?.bot_node === 'bucle' && c.bot_wait === 1 ? c : null; });
+    let ia = (await msgsOf(c.id)).filter((m) => m.sender === 'ia');
+    assert.equal(ia.length, 2, 'al reintentar responde bien');
+    assert.ok(!ia.some((m) => /Te cuento los precios/.test(m.body || '')));
+    // Siempre raro: no manda nada de la IA, pasa a asesora con aviso
+    await inbound('51911111115', 'wamid.F1', 'hola', { referral: { source_id: '1', source_type: 'ad', ctwa_clid: 's' } });
+    await until(async () => (await chatOf('51911111115'))?.bot_node === 'talla');
+    await inbound('51911111115', 'wamid.F2', 'siempre raro');
+    c = await until(async () => { const c = await chatOf('51911111115'); return c?.bot_paused === 1 ? c : null; });
+    const ms = await msgsOf(c.id);
+    assert.ok(!ms.some((m) => m.sender === 'ia' && /mensajes|roto|Claro amiga/.test(m.body || '')), 'no manda el texto raro');
+    assert.ok(ms.some((m) => /Estamos validando/.test(m.body || '')));
+    const av = await call('GET', `/api/stores/${store.id}/avisos`);
+    assert.ok(av.events.some((e) => /no se puede mandar/.test(e.title) && e.chat_id === c.id));
+  });
+  let simCalls;
+  await step('simulador: prueba el flujo como clienta sin WhatsApp', async () => {
+    simCalls = calls.length;
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { bot_on: false });
+    let s = await call('POST', `/api/stores/${store.id}/sim/reset`, { flow_id: flowId });
+    assert.equal(s.status, 200, JSON.stringify(s));
+    assert.deepEqual(s.messages.filter((m) => m.direction === 'out').map((m) => m.type), ['image', 'text', 'text']);
+    assert.equal(s.chat.node, 'talla');
+    assert.equal(s.chat.wait, 1);
+    assert.ok(s.jobs.length >= 1 && /Seguimiento talla · mensaje 1/.test(s.jobs[0].label), JSON.stringify(s.jobs));
+    s = await call('POST', `/api/stores/${store.id}/sim/send`, { text: 'soy M' });
+    assert.equal(s.chat.vars.talla, 'M');
+    assert.ok(s.labels.some((l) => l.name === 'Talla M'));
+    assert.ok(s.messages.some((m) => m.sender === 'sys' && /colores-M/.test(m.body)), 'el aviso sale dentro del simulador');
+    assert.equal(s.jobs.length, 0, 'al responder se cancela el seguimiento');
+    s = await call('POST', `/api/stores/${store.id}/sim/send`, { text: 'me gusta el negro' });
+    assert.equal(s.messages.filter((m) => m.sender === 'ia').length, 2);
+    assert.equal(s.chat.node, 'bucle');
+    s = await call('POST', `/api/stores/${store.id}/sim/send`, { text: 'pásame la cuenta bcp' });
+    assert.ok(!s.messages.some((m) => m.sender === 'ia' && /FALTA/.test(m.body || '')), 'no manda [FALTA …]');
+    assert.ok(s.messages.some((m) => m.sender === 'sys' && /datos de pago/.test(m.body)));
+    assert.equal(s.chat.paused, 1);
+  });
+  await step('simulador: adelantar seguimiento, foto, y no ensucia bandeja ni números', async () => {
+    let s = await call('POST', `/api/stores/${store.id}/sim/reset`, { flow_id: flowId });
+    assert.equal(s.messages.filter((m) => m.direction === 'in').length, 0, 'empieza de cero');
+    s = await call('POST', `/api/stores/${store.id}/sim/next`);
+    assert.ok(s.messages.some((m) => /Si no la sabes/.test(m.body || '')));
+    const fd = new FormData();
+    fd.append('file', new Blob([IMG], { type: 'image/jpeg' }), 'yape.jpg');
+    s = await call('POST', `/api/stores/${store.id}/sim/send`, undefined, { form: fd });
+    const pic = s.messages.find((m) => m.direction === 'in' && m.type === 'image');
+    assert.ok(pic?.media);
+    assert.equal((await call('GET', `/api/media/${pic.id}`, undefined, { raw: true })).status, 200);
+    assert.ok(!calls.slice(simCalls).some((x) => x.path.startsWith(PHONE_ID)), 'no llama a WhatsApp');
+    const list = (await call('GET', `/api/stores/${store.id}/chats?limit=200`)).chats;
+    assert.ok(!list.some((c) => c.wa_id.startsWith('sim')), 'no sale en la bandeja');
+    const av = await call('GET', `/api/stores/${store.id}/avisos`);
+    assert.ok(!av.events.some((e) => !e.read_at && /colores-M|datos de pago/.test(e.title)), 'los avisos del simulador no van a Avisos');
+    const f = await call('GET', `/api/bot/flows/${flowId}`);
+    assert.equal(f.stats.precios.sent, 5, 'los números por bloque no cuentan el simulador');
+    assert.equal((await call('POST', `/api/stores/${store.id}/sim/send`, { text: '' })).status, 400);
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { bot_on: true });
   });
   await step('guardar el lienzo valida los bloques', async () => {
     const f = await call('GET', `/api/bot/flows/${flowId}`);

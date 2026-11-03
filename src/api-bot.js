@@ -2,10 +2,10 @@
 import { Hono } from 'hono';
 import { now, fail, clip, windowOpen } from './util.js';
 import { storeFor, chatFor, requireUser } from './auth.js';
-import { addLabel } from './bot.js';
+import { mediaKey } from './webhook.js';
 import { kindForMime, SEND_RULES } from './whatsapp.js';
 import {
-  NODE_TYPES, IA_MODELS, loadSettings, loadFlow, flowStats, startFlow, cancelJobs, testIA,
+  NODE_TYPES, IA_MODELS, loadSettings, loadFlow, flowStats, startFlow, cancelJobs, testIA, addLabel, onInbound, runJob,
 } from './bot.js';
 import { flowPantalon, PROMPT_PANTALON, KNOWLEDGE_PANTALON, TEMPLATE_ASSETS } from './bot-template.js';
 
@@ -295,7 +295,7 @@ export async function pendingCounts(db, storeIds) {
   ).bind(...storeIds).all();
   const { results: ase } = await db.prepare(
     `SELECT c.store_id, COUNT(*) AS n FROM chats c JOIN chat_labels cl ON cl.chat_id = c.id JOIN labels l ON l.id = cl.label_id
-     WHERE l.name = 'ASESOR' AND ${NEEDS_ASESORA} AND c.store_id IN (${inList(storeIds.length)}) GROUP BY c.store_id`
+     WHERE l.name = 'ASESOR' AND c.sim = 0 AND ${NEEDS_ASESORA} AND c.store_id IN (${inList(storeIds.length)}) GROUP BY c.store_id`
   ).bind(...storeIds).all();
   const out = {};
   for (const x of ev) out[x.store_id] = (out[x.store_id] || 0) + x.n;
@@ -309,7 +309,7 @@ r.get('/stores/:id/avisos', async (c) => {
   const byLabel = async (name, onlyIn = false) =>
     (await db.prepare(
       `SELECT ${PEND_COLS}, cl.created_at AS since FROM chats c JOIN chat_labels cl ON cl.chat_id = c.id JOIN labels l ON l.id = cl.label_id
-       WHERE c.store_id = ? AND l.name = ? ${onlyIn ? 'AND ' + NEEDS_ASESORA : ''} ORDER BY COALESCE(c.last_msg_at, c.created_at) DESC LIMIT 100`
+       WHERE c.store_id = ? AND c.sim = 0 AND l.name = ? ${onlyIn ? 'AND ' + NEEDS_ASESORA : ''} ORDER BY COALESCE(c.last_msg_at, c.created_at) DESC LIMIT 100`
     ).bind(st.id, name).all()).results;
   const { results: events } = await db.prepare(
     'SELECT id, kind, chat_id, title, body, created_at, read_at FROM notifications WHERE store_id = ? ORDER BY id DESC LIMIT 100'
@@ -342,7 +342,7 @@ r.get('/stores/:id/llamadas', async (c) => {
        (SELECT u.name FROM calls x LEFT JOIN users u ON u.id = x.user_id WHERE x.chat_id = c.id AND x.created_at >= cl.created_at ORDER BY x.id DESC LIMIT 1) AS last_by,
        (SELECT COUNT(*) FROM calls WHERE chat_id = c.id AND created_at >= cl.created_at) AS tries
      FROM chats c JOIN chat_labels cl ON cl.chat_id = c.id JOIN labels l ON l.id = cl.label_id
-     WHERE c.store_id = ? AND l.name IN ('YAPE PENDIENTE', 'LIMA PENDIENTE') ORDER BY cl.created_at DESC LIMIT 300`
+     WHERE c.store_id = ? AND c.sim = 0 AND l.name IN ('YAPE PENDIENTE', 'LIMA PENDIENTE') ORDER BY cl.created_at DESC LIMIT 300`
   ).bind(st.id).all();
   return c.json({ t: now(), calls: results });
 });
@@ -367,6 +367,111 @@ r.post('/chats/:id/llamada', async (c) => {
   await db.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
   await bump(c.env, store.id);
   return c.json({ ok: true });
+});
+
+/* ---------- Simulador: chatea con el bot como si fueras clienta (no usa WhatsApp) ---------- */
+
+async function simChat(c, st) {
+  const u = await requireUser(c);
+  const wa = 'sim' + u.id;
+  const db = c.env.DB;
+  await db.prepare(`INSERT OR IGNORE INTO chats (store_id, wa_id, name, sim, handler, created_at, updated_at) VALUES (?, ?, 'Simulador', 1, 'bot', ?, ?)`)
+    .bind(st.id, wa, now(), now()).run();
+  return db.prepare('SELECT * FROM chats WHERE store_id = ? AND wa_id = ?').bind(st.id, wa).first();
+}
+
+async function simState(env, chatId) {
+  const db = env.DB;
+  const chat = await db.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
+  const { results: messages } = await db.prepare(
+    'SELECT id, direction, sender, type, body, media_mime, media_key, bot_node, created_at FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 200'
+  ).bind(chatId).all();
+  const { results: labels } = await db.prepare('SELECT l.name, l.color FROM chat_labels cl JOIN labels l ON l.id = cl.label_id WHERE cl.chat_id = ?').bind(chatId).all();
+  const { results: jobs } = await db.prepare(
+    'SELECT id, kind, seq_id, step, node_id, run_at, flow_id FROM bot_jobs WHERE chat_id = ? AND done_at IS NULL AND canceled_at IS NULL ORDER BY run_at'
+  ).bind(chatId).all();
+  let flow = null;
+  if (chat.bot_flow_id) flow = await loadFlow(env, chat.bot_flow_id);
+  const node = flow && chat.bot_node ? flow.graph.nodes.find((n) => n.id === chat.bot_node) : null;
+  return {
+    chat: { id: chat.id, flow_id: chat.bot_flow_id, node: chat.bot_node, node_title: node?.title || null, wait: chat.bot_wait, paused: chat.bot_paused, vars: JSON.parse(chat.bot_vars || '{}') },
+    messages: messages.reverse().map((m) => ({ ...m, media: !!m.media_key, media_key: undefined })),
+    labels,
+    jobs: jobs.map((j) => {
+      const seq = flow?.graph.sequences?.find((s) => s.id === j.seq_id);
+      const label = j.kind === 'seq' ? `${seq?.name || 'Seguimiento'} · mensaje ${j.step + 1}` : j.kind === 'ia_follow' ? 'Seguimiento de la IA' : 'Espera de tiempo';
+      return { id: j.id, label, run_at: j.run_at };
+    }),
+  };
+}
+
+r.get('/stores/:id/sim', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const chat = await simChat(c, st);
+  return c.json(await simState(c.env, chat.id));
+});
+
+r.post('/stores/:id/sim/reset', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const b = await body(c);
+  const chat = await simChat(c, st);
+  const db = c.env.DB;
+  await db.batch([
+    db.prepare('UPDATE bot_jobs SET canceled_at = ? WHERE chat_id = ? AND done_at IS NULL').bind(now(), chat.id),
+    db.prepare('DELETE FROM messages WHERE chat_id = ?').bind(chat.id),
+    db.prepare('DELETE FROM chat_labels WHERE chat_id = ?').bind(chat.id),
+    db.prepare(`UPDATE chats SET bot_flow_id = NULL, bot_node = NULL, bot_wait = 0, bot_vars = NULL, bot_paused = 0, handler = 'bot',
+      ad_id = 'SIMULADOR', referral_at = ?, last_inbound_at = ?, first_reply_at = NULL, updated_at = ? WHERE id = ?`).bind(now(), now(), now(), chat.id),
+  ]);
+  const f = b.flow_id ? await loadFlow(c.env, Number(b.flow_id)) : null;
+  if (!f || f.store_id !== st.id) fail(400, 'Elige un flujo de esta tienda.');
+  f.active = 1;
+  await startFlow(c.env, c.executionCtx, st, chat.id, f);
+  return c.json(await simState(c.env, chat.id));
+});
+
+r.post('/stores/:id/sim/send', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const chat = await simChat(c, st);
+  const db = c.env.DB;
+  let type = 'text';
+  let text = '';
+  let file = null;
+  if ((c.req.header('content-type') || '').includes('multipart/form-data')) {
+    const form = await c.req.formData();
+    file = form.get('file');
+    text = String(form.get('text') || '').trim();
+    if (file && typeof file !== 'string') {
+      if (!/^image\/(jpeg|png|webp)$/.test(file.type)) fail(400, 'En el simulador solo se pueden mandar fotos (JPG o PNG).');
+      if (file.size > 5 * 1048576) fail(413, 'La foto pasa de 5 MB.');
+      type = 'image';
+    } else file = null;
+  } else text = String((await body(c)).text || '').trim();
+  if (!text && !file) fail(400, 'Escribe un mensaje.');
+  const t = now();
+  const ins = await db.prepare(
+    `INSERT INTO messages (chat_id, store_id, direction, sender, type, body, media_mime, media_status, created_at, updated_at) VALUES (?, ?, 'in', 'cli', ?, ?, ?, ?, ?, ?)`
+  ).bind(chat.id, st.id, type, clip(text, 4000) || null, file ? file.type : null, file ? 'ok' : null, t, t).run();
+  const msgId = ins.meta.last_row_id;
+  if (file) {
+    const key = mediaKey(st.id, chat.id, msgId);
+    await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+    await db.prepare('UPDATE messages SET media_key = ? WHERE id = ?').bind(key, msgId).run();
+  }
+  await db.prepare("UPDATE chats SET last_inbound_at = ?, last_msg_at = ?, last_dir = 'in', updated_at = ? WHERE id = ?").bind(t, t, t, chat.id).run();
+  await onInbound(c.env, c.executionCtx, st, chat.id, { id: msgId, type, body: text }, { sim: true });
+  return c.json(await simState(c.env, chat.id));
+});
+
+// Adelanta el siguiente seguimiento programado (como si la clienta no hubiera respondido)
+r.post('/stores/:id/sim/next', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const chat = await simChat(c, st);
+  const j = await c.env.DB.prepare('SELECT * FROM bot_jobs WHERE chat_id = ? AND done_at IS NULL AND canceled_at IS NULL ORDER BY run_at LIMIT 1').bind(chat.id).first();
+  if (!j) fail(400, 'No hay seguimientos pendientes.');
+  await c.env.DB.prepare('UPDATE bot_jobs SET done_at = ? WHERE id = ?').bind(now(), j.id).run();
+  await runJob(c.env, j);
+  return c.json(await simState(c.env, chat.id));
 });
 
 export default r;

@@ -127,6 +127,17 @@ async function saveState(env, chatId, st) {
 
 const bump = (env, storeId) => env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE id = ?').bind(storeId).run();
 
+// En el simulador los avisos salen dentro del chat de prueba, no en Avisos
+async function alertFor(env, store, chat, payload) {
+  if (chat?.sim) {
+    const t = now();
+    await env.DB.prepare(`INSERT INTO messages (chat_id, store_id, direction, sender, type, body, status, created_at, updated_at) VALUES (?, ?, 'out', 'sys', 'text', ?, 'sent', ?, ?)`)
+      .bind(chat.id, store.id, clip(payload.title + (payload.body ? ' · ' + payload.body : ''), 600), t, t).run();
+    return;
+  }
+  return notify(env, store.id, { ...payload, chatId: 'chatId' in payload ? payload.chatId : chat?.id ?? null });
+}
+
 export async function notify(env, storeId, { kind, chatId = null, title, body = null, dedupe = false }) {
   if (dedupe) {
     const dup = await env.DB.prepare('SELECT id FROM notifications WHERE store_id = ? AND kind = ? AND title = ? AND read_at IS NULL AND created_at > ?')
@@ -191,7 +202,8 @@ async function assetFor(env, storeId, key) {
 // Manda un mensaje del bot o de la IA y lo deja en el chat como cualquier otro
 export async function botSend(env, store, chat, item, { flowId, node, sender = 'bot', vars = {} }) {
   const fresh = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chat.id).first();
-  if (!windowOpen(fresh)) return { ok: false, reason: 'ventana' };
+  const sim = !!fresh.sim;
+  if (!sim && !windowOpen(fresh)) return { ok: false, reason: 'ventana' };
   let type = 'text';
   let body = null;
   let asset = null;
@@ -202,7 +214,7 @@ export async function botSend(env, store, chat, item, { flowId, node, sender = '
     const key = fill(item.asset, vars);
     asset = await assetFor(env, store.id, key);
     if (!asset) {
-      await notify(env, store.id, { kind: 'archivo', title: `Falta subir el archivo «${key}»`, body: 'El bot se saltó ese archivo. Súbelo en Configuración → Bot Suyon AI → Archivos.', dedupe: true });
+      await alertFor(env, store, fresh, { kind: 'archivo', chatId: null, title: `Falta subir el archivo «${key}»`, body: 'El bot se saltó ese archivo. Súbelo en Configuración → Bot Suyon AI → Archivos.', dedupe: true });
       return { ok: false, reason: 'archivo' };
     }
     type = item.kind === 'file' ? kindForMime(asset.mime) : item.kind || kindForMime(asset.mime);
@@ -212,9 +224,14 @@ export async function botSend(env, store, chat, item, { flowId, node, sender = '
   const r = await env.DB.prepare(
     `INSERT INTO messages (chat_id, store_id, direction, sender, type, body, media_key, media_mime, media_name, media_size, media_status, status, bot_flow_id, bot_node, created_at, updated_at)
      VALUES (?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?, 'sending', ?, ?, ?, ?)`
-  ).bind(chat.id, store.id, sender, type, body, asset?.r2_key || null, asset?.mime || null, asset?.name || null, asset?.size || null, asset ? 'ok' : null, flowId || null, node || null, t, t).run();
+  ).bind(chat.id, store.id, sender, type, body, asset?.r2_key || null, asset?.mime || null, asset?.name || null, asset?.size || null, asset ? 'ok' : null, sim ? null : flowId || null, node || null, t, t).run();
   const msgId = r.meta.last_row_id;
   let ok = true;
+  if (sim) {
+    await env.DB.prepare("UPDATE messages SET status = 'read', updated_at = ? WHERE id = ?").bind(now(), msgId).run();
+    await env.DB.prepare("UPDATE chats SET last_msg_at = ?, last_dir = 'out', updated_at = ? WHERE id = ?").bind(now(), now(), chat.id).run();
+    return { ok: true, id: msgId };
+  }
   try {
     let wamid;
     if (type === 'text') wamid = await sendText(env, store, chat.wa_id, body);
@@ -278,7 +295,7 @@ async function doOps(env, store, chat, flow, ops, vars) {
       case 'clear_var': if (op.var) delete vars[op.var]; break;
       case 'start_seq': await startSequence(env, store, chat, flow, op.seq); break;
       case 'stop_seq': await cancelJobs(env, chat.id, op.seq); break;
-      case 'notify': await notify(env, store.id, { kind: 'aviso', chatId: chat.id, title: v || 'Aviso del bot' }); break;
+      case 'notify': await alertFor(env, store, chat, { kind: 'aviso', title: v || 'Aviso del bot' }); break;
     }
   }
 }
@@ -308,7 +325,7 @@ export async function runFrom(env, ctx, store, chatId, flow, nodeId, vars, trigg
   for (let step = 0; id && step < MAX_STEPS; step++) {
     const node = nodeOf(flow, id);
     if (!node) break;
-    await count(env, flow.id, node.id);
+    if (!chat.sim) await count(env, flow.id, node.id);
     const meta = { flowId: flow.id, node: node.id, vars };
     switch (node.type) {
       case 'start':
@@ -355,7 +372,7 @@ export async function runFrom(env, ctx, store, chatId, flow, nodeId, vars, trigg
         await cancelJobs(env, chat.id);
         await saveState(env, chat.id, { bot_flow_id: flow.id, bot_node: node.id, bot_wait: 0, bot_vars: vars, bot_paused: 1, handler: 'asesora' });
         await env.DB.prepare('UPDATE chats SET unread = MAX(unread, 1), updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
-        await notify(env, store.id, { kind: 'asesora', chatId: chat.id, title: `${chat.name || chat.profile_name || '+' + chat.wa_id}: ${fill(node.reason || 'Pasó a asesora', vars)}` });
+        await alertFor(env, store, chat, { kind: 'asesora', title: chat.sim ? `Pasó a asesora: ${fill(node.reason || '', vars)}` : `${chat.name || chat.profile_name || '+' + chat.wa_id}: ${fill(node.reason || 'Pasó a asesora', vars)}` });
         return;
       }
       case 'ia': {
@@ -400,21 +417,21 @@ export async function startFlow(env, ctx, store, chatId, flow, triggerMsgId = nu
   await runFrom(env, ctx, store, chatId, flow, flow.graph.start, {}, triggerMsgId);
 }
 
-export async function onInbound(env, ctx, store, chatId, msg) {
+export async function onInbound(env, ctx, store, chatId, msg, { sim = false } = {}) {
   const settings = await loadSettings(env, store.id);
   // «Respondieron»: el último mensaje del bot recibió respuesta
   await env.DB.prepare(
     `UPDATE messages SET replied = 1 WHERE id = (SELECT MAX(id) FROM messages WHERE chat_id = ? AND direction = 'out' AND sender IN ('bot', 'ia') AND id < ?) AND replied IS NULL`
   ).bind(chatId, msg.id).run();
   await cancelJobs(env, chatId, msg.type === 'image' || msg.type === 'document' ? 'image' : 'reply');
-  if (!settings.bot_on) return;
+  if (!settings.bot_on && !sim) return;
   const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
-  if (!chat || chat.bot_paused || !audienceOk(settings, chat.wa_id)) return;
+  if (!chat || chat.bot_paused || (!sim && !audienceOk(settings, chat.wa_id))) return;
   const text = msg.body || (msg.type === 'audio' ? '[nota de voz]' : msg.type === 'image' ? '[foto]' : '');
 
   if (chat.bot_flow_id && chat.bot_node && chat.bot_wait) {
     const flow = await loadFlow(env, chat.bot_flow_id);
-    if (flow?.active) {
+    if (flow?.active || (sim && flow)) {
       const node = nodeOf(flow, chat.bot_node);
       const vars = JSON.parse(chat.bot_vars || '{}');
       if (node && chat.bot_wait === 1) {
@@ -430,6 +447,7 @@ export async function onInbound(env, ctx, store, chatId, msg) {
       if (chat.bot_wait === 3) return; // esperando un tiempo
     }
   }
+  if (sim) return; // en el simulador el flujo se inicia con «Empezar como clienta nueva»
   const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM messages WHERE chat_id = ? AND direction = 'in'").bind(chat.id).first();
   const { results: flows } = await env.DB.prepare('SELECT id FROM bot_flows WHERE store_id = ? AND active = 1 ORDER BY id').bind(store.id).all();
   for (const f of flows) {
@@ -548,27 +566,45 @@ async function callModel(env, settings, system, hist) {
   return { text: data.choices?.[0]?.message?.content || '', inTok: data.usage?.prompt_tokens || 0, outTok: data.usage?.completion_tokens || 0, model };
 }
 
-export function parseReply(text) {
-  const s = String(text || '').trim();
+// Lee la respuesta de la IA. Solo es válida si viene el JSON pedido; si no, NO se manda nada a la clienta.
+function cleanText(t) {
+  let x = String(t ?? '').replace(/```[a-z]*\n?|```/gi, '').replace(/\r/g, '').trim();
+  // Restos de formato que nunca deben llegar a la clienta
+  if (/^\s*[{[]/.test(x) || /"(mensajes|texto|archivo|caso|datos)"\s*:/.test(x)) return '';
+  return x.slice(0, 4000);
+}
+
+export function parseReply(text, validCases = null) {
+  const s = String(text || '').replace(/```[a-z]*\n?|```/gi, '').trim();
   const a = s.indexOf('{');
   const b = s.lastIndexOf('}');
-  if (a >= 0 && b > a) {
-    try {
-      const j = JSON.parse(s.slice(a, b + 1));
-      const msgs = (Array.isArray(j.mensajes) ? j.mensajes : [])
-        .map((m) => (typeof m === 'string' ? { texto: m } : m))
-        .filter((m) => m && (String(m.texto || '').trim() || m.archivo));
-      return { mensajes: msgs, caso: j.caso || null, datos: j.datos && typeof j.datos === 'object' ? j.datos : {} };
-    } catch {}
+  if (a < 0 || b <= a) return { valid: false, mensajes: [], caso: null, datos: {} };
+  let j;
+  try {
+    j = JSON.parse(s.slice(a, b + 1));
+  } catch {
+    return { valid: false, mensajes: [], caso: null, datos: {} };
   }
-  return { mensajes: s ? [{ texto: s }] : [], caso: null, datos: {} };
+  if (!j || typeof j !== 'object' || (!Array.isArray(j.mensajes) && !j.caso)) return { valid: false, mensajes: [], caso: null, datos: {} };
+  const mensajes = (Array.isArray(j.mensajes) ? j.mensajes : [])
+    .slice(0, 6)
+    .map((m) => (typeof m === 'string' ? { texto: m } : m || {}))
+    .map((m) => ({ texto: cleanText(m.texto), archivo: m.archivo && /^[\w{}-]{1,40}$/.test(String(m.archivo)) ? String(m.archivo) : null }))
+    .filter((m) => m.texto || m.archivo);
+  let caso = typeof j.caso === 'string' && j.caso.trim() ? j.caso.trim() : null;
+  if (caso && validCases && !validCases.includes(caso)) caso = null;
+  const datos = {};
+  if (j.datos && typeof j.datos === 'object' && !Array.isArray(j.datos)) {
+    for (const [k, v] of Object.entries(j.datos)) if (/^\w{1,30}$/.test(k) && v != null && typeof v !== 'object' && String(v).trim()) datos[k] = String(v).trim();
+  }
+  return { valid: true, mensajes, caso, datos };
 }
 
 const today = () => new Date(now() + LIMA_OFFSET).toISOString().slice(0, 10);
 
 async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId) {
   // Espera unos segundos por si la clienta manda varios mensajes seguidos
-  const delay = Math.min(Math.max(Number(settings.ia_delay_s) || 0, 0), 20);
+  const delay = chat.sim ? Math.min(Number(settings.ia_delay_s) || 0, 1) : Math.min(Math.max(Number(settings.ia_delay_s) || 0, 0), 20);
   if (delay) await sleep(delay * 1000);
   if (triggerMsgId) {
     const newer = await env.DB.prepare("SELECT id FROM messages WHERE chat_id = ? AND direction = 'in' AND id > ? LIMIT 1").bind(chat.id, triggerMsgId).first();
@@ -578,7 +614,7 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   if (cap > 0) {
     const u = await env.DB.prepare('SELECT cost FROM ia_usage WHERE store_id = ? AND day = ?').bind(store.id, today()).first();
     if (u && u.cost >= cap) {
-      await notify(env, store.id, { kind: 'ia', title: `La IA llegó al tope de US$${cap} de hoy`, body: 'Las clientas pasan a la asesora hasta mañana, o sube el tope.', dedupe: true });
+      await alertFor(env, store, chat, { kind: 'ia', chatId: null, title: `La IA llegó al tope de US$${cap} de hoy`, body: 'Las clientas pasan a la asesora hasta mañana, o sube el tope.', dedupe: true });
       return { ok: false };
     }
   }
@@ -591,25 +627,41 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   const labels = await chatLabels(env, chat.id);
   const { results: arows } = await env.DB.prepare('SELECT key FROM bot_assets WHERE store_id = ?').bind(store.id).all();
   const system = buildSystem(settings, node, labels, vars, arows.map((a) => a.key));
-  let out;
-  try {
-    out = await callModel(env, settings, system, hist);
-  } catch (e) {
-    await notify(env, store.id, { kind: 'ia', chatId: chat.id, title: e.noKey ? 'Falta la clave de la IA' : 'La IA no pudo responder', body: e.message, dedupe: !!e.noKey });
+  const caseIds = (node.cases || []).map((c) => c.id);
+  let reply = null;
+  let lastErr = null;
+  // Hasta 2 intentos: si la IA no responde en el formato pedido, se le pide de nuevo. Nunca se manda texto raro.
+  for (let attempt = 0; attempt < 2 && !reply; attempt++) {
+    const h = attempt ? [...hist, { role: 'assistant', text: lastErr.raw || '(vacío)' }, { role: 'user', text: 'Tu respuesta anterior no vino en el formato pedido. Responde de nuevo SOLO con el JSON {"mensajes":[...],"caso":...,"datos":{...}}, sin nada antes ni después.' }] : hist;
+    let out;
+    try {
+      out = await callModel(env, settings, system, h);
+    } catch (e) {
+      await alertFor(env, store, chat, { kind: 'ia', title: e.noKey ? 'Falta la clave de la IA' : 'La IA no pudo responder', body: e.message, dedupe: !!e.noKey });
+      return { ok: false };
+    }
+    const price = IA_MODELS[out.model];
+    const cost = (out.inTok * price.in + out.outTok * price.out) / 1e6;
+    await env.DB.prepare(
+      `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 1, ?, ?, ?)
+       ON CONFLICT (store_id, day) DO UPDATE SET calls = calls + 1, in_tokens = in_tokens + excluded.in_tokens, out_tokens = out_tokens + excluded.out_tokens, cost = cost + excluded.cost`
+    ).bind(store.id, today(), out.inTok, out.outTok, cost).run();
+    const p = parseReply(out.text, caseIds);
+    if (p.valid && (p.mensajes.length || p.caso)) reply = p;
+    else lastErr = { raw: clip(out.text, 1500) };
+  }
+  if (!reply) {
+    await alertFor(env, store, chat, { kind: 'ia', title: 'La IA respondió algo que no se puede mandar', body: 'No se envió nada a la clienta y pasó a la asesora. Respuesta de la IA: ' + clip(lastErr?.raw || '', 300) });
     return { ok: false };
   }
-  const price = IA_MODELS[out.model];
-  const cost = (out.inTok * price.in + out.outTok * price.out) / 1e6;
-  await env.DB.prepare(
-    `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 1, ?, ?, ?)
-     ON CONFLICT (store_id, day) DO UPDATE SET calls = calls + 1, in_tokens = in_tokens + excluded.in_tokens, out_tokens = out_tokens + excluded.out_tokens, cost = cost + excluded.cost`
-  ).bind(store.id, today(), out.inTok, out.outTok, cost).run();
-
-  const reply = parseReply(out.text);
+  // Nunca mandar a la clienta un dato de pago que falta llenar
+  if (reply.mensajes.some((m) => /\[FALTA [A-Z]+\]/.test(m.texto || ''))) {
+    await alertFor(env, store, chat, { kind: 'ia', title: 'Faltan los datos de pago en IA Suyon', body: 'La IA iba a mandar «[FALTA …]» a la clienta. No se envió y pasó a la asesora. Llénalos en Configuración → Bot Suyon AI → IA Suyon.', dedupe: !chat.sim });
+    return { ok: false };
+  }
   for (const [k, v] of Object.entries(reply.datos)) if (v != null && String(v).trim()) vars[k] = clip(String(v), 200);
-  const cs = (node.cases || []).find((c) => c.id === reply.caso);
+  const cs =(node.cases || []).find((c) => c.id === reply.caso);
   const sendIt = !cs || cs.send_reply !== false;
-  if (!reply.mensajes.length && !cs) return { ok: false };
   if (sendIt) {
     let first = true;
     for (const m of reply.mensajes) {
@@ -635,10 +687,35 @@ export async function testIA(env, store, flow, node, text) {
   const { results: arows } = await env.DB.prepare('SELECT key FROM bot_assets WHERE store_id = ?').bind(store.id).all();
   const system = buildSystem(settings, node, [], {}, arows.map((a) => a.key));
   const out = await callModel(env, settings, system, [{ role: 'user', text }]);
-  return parseReply(out.text);
+  const r = parseReply(out.text, (node.cases || []).map((c) => c.id));
+  return r.valid ? r : { mensajes: [], caso: null, datos: {}, error: 'La IA no respondió en el formato pedido (en un chat real se reintenta y, si falla, pasa a asesora).' };
 }
 
 /* ---------------- Cron: seguimientos y esperas ---------------- */
+
+export async function runJob(env, j) {
+  const store = await env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(j.store_id).first();
+  const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(j.chat_id).first();
+  if (!store || !chat || chat.bot_paused) return;
+  const sim = !!chat.sim;
+  const settings = await loadSettings(env, j.store_id);
+  if (!sim && (!settings.bot_on || store.status !== 'activo')) return;
+  const flow = await loadFlow(env, j.flow_id);
+  if (!flow || (!flow.active && !sim)) return;
+  const vars = JSON.parse(chat.bot_vars || '{}');
+  if (j.kind === 'seq') {
+    const seq = (flow.graph.sequences || []).find((s) => s.id === j.seq_id);
+    const st = seq?.steps?.[j.step];
+    if (!st) return;
+    const ok = await sendItems(env, store, chat, st.items, { flowId: flow.id, node: `seq:${seq.id}:${j.step}`, vars, gap: sim ? 0 : undefined });
+    if (!ok) await cancelJobs(env, chat.id, seq.id); // ventana cerrada: no tiene sentido seguir
+  } else if (j.kind === 'ia_follow') {
+    await botSend(env, store, chat, { kind: 'text', text: settings.ia_follow_text }, { flowId: flow.id, node: `${j.node_id}:seguimiento`, sender: 'ia', vars });
+  } else if (j.kind === 'resume') {
+    await saveState(env, chat.id, { bot_wait: 0 });
+    if (j.node_id) await runFrom(env, null, store, chat.id, flow, j.node_id, vars);
+  }
+}
 
 export async function runJobs(env) {
   const { results: jobs } = await env.DB.prepare(
@@ -648,25 +725,7 @@ export async function runJobs(env) {
     const claim = await env.DB.prepare('UPDATE bot_jobs SET done_at = ? WHERE id = ? AND done_at IS NULL AND canceled_at IS NULL').bind(now(), j.id).run();
     if (!claim.meta.changes) continue;
     try {
-      const store = await env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(j.store_id).first();
-      const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(j.chat_id).first();
-      const settings = await loadSettings(env, j.store_id);
-      if (!store || !chat || chat.bot_paused || !settings.bot_on || store.status !== 'activo') continue;
-      const flow = await loadFlow(env, j.flow_id);
-      if (!flow || !flow.active) continue;
-      const vars = JSON.parse(chat.bot_vars || '{}');
-      if (j.kind === 'seq') {
-        const seq = (flow.graph.sequences || []).find((s) => s.id === j.seq_id);
-        const st = seq?.steps?.[j.step];
-        if (!st) continue;
-        const ok = await sendItems(env, store, chat, st.items, { flowId: flow.id, node: `seq:${seq.id}:${j.step}`, vars });
-        if (!ok) await cancelJobs(env, chat.id, seq.id); // ventana cerrada: no tiene sentido seguir
-      } else if (j.kind === 'ia_follow') {
-        await botSend(env, store, chat, { kind: 'text', text: settings.ia_follow_text }, { flowId: flow.id, node: `${j.node_id}:seguimiento`, sender: 'ia', vars });
-      } else if (j.kind === 'resume') {
-        await saveState(env, chat.id, { bot_wait: 0 });
-        if (j.node_id) await runFrom(env, null, store, chat.id, flow, j.node_id, vars);
-      }
+      await runJob(env, j);
     } catch (e) {
       console.error('job', j.id, e);
     }

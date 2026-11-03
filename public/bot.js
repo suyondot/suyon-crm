@@ -128,6 +128,7 @@ export async function renderBotTab(body) {
   if (B.storeId !== C.S.storeId || !B.data) {
     body.innerHTML = '<span class="spin"></span>';
     B.sel = null;
+    SIM.st = null;
     try {
       await load(false);
     } catch (er) {
@@ -141,7 +142,7 @@ export async function renderBotTab(body) {
 function draw(body = C.$('#cfgbody')) {
   if (!body) return;
   const st = B.data.settings;
-  const subs = [['flujo', 'Flujo'], ['seg', 'Seguimientos'], ['ia', 'IA Suyon'], ['files', 'Archivos']];
+  const subs = [['flujo', 'Flujo'], ['sim', 'Probar'], ['seg', 'Seguimientos'], ['ia', 'IA Suyon'], ['files', 'Archivos']];
   const missing = B.data.template_assets.filter((a) => !a.ok).length;
   body.innerHTML = `
   <div class="ph"><div><h2>Bot Suyon AI</h2><p>Tu flujo de Botcake, aquí. Lo gratis (precios, talla, colores) va sin IA; la IA entra después, con tu mismo prompt.</p></div><span class="grow"></span>
@@ -156,7 +157,7 @@ function draw(body = C.$('#cfgbody')) {
   on.onchange = () => saveSettings({ bot_on: on.checked }, on.checked ? 'Bot encendido' : 'Bot apagado');
   C.$('#baud').onchange = (ev) => saveSettings({ audience: ev.target.value });
   C.$('#btest').onchange = (ev) => saveSettings({ test_numbers: ev.target.value }, 'Números de prueba guardados');
-  ({ flujo: drawFlow, seg: drawSeqs, ia: drawIA, files: drawFiles })[B.sub]();
+  ({ flujo: drawFlow, sim: drawSim, seg: drawSeqs, ia: drawIA, files: drawFiles })[B.sub]();
 }
 
 async function saveSettings(patch, msg = 'Guardado') {
@@ -779,6 +780,159 @@ function wireFlowBar() {
       C.toast(er.message, 5000);
     }
   };
+}
+
+
+/* =================== Simulador: probar el bot como clienta =================== */
+const SIM = { st: null, busy: false, flowId: null };
+const SIM_QUICK = ['talla 30', 'soy M', 'Hola, info', 'quiero negro y beige', 'Lima, Surco', 'Provincia, Arequipa', 'yapeo más tarde', 'quiero hablar con una persona'];
+const hm = (t) => new Date(t).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
+
+async function drawSim() {
+  const box = C.$('#bsub');
+  if (!B.data.flows.length) {
+    box.innerHTML = '<div class="card empty"><b>Primero crea un flujo</b><span>Ve a la pestaña Flujo y toca «Crear desde Ventas pantalón».</span></div>';
+    return;
+  }
+  if (!SIM.flowId || !B.data.flows.some((f) => f.id === SIM.flowId)) SIM.flowId = B.flowId || B.data.flows[0].id;
+  box.innerHTML = `<div class="simwrap">
+    <section class="simphone" aria-label="Chat de prueba">
+      <header class="simhead"><span class="simav">${IC.start}</span><div style="min-width:0;flex:1"><b>Tú, como clienta</b><span>No usa WhatsApp · no cuesta mensajes</span></div>
+        <button class="iconbtn" id="simreset" title="Borra este chat de prueba y empieza el flujo como si llegaras por un anuncio">Empezar de nuevo</button></header>
+      <div class="simmsgs" id="simmsgs" aria-live="polite"></div>
+      <div class="simquick" id="simquick">${SIM_QUICK.map((q) => `<button type="button" data-simq="${e(q)}">${e(q)}</button>`).join('')}</div>
+      <form class="simform" id="simform"><label class="iconbtn simpic" title="Mandar una foto (por ejemplo, captura de Yape)">📷<input type="file" id="simpic" accept="image/jpeg,image/png,image/webp" hidden></label>
+        <input id="simtxt" placeholder="Escribe como clienta…" autocomplete="off" aria-label="Mensaje como clienta"><button class="send" type="submit">Enviar</button></form>
+    </section>
+    <aside class="simside" id="simside"></aside>
+  </div>`;
+  C.$('#simreset').onclick = () => simReset();
+  C.$('#simform').onsubmit = (ev) => {
+    ev.preventDefault();
+    const t = C.$('#simtxt').value.trim();
+    if (t) simSend(t);
+  };
+  C.$('#simquick').onclick = (ev) => {
+    const b = ev.target.closest('[data-simq]');
+    if (b) simSend(b.dataset.simq);
+  };
+  C.$('#simpic').onchange = (ev) => {
+    const f = ev.target.files[0];
+    ev.target.value = '';
+    if (f) simSend('', f);
+  };
+  if (!SIM.st) {
+    C.$('#simmsgs').innerHTML = '<span class="spin" style="margin:auto"></span>';
+    try {
+      SIM.st = await C.api('GET', `/stores/${B.storeId}/sim`);
+    } catch (er) {
+      C.$('#simmsgs').innerHTML = `<div class="err">${e(er.message)}</div>`;
+      return;
+    }
+  }
+  simRender();
+}
+
+function simMsg(m) {
+  if (m.sender === 'sys') return `<div class="simsys">⚠ ${e(m.body || '')}</div>`;
+  const mine = m.direction === 'in';
+  const url = `/api/media/${m.id}`;
+  let media = '';
+  if (m.media) {
+    if (m.type === 'image') media = `<img src="${url}" alt="Foto" loading="lazy">`;
+    else if (m.type === 'video') media = `<video src="${url}" controls preload="metadata" playsinline></video>`;
+    else if (m.type === 'audio') media = `<audio src="${url}" controls preload="none"></audio>`;
+    else media = `<a href="${url}" target="_blank" rel="noopener">📄 Documento</a>`;
+  } else if (m.type !== 'text' && !mine) media = `<span class="note">[${e(m.type)} sin archivo]</span>`;
+  const by = m.sender === 'ia' ? 'IA Suyon' : 'Bot';
+  const nn = simNodeName(m.bot_node);
+  const who = mine ? '' : `<span class="simby ${m.sender}">${nn && nn.startsWith(by) ? e(nn) : by + (nn ? ` · ${e(nn)}` : '')}</span>`;
+  return `<div class="simm ${mine ? 'me' : 'them s-' + m.sender}">${who}<div class="simb">${media}${m.body ? `<span>${e(m.body)}</span>` : ''}<i>${hm(m.created_at)}</i></div></div>`;
+}
+
+function simNodeName(id) {
+  if (!id) return '';
+  const seq = /^seq:([^:]+):(\d+)$/.exec(id);
+  if (seq) {
+    const sq = B.flow?.graph.sequences?.find((x) => x.id === seq[1]);
+    return `${sq?.name || 'seguimiento'} ${Number(seq[2]) + 1}`;
+  }
+  return nodeTitle(id.replace(/:seguimiento$/, ''));
+}
+
+function simRender() {
+  const st = SIM.st;
+  const box = C.$('#simmsgs');
+  if (!box || !st) return;
+  box.innerHTML = st.messages.length
+    ? st.messages.map(simMsg).join('') + (SIM.busy ? '<div class="simm them"><div class="simb simtyping" aria-label="Escribiendo"><b></b><b></b><b></b></div></div>' : '')
+    : `<div class="simempty"><b>Prueba tu bot sin gastar mensajes</b><span>Toca «Empezar de nuevo»: el flujo arranca como si llegaras por un anuncio. Después responde como lo haría una clienta.</span><button class="send" type="button" id="simgo">Empezar como clienta nueva</button></div>`;
+  const go = C.$('#simgo');
+  if (go) go.onclick = () => simReset();
+  box.scrollTop = box.scrollHeight;
+  const ch = st.chat;
+  const vars = Object.entries(ch.vars || {}).filter(([k, v]) => k !== 'respuesta' && v !== '' && v != null);
+  const waits = { 0: 'Nada pendiente', 1: 'Esperando tu respuesta', 2: 'La IA va a responder', 3: 'Esperando un tiempo' };
+  C.$('#simside').innerHTML = `
+    <div class="card"><h3>Flujo a probar</h3>
+      <select id="simflow" aria-label="Flujo a probar">${B.data.flows.map((f) => `<option value="${f.id}" ${f.id === SIM.flowId ? 'selected' : ''}>${e(f.name)}${f.active ? '' : ' (apagado)'}</option>`).join('')}</select>
+      <p class="note" style="margin:8px 0 0">Funciona aunque el bot o el flujo estén apagados. Usa tus archivos y tu IA de verdad (la IA sí gasta, poquito).</p></div>
+    <div class="card"><h3>Dónde va</h3>
+      <div class="simstate"><span class="dot ${ch.paused ? 'off' : ch.wait ? 'on' : ''}"></span><div><b>${ch.paused ? 'Pausado · pasó a asesora' : ch.node ? e(ch.node_title || ch.node) : ch.flow_id ? 'Terminó el flujo' : 'Sin empezar'}</b><span class="note">${ch.paused ? 'El bot ya no responde en este chat.' : waits[ch.wait] || ''}</span></div></div></div>
+    <div class="card"><h3>Etiquetas</h3>${st.labels.length ? `<div class="simtags">${st.labels.map((l) => `<span class="tag" style="--tc:var(${e(l.color)})"><i></i>${e(l.name)}</span>`).join('')}</div>` : '<span class="note">Ninguna todavía</span>'}</div>
+    <div class="card"><h3>Datos que guardó</h3>${vars.length ? `<dl class="simvars">${vars.map(([k, v]) => `<dt>${e(k)}</dt><dd>${e(v)}</dd>`).join('')}</dl>` : '<span class="note">Nada todavía</span>'}</div>
+    <div class="card"><h3>Seguimientos programados</h3>${st.jobs.length ? `<ul class="simjobs">${st.jobs.map((j) => `<li><b>${e(j.label)}</b><span class="note">${simWhen(j.run_at)}</span></li>`).join('')}</ul>
+      <button class="iconbtn" id="simnext" style="margin-top:8px" ${SIM.busy ? 'disabled' : ''}>Adelantar el siguiente ⏩</button>
+      <p class="note" style="margin:6px 0 0">Hace como si la clienta no hubiera respondido y ya pasó el tiempo.</p>` : '<span class="note">Ninguno. Si respondes, se cancelan.</span>'}</div>`;
+  C.$('#simflow').onchange = (ev) => {
+    SIM.flowId = Number(ev.target.value);
+    simReset();
+  };
+  const nx = C.$('#simnext');
+  if (nx) nx.onclick = () => simCall('POST', `/stores/${B.storeId}/sim/next`);
+  for (const el of C.$$('#simform input, #simform button, #simquick button')) el.disabled = SIM.busy;
+}
+
+function simWhen(t) {
+  const m = Math.round((t - Date.now()) / 60000);
+  if (m <= 0) return 'ya toca';
+  if (m < 60) return `en ${m} min`;
+  const h = Math.floor(m / 60);
+  return `en ${h} h${m % 60 ? ` ${m % 60} min` : ''} · ${hm(t)}`;
+}
+
+async function simCall(method, path, data) {
+  if (SIM.busy) return;
+  SIM.busy = true;
+  simRender();
+  try {
+    SIM.st = await C.api(method, path, data);
+  } catch (er) {
+    C.toast(er.message, 5000);
+    if (SIM.st) SIM.st.messages = SIM.st.messages.filter((m) => m.id !== 'tmp');
+  }
+  SIM.busy = false;
+  simRender();
+  C.$('#simtxt')?.focus();
+}
+
+function simReset() {
+  return simCall('POST', `/stores/${B.storeId}/sim/reset`, { flow_id: SIM.flowId });
+}
+
+async function simSend(text, file) {
+  if (SIM.busy) return;
+  const t = C.$('#simtxt');
+  if (t) t.value = '';
+  // Se ve al instante, como en WhatsApp
+  SIM.st.messages.push({ id: 'tmp', direction: 'in', sender: 'cli', type: file ? 'image' : 'text', body: file ? text || '📷 Foto' : text, created_at: Date.now() });
+  if (file) {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (text) fd.append('text', text);
+    return simCall('POST', `/stores/${B.storeId}/sim/send`, fd);
+  }
+  return simCall('POST', `/stores/${B.storeId}/sim/send`, { text });
 }
 
 /* =================== IA Suyon =================== */

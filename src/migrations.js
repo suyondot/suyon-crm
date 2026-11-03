@@ -287,6 +287,14 @@ export const MIGRATIONS = [
       `CREATE INDEX calls_chat ON calls (chat_id, id)`,
     ],
   },
+  {
+    id: 4,
+    name: 'simulador',
+    sql: [
+      // Chat de prueba del simulador del bot (no sale en la bandeja ni en los números)
+      `ALTER TABLE chats ADD COLUMN sim INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 let ready = null;

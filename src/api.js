@@ -627,7 +627,7 @@ api.get('/sync', async (c) => {
   let unread = {};
   if (chatStores.length) {
     const { results } = await c.env.DB.prepare(
-      `SELECT store_id, COUNT(*) AS n FROM chats WHERE unread > 0 AND store_id IN (${inList(chatStores.length)}) GROUP BY store_id`
+      `SELECT store_id, COUNT(*) AS n FROM chats WHERE unread > 0 AND sim = 0 AND store_id IN (${inList(chatStores.length)}) GROUP BY store_id`
     ).bind(...chatStores.map((s) => s.id)).all();
     unread = Object.fromEntries(results.map((r) => [r.store_id, r.n]));
   }
@@ -653,7 +653,7 @@ api.get('/stores/:id/chats', async (c) => {
   const db = c.env.DB;
   const t = now();
   const limit = Math.min(Number(q.limit) || 60, 200);
-  const where = ['store_id = ?'];
+  const where = ['store_id = ?', 'sim = 0'];
   const vals = [st.id];
   let order = 'COALESCE(last_msg_at, created_at) DESC';
   if (q.after) {
