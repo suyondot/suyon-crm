@@ -190,7 +190,7 @@ function drawEditor() {
     <div class="pmbody">
       <section><h3>Tipo de envío</h3><div class="pmodos">${Object.entries(MODOS).map(([k, l]) => `<label class="pmo${o.modo === k ? ' on' : ''}"><input type="radio" name="modo" value="${k}" ${o.modo === k ? 'checked' : ''}><b>${e(l)}</b><span>${k === 'lima' ? 'Motorizado, paga al recibir' : k === 'ce_prov' ? 'Courier, paga al recibir' : 'Adelanto + saldo en agencia'}</span></label>`).join('')}</div></section>
       <section><h3>Estado</h3><div class="pflow">${FLUJO[o.modo].map((s) => `<button type="button" data-ms="${s}" class="${o.status === s ? 'on' : ''} t-${TONO[s]}">${e(ESTADOS[s])}</button>`).join('')}</div>
-        <p class="note" style="margin:6px 0 0">Al cambiar el estado sale el mensaje automático que tengas encendido (Configuración → Pedidos y Shopify).</p></section>
+        <p class="note" style="margin:6px 0 0">Al cambiar el estado sale el mensaje automático que tengas encendido (Configuración → ${H.store()?.canal === 'shopify' ? 'Shopify' : 'Pedidos'}).</p></section>
       <section><h3>Clienta</h3><div class="pgrid">
         <div class="field"><label>Nombre</label><input data-f="nombre" value="${e(o.nombre || '')}"></div>
         <div class="field"><label>Celular</label><input data-f="celular" value="${e(o.celular || '')}" inputmode="tel"></div>
@@ -374,7 +374,7 @@ export async function fichaPedidos(chatId, el, cached = false) {
   }
 }
 
-/* =================== Configuración → Pedidos y Shopify =================== */
+/* =================== Configuración → Pedidos (tienda por mensajes) o Shopify (tienda por web) =================== */
 let CFG = null;
 
 export async function renderPedidosConfig(body) {
@@ -394,15 +394,16 @@ export async function renderPedidosConfig(body) {
   }
 }
 
+const SOLO_SHOPIFY = ['confirmar', 'adelanto', 'carrito'];
 const TPL = { APPROVED: ['Aprobada', 'ok'], PENDING: ['En revisión', 'warn'], REJECTED: ['Rechazada', 'bad'], PAUSED: ['Pausada', 'warn'], DISABLED: ['Desactivada', 'bad'] };
 
 function drawConfig(body) {
   const c = CFG.cfg;
   const sh = CFG.shopify;
-  body.innerHTML = `
-  <div class="ph"><div><h2>Pedidos y Shopify</h2><p>Precios, cómo llegan los pedidos de tu web y los mensajes que salen solos según el estado del pedido.</p></div></div>
-  <div class="grid" style="gap:14px">
-    <form class="card" id="pcf"><h3>Precios y envíos</h3><p class="sub">Con esto se arma el total del pedido (de la IA, de Shopify o manual).</p>
+  const shop = H.store()?.canal === 'shopify';
+  // En una tienda por mensajes no van los avisos que solo tienen sentido con la web (confirmar, adelanto y carrito de Shopify)
+  const autos = shop ? CFG.autos : CFG.autos.filter((a) => !SOLO_SHOPIFY.includes(a.key));
+  const precios = `<form class="card" id="pcf"><h3>Precios y envíos</h3><p class="sub">${shop ? 'Para los pedidos que crees a mano o desde un chat. Los de Shopify llegan con su propio precio.' : 'Con esto se arma el total de cada pedido (el que crea la IA o el que haces a mano).'}</p>
       <div class="fields3">
         <div class="field"><label>Producto</label><input name="producto" value="${e(c.producto)}"></div>
         ${[1, 2, 3, 4].map((n) => `<div class="field"><label>${n} ${n === 1 ? 'unidad' : 'unidades'} (S/)</label><input name="p${n}" type="number" step="0.5" min="0" value="${c.precios[n] ?? ''}"></div>`).join('')}
@@ -412,9 +413,8 @@ function drawConfig(body) {
         <div class="field"><label>Pedidos de provincia van por</label><select name="prov_modo"><option value="agencia" ${c.prov_modo !== 'ce_prov' ? 'selected' : ''}>Agencia (Shalom, con adelanto)</option><option value="ce_prov" ${c.prov_modo === 'ce_prov' ? 'selected' : ''}>Contraentrega provincia (courier)</option></select></div>
       </div>
       <div class="field"><label>Distritos de Lima sin cobertura (van por agencia)</label><textarea name="sin_cobertura" rows="2" class="notesbox">${e(c.sin_cobertura)}</textarea></div>
-      <div class="err" hidden></div><div><button class="send" type="submit">Guardar precios</button></div></form>
-
-    <div class="card"><h3>Conectar Shopify</h3>
+      <div class="err" hidden></div><div><button class="send" type="submit">Guardar precios</button></div></form>`;
+  const shopify = `<div class="card"><h3>Conectar Shopify</h3>
       <p class="sub">Cada compra de tu web entra sola a Pedidos (y si la apagas o cancelas en Shopify, aquí también). No hace falta instalar ninguna app.</p>
       ${sh.url ? `<div class="pshurl"><span class="mono">${e(sh.url)}</span><button class="iconbtn sm" data-copy="${e(sh.url)}">Copiar</button></div>` : '<button class="send" data-shgen>Crear mi enlace de Shopify</button>'}
       <ol class="steps">
@@ -423,12 +423,11 @@ function drawConfig(body) {
         <li>Abajo de la lista, Shopify muestra «Tus webhooks se firmarán con…». Copia esa clave y ponla en Cloudflare como secreto <b class="mono">${e(sh.secret_name)}</b> (no la pegues aquí ni en el chat).</li>
       </ol>
       <div class="${sh.secret_ok ? 'okbox' : 'warnbox'}">${sh.secret_ok ? `✓ Clave lista.${sh.last_at ? ` Último aviso de Shopify: ${e(H.listTime(sh.last_at))}.` : ' Todavía no llegó ningún pedido.'}` : `Falta el secreto <b class="mono">${e(sh.secret_name)}</b> en Cloudflare.`}</div>
-      ${sh.url ? '<button class="iconbtn sm" data-shgen style="margin-top:8px">Cambiar enlace</button>' : ''}</div>
-
-    <div class="card"><h3>Mensajes automáticos por estado</h3>
-      <p class="sub">Salen solos cuando el pedido cambia de estado (de Shopify o de WhatsApp). Si la clienta escribió en las últimas 24 h sale <b>gratis</b>; si no, sale con la <b>plantilla aprobada por Meta</b> (se cobra). Datos que se llenan solos: ${CFG.vars.map((v) => `<span class="mono">{${v}}</span>`).join(' ')}</p>
+      ${sh.url ? '<button class="iconbtn sm" data-shgen style="margin-top:8px">Cambiar enlace</button>' : ''}</div>`;
+  const mensajes = `<div class="card"><h3>Mensajes automáticos por estado</h3>
+      <p class="sub">${shop ? 'Salen solos por WhatsApp cuando entra un pedido de tu web o cambia de estado.' : 'Salen solos por WhatsApp cuando cambias el estado del pedido (agendado, en ruta, entregado…).'} Si la clienta escribió en las últimas 24 h sale <b>gratis</b>; si no, sale con la <b>plantilla aprobada por Meta</b> (se cobra). Datos que se llenan solos: ${CFG.vars.map((v) => `<span class="mono">{${v}}</span>`).join(' ')}</p>
       ${!CFG.plantillas_ok ? '<div class="warnbox">Para pedir plantillas a Meta, primero conecta el número de WhatsApp de esta tienda.</div>' : ''}
-      <div class="autos">${CFG.autos.map((a) => {
+      <div class="autos">${autos.map((a) => {
         const tp = TPL[a.tpl_status] || null;
         return `<div class="auto${a.on ? ' on' : ''}" data-ak="${a.key}">
           <div class="ahead"><label class="bswitch sm"><input type="checkbox" data-aon ${a.on ? 'checked' : ''}><span></span></label>
@@ -444,8 +443,14 @@ function drawConfig(body) {
             ${CFG.plantillas_ok ? `<button class="iconbtn sm" data-atpl>${a.tpl_name ? 'Pedir otra plantilla' : 'Pedir plantilla a Meta'}</button>` : ''}
             <button class="iconbtn sm" data-asave>Guardar</button>
           </div></div>`;
-      }).join('')}</div></div>
-  </div>`;
+      }).join('')}</div></div>`;
+  body.innerHTML = shop
+    ? `<div class="ph"><div><h2>Shopify</h2><p>Esta tienda vende por su web. Aquí conectas Shopify y eliges los mensajes de WhatsApp que salen solos con cada pedido.</p></div></div>
+      <div class="grid" style="gap:14px">${shopify}${mensajes}${precios}
+        <p class="note">¿Esta tienda vende por chat? Cámbiala a «Por mensajes de WhatsApp» en <button class="linkbtn" data-cfg="general">General</button>.</p></div>`
+    : `<div class="ph"><div><h2>Pedidos</h2><p>Precios, envíos y los mensajes que salen solos según el estado del pedido.</p></div></div>
+      <div class="grid" style="gap:14px">${precios}${mensajes}
+        <p class="note">¿Esta tienda vende por su web? Cámbiala a «Por Shopify» en <button class="linkbtn" data-cfg="general">General</button>.</p></div>`;
   const f = body.querySelector('#pcf');
   f.onsubmit = async (ev) => {
     ev.preventDefault();

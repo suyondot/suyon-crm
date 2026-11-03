@@ -1556,6 +1556,7 @@ function addStoreModal() {
     <form id="nf" class="grid" style="gap:12px">
       ${cos.length > 1 ? `<div class="field"><label for="nco">Empresa</label><select id="nco" name="company">${cos.map((c) => `<option value="${c.id}" ${c.id === def ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>` : `<input type="hidden" name="company" value="${def}">`}
       <div class="field"><label for="nname">Nombre de la tienda</label><input id="nname" name="name" required placeholder="Ej: Pantalón de rayas"></div>
+      <div class="field"><label>¿Cómo vende esta tienda?</label>${canalPicker('mensajes')}</div>
       <div class="field"><label>Color</label><div class="swatches" id="nsw">${STORE_COLORS.map((col, i) => `<button type="button" data-swatch="${col}" aria-pressed="${i === 0}" style="background:${col}" aria-label="Color ${i + 1}"></button>`).join('')}</div></div>
       <div class="err" hidden></div>
       <div class="row"><button type="button" class="iconbtn" data-close>Cancelar</button><button class="send" type="submit">Crear tienda</button></div>
@@ -1568,7 +1569,7 @@ function addStoreModal() {
     $$('#nsw button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
   };
   formHandler($('#nf'), async (d) => {
-    const r = await api('POST', `/companies/${d.company}/stores`, { name: d.name, color });
+    const r = await api('POST', `/companies/${d.company}/stores`, { name: d.name, color, canal: d.canal });
     setMe(r);
     closeModal();
     S.storeMenu = false;
@@ -1576,15 +1577,25 @@ function addStoreModal() {
     S.view = 'config';
     S.cfgTab = 'numero';
     enterStore();
-    toast('Tienda creada. Ahora pon los datos de su número.');
+    toast(d.canal === 'shopify' ? 'Tienda creada. Pon los datos de su número y luego conecta Shopify.' : 'Tienda creada. Ahora pon los datos de su número.');
   });
   $('#nname').focus();
+}
+
+// Los dos caminos: vender por chat (bot + IA Suyon) o por la web (Shopify + avisos por WhatsApp)
+function canalPicker(cur) {
+  const opts = [
+    ['mensajes', '💬 Por mensajes de WhatsApp', 'La clienta llega por un anuncio, el bot y la IA Suyon la atienden y cierran la venta en el chat. El pedido se crea solo.'],
+    ['shopify', '🛍️ Por Shopify (mi web)', 'La clienta compra en tu web. El pedido entra solo y por WhatsApp le llegan la confirmación, el envío y el carrito olvidado.'],
+  ];
+  return `<div class="canales" role="radiogroup">${opts.map(([v, t, d]) => `<label class="canal"><input type="radio" name="canal" value="${v}" ${cur === v ? 'checked' : ''}><b>${t}</b><span>${d}</span></label>`).join('')}</div>`;
 }
 
 /* =================== CONFIGURACIÓN =================== */
 function cfgTabs() {
   const tabs = [];
-  if (owner()) tabs.push(['general', 'General'], ['numero', 'Número de WhatsApp'], ['perfil', 'Perfil de WhatsApp'], ['pedidoscfg', 'Pedidos y Shopify'], ['etiquetas', 'Etiquetas'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
+  // La pestaña de pedidos cambia según cómo vende la tienda: por mensajes (Pedidos) o por su web (Shopify)
+  if (owner()) tabs.push(['general', 'General'], ['numero', 'Número de WhatsApp'], ['perfil', 'Perfil de WhatsApp'], ['pedidoscfg', store()?.canal === 'shopify' ? 'Shopify' : 'Pedidos'], ['etiquetas', 'Etiquetas'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
   if (S.me.companies.some((c) => c.role === 'dueno')) tabs.push(['empresa', 'Empresas']);
   tabs.push(['cuenta', 'Mi cuenta']);
   return tabs;
@@ -1625,14 +1636,9 @@ function cfgGeneral() {
       </div>
       <p class="note" style="margin:6px 0 0">La zona horaria decide los horarios del bot (por ejemplo, seguimientos solo de 8 a. m. a 10 p. m.), la hora que ve la IA para el corte HOY/MAÑANA y el gasto de IA por día. La app se ve en español.</p>
     </div>
-    <div class="card"><h3>Punto de venta</h3>
-      <p class="sub">No va aparte: los pedidos se harán aquí mismo, en la sección <b>Pedidos</b>, y ya quedan vinculados a esta tienda.</p>
-      <ul class="stlist">
-        <li><span class="y">✓</span><span>Cada pedido sale de su chat, con los datos que guardó la IA (talla, colores, distrito, nombre, DNI…).</span></li>
-        <li><span class="y">✓</span><span>Precios en ${esc(cur.symbol)} y fechas con la hora de ${esc(tzName(st.timezone))}.</span></li>
-        <li><span class="y">✓</span><span>Guarda el anuncio de origen para mandar la Compra a Meta y ver el costo real por venta.</span></li>
-        <li><span class="n">•</span><span>Pendiente de construir: Pedidos (Lima y Provincia), Copiar orden y Sheet de Shalom.</span></li>
-      </ul>
+    <div class="card"><h3>Cómo vende esta tienda</h3>
+      <p class="sub">Decide qué ves en Configuración: con mensajes, la pestaña <b>Pedidos</b>; con Shopify, la pestaña <b>Shopify</b> para conectar tu web. Los pedidos siempre caen en la sección <b>Pedidos</b>, con precios en ${esc(cur.symbol)} y la hora de ${esc(tzName(st.timezone))}.</p>
+      ${canalPicker(st.canal || 'mensajes')}
     </div>
     <div class="err" hidden></div>
     <div class="savebar"><span class="note"></span><button class="send" type="submit">Guardar</button></div>

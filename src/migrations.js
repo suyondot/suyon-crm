@@ -399,6 +399,11 @@ export const MIGRATIONS = [
       `ALTER TABLE stores ADD COLUMN shopify_last_at INTEGER`,
     ],
   },
+  {
+    id: 8,
+    name: 'cómo vende la tienda: mensajes o shopify',
+    sql: [`ALTER TABLE stores ADD COLUMN canal TEXT NOT NULL DEFAULT 'mensajes'`],
+  },
 ];
 
 let ready = null;

@@ -34,7 +34,7 @@ function publicStore(s) {
   const out = {
     id: s.id, company_id: s.company_id, name: s.name, color: s.color, phone_display: s.phone_display,
     status: s.status, verified_name: s.verified_name, role: s.role, rev: s.rev,
-    timezone: s.timezone, country: s.country, currency: s.currency, language: s.language, hour12: s.hour12,
+    timezone: s.timezone, country: s.country, currency: s.currency, language: s.language, hour12: s.hour12, canal: s.canal || 'mensajes',
   };
   if (s.role === 'dueno') {
     Object.assign(out, {
@@ -355,6 +355,8 @@ api.post('/companies/:id/members/:userId/reset', async (c) => {
 
 /* ---------------- Tiendas (números de WhatsApp) ---------------- */
 
+const CANALES = ['mensajes', 'shopify'];
+
 function storeInput(b, partial) {
   const out = {};
   if (!partial || 'name' in b) {
@@ -393,6 +395,11 @@ function storeInput(b, partial) {
     out.language = b.language;
   }
   if ('hour12' in b) out.hour12 = b.hour12 ? 1 : 0;
+  // Cómo vende: por mensajes de WhatsApp (bot + IA) o por su web (Shopify)
+  if ('canal' in b) {
+    if (!CANALES.includes(b.canal)) fail(400, 'Elige cómo vende la tienda: por mensajes o por Shopify.');
+    out.canal = b.canal;
+  }
   if (out.phone_number_id && out.waba_id && out.phone_number_id === out.waba_id) {
     fail(400, 'Los dos identificadores son iguales. El de la cuenta de WhatsApp Business es otro número: lo ves en la dirección del Administrador de WhatsApp (asset_id=…).');
   }
@@ -407,8 +414,8 @@ api.post('/companies/:id/stores', async (c) => {
     fail(409, 'Ese número ya está en otra tienda.');
   }
   const r = await db.prepare(
-    'INSERT INTO stores (company_id, name, color, phone_display, phone_number_id, waba_id, token_secret, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(co.id, s.name, s.color || '#7A1F35', s.phone_display ?? null, s.phone_number_id ?? null, s.waba_id ?? null, s.token_secret || 'WA_TOKEN', now()).run();
+    'INSERT INTO stores (company_id, name, color, phone_display, phone_number_id, waba_id, token_secret, canal, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(co.id, s.name, s.color || '#7A1F35', s.phone_display ?? null, s.phone_number_id ?? null, s.waba_id ?? null, s.token_secret || 'WA_TOKEN', s.canal || 'mensajes', now()).run();
   const storeId = r.meta.last_row_id;
   await db.batch(DEFAULT_LABELS.map(([name, color, auto], i) =>
     db.prepare('INSERT INTO labels (store_id, name, color, auto, sort, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(storeId, name, color, auto, i, now())

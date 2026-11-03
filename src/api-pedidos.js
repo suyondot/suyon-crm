@@ -230,6 +230,7 @@ r.patch('/stores/:id/pedidos-config', async (c) => {
 
 r.post('/stores/:id/shopify/enlace', async (c) => {
   const st = await storeFor(c, c.req.param('id'), 'config');
+  if ((st.canal || 'mensajes') !== 'shopify') fail(400, 'Esta tienda vende por mensajes. Para conectar tu web, cámbiala a «Por Shopify» en Configuración → General.');
   const key = randomToken(18);
   await c.env.DB.prepare('UPDATE stores SET shopify_key = ? WHERE id = ?').bind(key, st.id).run();
   const fresh = await c.env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(st.id).first();

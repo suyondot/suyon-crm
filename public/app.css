@@ -1044,3 +1044,14 @@ a.iconbtn{text-decoration:none;color:inherit}
 .pillsm.seg-vip{background:var(--accent-soft);color:var(--accent)}
 .pillsm.seg-reactivar{background:var(--warn-soft);color:var(--warn)}
 @media (max-width:860px){.clikpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.linkbtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;font-weight:600;text-decoration:underline;cursor:pointer}
+
+/* Cómo vende la tienda (mensajes o Shopify) */
+.canales{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.canal{position:relative;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:4px;cursor:pointer;background:var(--surface);transition:border-color .15s,background .15s}
+.canal input{position:absolute;opacity:0;pointer-events:none}
+.canal b{font-size:14px;display:flex;gap:8px;align-items:center}
+.canal span{font-size:12.5px;color:var(--muted);line-height:1.4}
+.canal:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.canal:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:600px){.canales{grid-template-columns:1fr}}

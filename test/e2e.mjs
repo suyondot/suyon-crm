@@ -835,6 +835,13 @@ try {
     assert.equal(list.estados.en_ruta.n, 1);
   });
   await step('Shopify: enlace, firma y pedido que entra solo (Lima → confirmar)', async () => {
+    // tienda por mensajes: no hay enlace de Shopify; se cambia a «Por Shopify» en General
+    const me0 = await call('GET', '/api/me');
+    assert.equal(me0.stores.find((x) => x.id === store.id).canal, 'mensajes');
+    assert.equal((await call('POST', `/api/stores/${store.id}/shopify/enlace`)).status, 400);
+    assert.equal((await call('PATCH', `/api/stores/${store.id}`, { canal: 'web' })).status, 400);
+    const ch = await call('PATCH', `/api/stores/${store.id}`, { canal: 'shopify' });
+    assert.equal(ch.stores.find((x) => x.id === store.id).canal, 'shopify');
     const r = await call('POST', `/api/stores/${store.id}/shopify/enlace`);
     shopUrl = r.shopify.url.replace(/^https?:\/\/[^/]+/, BASE);
     assert.ok(r.shopify.secret_ok);
@@ -900,6 +907,13 @@ try {
     await wait(800);
     await call('POST', '/__test/jobs?shift=' + 31 * 60e3);
     await until(async () => (await call('GET', `/api/stores/${store.id}/avisos`)).events.some((e) => /No se mandó «Carrito abandonado/.test(e.title)));
+    // si la tienda vuelve a «por mensajes», lo que mande Shopify no crea pedidos
+    await call('PATCH', `/api/stores/${store.id}`, { canal: 'mensajes' });
+    const before = (await call('GET', `/api/stores/${store.id}/pedidos?vista=pendientes`)).pedidos.length;
+    const res = await shopHook('orders/create', { id: 7777, name: '#1099', total_price: '89.00', phone: '+51 913 333 333', shipping_address: { first_name: 'Eva', phone: '913333333', city: 'Lince', province: 'Lima' }, line_items: [{ title: 'Pantalón formal', variant_title: 'M / Negro', quantity: 1 }] }, 'shp-secret', shopUrl);
+    assert.equal(res.status, 200);
+    assert.equal((await call('GET', `/api/stores/${store.id}/pedidos?vista=pendientes`)).pedidos.length, before);
+    assert.ok((await call('GET', `/api/stores/${store.id}/avisos`)).events.some((e) => /no se guardó/.test(e.title)));
   });
   await step('guardar el lienzo valida los bloques', async () => {
     const f = await call('GET', `/api/bot/flows/${flowId}`);

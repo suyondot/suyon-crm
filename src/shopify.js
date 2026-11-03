@@ -73,6 +73,11 @@ export async function handleShopify(c) {
   const env = c.env;
   const store = await env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(Number(c.req.param('storeId'))).first();
   if (!store || !store.shopify_key || !safeEqual(store.shopify_key, c.req.param('key'))) return c.text('no', 404);
+  if ((store.canal || 'mensajes') !== 'shopify') {
+    // La tienda se cambió a «por mensajes»: no se crean pedidos de la web (200 para que Shopify no reintente)
+    await notify(env, store.id, { kind: 'aviso', title: 'Llegó un pedido de Shopify y no se guardó', body: 'Esta tienda está como «Por mensajes de WhatsApp». Si vende por su web, cámbiala a «Por Shopify» en Configuración → General.', dedupe: true });
+    return c.text('esta tienda vende por mensajes', 200);
+  }
   const raw = await c.req.arrayBuffer();
   const secret = env[store.shopify_secret || 'SHOPIFY_SECRET'];
   if (!secret) {
