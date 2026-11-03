@@ -5,7 +5,7 @@ import { storeFor, chatFor, requireUser } from './auth.js';
 import { mediaKey } from './webhook.js';
 import { kindForMime, SEND_RULES } from './whatsapp.js';
 import {
-  NODE_TYPES, IA_MODELS, loadSettings, loadFlow, flowStats, startFlow, cancelJobs, testIA, addLabel, onInbound, runJob,
+  NODE_TYPES, IA_MODELS, PROMPT_VARS, entregaDia, loadSettings, loadFlow, flowStats, startFlow, cancelJobs, testIA, addLabel, onInbound, runJob,
 } from './bot.js';
 import { flowPantalon, PROMPT_PANTALON, KNOWLEDGE_PANTALON, TEMPLATE_ASSETS } from './bot-template.js';
 
@@ -40,6 +40,10 @@ const SETTING_RULES = {
   pay_titular: (v) => clip(String(v || '').trim(), 80),
   pay_bcp: (v) => clip(String(v || '').trim(), 40),
   pay_cci: (v) => clip(String(v || '').trim(), 40),
+  corte_h: (v) => Math.min(Math.max(Math.round(Number(v)), 0), 23) || 0,
+  entrega_sab: (v) => (v ? 1 : 0),
+  entrega_dom: (v) => (v ? 1 : 0),
+  entrega_horario: (v) => clip(String(v || '').trim(), 60) || 'entre 2 y 8 p.m.',
 };
 
 async function saveSettings(env, storeId, patch) {
@@ -75,6 +79,8 @@ r.get('/stores/:id/bot', async (c) => {
     usage,
     today: today(st.timezone),
     models: Object.entries(IA_MODELS).map(([id, m]) => ({ id, ...m })),
+    prompt_vars: PROMPT_VARS,
+    entrega_ahora: entregaDia(now(), settings.timezone, settings),
   });
 });
 

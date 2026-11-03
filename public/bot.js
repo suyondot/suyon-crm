@@ -957,6 +957,11 @@ function drawIA() {
       <div class="field"><label for="pt">A nombre de</label><input id="pt" name="pay_titular" value="${e(s.pay_titular || '')}"></div>
       <div class="field"><label for="pb">Cuenta BCP</label><input id="pb" name="pay_bcp" value="${e(s.pay_bcp || '')}"></div>
       <div class="field"><label for="pc">CCI</label><input id="pc" name="pay_cci" value="${e(s.pay_cci || '')}"></div></div></div>
+    <div class="card"><h3>Entregas en Lima</h3><p class="sub">El sistema calcula el día de entrega y lo pone donde el prompt dice {entrega}. Así la IA no se equivoca con la hora.</p><div class="fields3">
+      <div class="field"><label for="bco">Hora de corte (antes → HOY)</label><select id="bco" name="corte_h">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${Number(s.corte_h) === h ? 'selected' : ''}>${h === 0 ? '12 a. m.' : h < 12 ? h + ' a. m.' : h === 12 ? '12 p. m.' : h - 12 + ' p. m.'}</option>`).join('')}</select></div>
+      <div class="field"><label for="bhe">Horario de entrega</label><input id="bhe" name="entrega_horario" value="${e(s.entrega_horario || '')}" placeholder="entre 2 y 8 p.m."></div>
+      <div class="field"><label>Días que entregan</label><div style="display:flex;gap:14px;padding:8px 0"><label style="display:flex;gap:6px;align-items:center;font-weight:500"><input type="checkbox" name="entrega_sab" ${s.entrega_sab ? 'checked' : ''}> Sábado</label><label style="display:flex;gap:6px;align-items:center;font-weight:500"><input type="checkbox" name="entrega_dom" ${s.entrega_dom ? 'checked' : ''}> Domingo</label></div></div></div>
+      <div class="okbox" id="bent">Si una clienta de Lima confirma ahora, le llega <b>${e(B.data.entrega_ahora || '')}</b>, ${e(String(s.entrega_horario || '').replace(/\.+$/, ''))}.</div></div>
     <div class="card"><h3>Comportamiento</h3><div class="fields3">
       <div class="field"><label for="bd">Esperar antes de responder (seg)</label><input id="bd" name="ia_delay_s" type="number" min="0" max="20" value="${s.ia_delay_s}"></div>
       <div class="field"><label for="bh">Memoria del chat (mensajes)</label><input id="bh" name="ia_history" type="number" min="4" max="100" value="${s.ia_history}"></div>
@@ -964,19 +969,91 @@ function drawIA() {
       <div class="field"><label for="bft">Mensaje de ese seguimiento</label><input id="bft" name="ia_follow_text" value="${e(s.ia_follow_text || '')}"></div>
       <p class="note" style="margin:6px 0 0">La IA manda cada mensaje por separado, como en tu prompt («3 mensajes separados»). Las fotos de la clienta las puede ver; las notas de voz todavía no.</p></div>
     <div class="card"><div class="brow"><h3 style="flex:1">Prompt (copiado de tu Botcake)</h3><span class="note mono" id="bpc">${(s.ia_prompt || '').length.toLocaleString('en-US')} caracteres</span><button type="button" class="iconbtn" data-bact="resetprompt">Restaurar el de Botcake</button></div>
-      <p class="sub">Para otro producto, copia este y cambia solo lo del producto (precios, tallas, colores, stock, archivos). {ahora} y {etiquetas} se llenan solos.</p>
-      <textarea name="ia_prompt" id="bprompt" class="bcode" rows="22">${e(s.ia_prompt || '')}</textarea></div>
+      <p class="sub">Para otro producto, copia este y cambia solo lo del producto (precios, tallas, colores, stock, archivos). Escribe <b class="mono">{</b> para insertar un dato que se llena solo (fecha, hora, día de entrega, etiquetas, talla…).</p>
+      <div class="bvars">${(B.data.prompt_vars || []).map(([k, d]) => `<button type="button" data-pvar="${k}" title="${e(d)}">{${k}}</button>`).join('')}</div>
+      <div class="bpwrap"><textarea name="ia_prompt" id="bprompt" class="bcode" rows="22">${e(s.ia_prompt || '')}</textarea><div class="bvmenu" id="bvmenu" hidden role="listbox" aria-label="Datos para insertar"></div></div></div>
     <div class="card"><h3>Conocimiento (tus 2 archivos de Botcake)</h3><textarea name="ia_knowledge" class="bcode" rows="12">${e(s.ia_knowledge || '')}</textarea></div>
     <div class="savebar"><span class="note" id="biast"></span><button class="send" type="submit">Guardar IA Suyon</button></div>
     ${B.data.usage.length ? `<div class="card"><h3>Gasto de los últimos días</h3><table class="btable"><thead><tr><th>Día</th><th>Respuestas</th><th>Tokens entrada</th><th>Tokens salida</th><th>US$</th></tr></thead><tbody>${B.data.usage.map((x) => `<tr><td>${x.day}</td><td>${fmt(x.calls)}</td><td>${fmt(x.in_tokens)}</td><td>${fmt(x.out_tokens)}</td><td>${x.cost.toFixed(3)}</td></tr>`).join('')}</tbody></table></div>` : ''}
   </form>`;
   const f = C.$('#biaf');
-  C.$('#bprompt').oninput = (ev) => (C.$('#bpc').textContent = ev.target.value.length.toLocaleString('en-US') + ' caracteres');
+  wirePromptVars();
   f.onsubmit = async (ev) => {
     ev.preventDefault();
     const d = Object.fromEntries(new FormData(f));
+    d.entrega_sab = !!d.entrega_sab;
+    d.entrega_dom = !!d.entrega_dom;
     await saveSettings(d, 'IA Suyon guardada');
   };
+}
+
+// Escribir { en el prompt abre la lista de datos que se llenan solos (como en Botcake)
+function wirePromptVars() {
+  const ta = C.$('#bprompt');
+  const menu = C.$('#bvmenu');
+  const vars = B.data.prompt_vars || [];
+  let open = false;
+  let sel = 0;
+  let start = -1;
+  const count = () => (C.$('#bpc').textContent = ta.value.length.toLocaleString('en-US') + ' caracteres');
+  const insert = (k) => {
+    const a = start >= 0 ? start : ta.selectionStart;
+    const b = ta.selectionStart;
+    ta.setRangeText(`{${k}}`, a, b, 'end');
+    close();
+    ta.focus();
+    count();
+  };
+  const close = () => {
+    open = false;
+    start = -1;
+    menu.hidden = true;
+  };
+  const show = (q = '') => {
+    const list = vars.filter(([k, d]) => !q || k.includes(q) || d.toLowerCase().includes(q));
+    if (!list.length) return close();
+    sel = Math.min(sel, list.length - 1);
+    menu.innerHTML = list.map(([k, d], i) => `<button type="button" role="option" data-vk="${k}" aria-selected="${i === sel}"><b class="mono">{${k}}</b><span>${e(d)}</span></button>`).join('');
+    menu.hidden = false;
+    open = true;
+  };
+  ta.addEventListener('input', () => {
+    count();
+    const pos = ta.selectionStart;
+    const before = ta.value.slice(0, pos);
+    const m = /\{(\w*)$/.exec(before);
+    if (m) {
+      start = pos - m[0].length;
+      show(m[1].toLowerCase());
+    } else close();
+  });
+  ta.addEventListener('keydown', (ev) => {
+    if (!open) return;
+    const items = [...menu.querySelectorAll('[data-vk]')];
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      sel = (sel + (ev.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items.forEach((x, i) => x.setAttribute('aria-selected', String(i === sel)));
+      items[sel]?.scrollIntoView({ block: 'nearest' });
+    } else if (ev.key === 'Enter' || ev.key === 'Tab') {
+      ev.preventDefault();
+      if (items[sel]) insert(items[sel].dataset.vk);
+    } else if (ev.key === 'Escape') close();
+  });
+  ta.addEventListener('blur', () => setTimeout(close, 150));
+  menu.addEventListener('mousedown', (ev) => {
+    const b = ev.target.closest('[data-vk]');
+    if (!b) return;
+    ev.preventDefault();
+    insert(b.dataset.vk);
+  });
+  C.$('.bvars')?.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-pvar]');
+    if (!b) return;
+    start = -1;
+    ta.focus();
+    insert(b.dataset.pvar);
+  });
 }
 
 /* =================== Archivos =================== */

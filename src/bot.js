@@ -32,6 +32,10 @@ export const DEFAULT_SETTINGS = {
   pay_titular: '',
   pay_bcp: '',
   pay_cci: '',
+  corte_h: 13, // pedidos de Lima confirmados antes de esta hora llegan HOY
+  entrega_sab: 1, // sábado se entrega (con la misma hora de corte)
+  entrega_dom: 0, // domingo no se entrega
+  entrega_horario: 'entre 2 y 8 p.m.',
 };
 
 /* ---------------- Utilidades ---------------- */
@@ -97,7 +101,8 @@ export function recognize(text, options) {
 export async function loadSettings(env, storeId) {
   const row = await env.DB.prepare('SELECT * FROM bot_settings WHERE store_id = ?').bind(storeId).first();
   const st = await env.DB.prepare('SELECT timezone, language, hour12 FROM stores WHERE id = ?').bind(storeId).first();
-  return { ...DEFAULT_SETTINGS, ...(row || {}), timezone: st?.timezone || DEFAULT_TZ, language: st?.language || 'es', hour12: st?.hour12 ?? 1, store_id: storeId };
+  const saved = Object.fromEntries(Object.entries(row || {}).filter(([k, v]) => v != null || DEFAULT_SETTINGS[k] == null));
+  return { ...DEFAULT_SETTINGS, ...saved, timezone: st?.timezone || DEFAULT_TZ, language: st?.language || 'es', hour12: st?.hour12 ?? 1, store_id: storeId };
 }
 
 export async function loadFlow(env, flowId) {
@@ -456,6 +461,51 @@ export async function onInbound(env, ctx, store, chatId, msg, { sim = false } = 
 /* ---------------- IA Suyon ---------------- */
 
 const LANGS = { es: 'español', pt: 'portugués', en: 'inglés' };
+const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+// Qué día llega un pedido de Lima si se confirma en este momento (lo calcula el sistema, no la IA)
+export function entregaDia(t, tz, { corte_h = 13, entrega_sab = 1, entrega_dom = 0 } = {}) {
+  const p = localParts(t, tz);
+  const ok = (dow) => (dow === 6 ? !!entrega_sab : dow === 0 ? !!entrega_dom : true);
+  let add = ok(p.dow) && p.h < Number(corte_h ?? 13) ? 0 : 1;
+  while (add < 8 && !ok((p.dow + add) % 7)) add++;
+  const dow = (p.dow + add) % 7;
+  if (add === 0) return 'HOY';
+  if (add === 1) return dow === 1 ? 'MAÑANA lunes' : 'MAÑANA';
+  return `el ${DIAS[dow].toUpperCase()}`;
+}
+
+// Variables que se pueden usar en el prompt con {llave}
+export const PROMPT_VARS = [
+  ['ahora', 'Fecha y hora de la tienda'], ['fecha', 'Fecha de hoy'], ['hora', 'Hora actual'], ['dia', 'Día de la semana'],
+  ['entrega', 'Día de entrega en Lima (HOY / MAÑANA / el LUNES)'], ['horario_entrega', 'Horario de entrega en Lima'],
+  ['etiquetas', 'Etiquetas de la clienta'], ['yape', 'Yape / Plin'], ['titular', 'A nombre de'], ['bcp', 'Cuenta BCP'], ['cci', 'CCI'],
+  ['talla', 'Talla que guardó el bot'], ['colores', 'Colores elegidos'], ['cantidad', 'Cantidad'], ['destino', 'Destino'], ['distrito', 'Distrito'],
+  ['nombre', 'Nombre para el pedido'], ['celular', 'Celular para el pedido'], ['dni', 'DNI'], ['direccion', 'Dirección'], ['sede_shalom', 'Sede Shalom'],
+];
+const DATA_KEYS = ['talla', 'colores', 'cantidad', 'destino', 'distrito', 'nombre', 'celular', 'dni', 'direccion', 'sede_shalom'];
+
+function fillPrompt(text, settings, labels, vars) {
+  const tz = settings.timezone;
+  const p = localParts(now(), tz);
+  const h12 = settings.hour12 !== 0;
+  const hh = h12 ? `${((p.h + 11) % 12) + 1}:${String(p.m).padStart(2, '0')} ${p.h < 12 ? 'a. m.' : 'p. m.'}` : `${String(p.h).padStart(2, '0')}:${String(p.m).padStart(2, '0')}`;
+  const map = {
+    ahora: nowText(tz, h12),
+    fecha: `${DIAS[p.dow]} ${String(p.d).padStart(2, '0')}/${String(p.mo).padStart(2, '0')}/${p.y}`,
+    hora: hh,
+    dia: DIAS[p.dow],
+    entrega: entregaDia(now(), tz, settings),
+    horario_entrega: settings.entrega_horario || DEFAULT_SETTINGS.entrega_horario,
+    etiquetas: labels.length ? labels.join(', ') : 'ninguna',
+    yape: settings.pay_yape || '[FALTA YAPE]',
+    titular: settings.pay_titular || '[FALTA TITULAR]',
+    bcp: settings.pay_bcp || '[FALTA BCP]',
+    cci: settings.pay_cci || '[FALTA CCI]',
+  };
+  for (const k of DATA_KEYS) map[k] = vars[k] ? String(vars[k]) : '(todavía no lo dijo)';
+  return String(text).replace(/\{(\w+)\}/g, (m, k) => (k in map ? map[k] : m));
+}
 
 function nowText(tz = DEFAULT_TZ, hour12 = true) {
   const p = localParts(now(), tz);
@@ -469,18 +519,15 @@ function nowText(tz = DEFAULT_TZ, hour12 = true) {
 export function buildSystem(settings, node, labels, vars, assets) {
   const base = settings.ia_prompt || PROMPT_PANTALON;
   const knowledge = settings.ia_knowledge ?? KNOWLEDGE_PANTALON;
-  const filled = base
-    .replace(/\{ahora\}/g, nowText(settings.timezone, settings.hour12 !== 0))
-    .replace(/\{etiquetas\}/g, labels.length ? labels.join(', ') : 'ninguna')
-    .replace(/\{yape\}/g, settings.pay_yape || '[FALTA YAPE]')
-    .replace(/\{titular\}/g, settings.pay_titular || '[FALTA TITULAR]')
-    .replace(/\{bcp\}/g, settings.pay_bcp || '[FALTA BCP]')
-    .replace(/\{cci\}/g, settings.pay_cci || '[FALTA CCI]');
+  const filled = fillPrompt(base, settings, labels, vars);
   const cases = (node.cases || []).map((c) => `- "${c.id}": ${c.when}`).join('\n');
   const known = Object.entries(vars).filter(([k, v]) => v && k !== 'respuesta').map(([k, v]) => `${k}: ${v}`).join(' · ');
   return `${filled}
 
-${knowledge ? `## CONOCIMIENTO\n${knowledge}\n\n` : ''}## DATOS YA GUARDADOS DE ESTA CLIENTA
+${knowledge ? `## CONOCIMIENTO\n${fillPrompt(knowledge, settings, labels, vars)}\n\n` : ''}## AHORA MISMO (calculado por el sistema, úsalo tal cual)
+Si una clienta de Lima confirma ahora, su pedido llega ${entregaDia(now(), settings.timezone, settings)}, ${String(settings.entrega_horario || DEFAULT_SETTINGS.entrega_horario).replace(/\.+$/, '')}. Donde tu guía diga [HOY/MAÑANA], escribe: ${entregaDia(now(), settings.timezone, settings)}.
+
+## DATOS YA GUARDADOS DE ESTA CLIENTA
 ${known || 'ninguno'}
 
 ## ARCHIVOS DISPONIBLES AHORA (solo puedes adjuntar estas claves)

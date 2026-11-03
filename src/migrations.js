@@ -306,6 +306,16 @@ export const MIGRATIONS = [
       `ALTER TABLE stores ADD COLUMN hour12 INTEGER NOT NULL DEFAULT 1`,
     ],
   },
+  {
+    id: 6,
+    name: 'entregas lima (corte y días)',
+    sql: [
+      `ALTER TABLE bot_settings ADD COLUMN corte_h INTEGER`,
+      `ALTER TABLE bot_settings ADD COLUMN entrega_sab INTEGER`,
+      `ALTER TABLE bot_settings ADD COLUMN entrega_dom INTEGER`,
+      `ALTER TABLE bot_settings ADD COLUMN entrega_horario TEXT`,
+    ],
+  },
 ];
 
 let ready = null;

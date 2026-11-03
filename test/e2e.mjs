@@ -522,6 +522,15 @@ try {
     assert.equal(fitWindow(t, 8, 22), Date.UTC(2026, 10, 3, 13, 0), 'Lima: 8 a. m. = 13:00 UTC');
     assert.equal(fitWindow(Date.UTC(2026, 10, 3, 12, 0), 8, 22, 'America/Mexico_City'), Date.UTC(2026, 10, 3, 14, 0), 'México: 6 a. m. → 8 a. m.');
     assert.equal(fitWindow(Date.UTC(2026, 10, 3, 15, 0), 8, 22, 'America/Bogota'), Date.UTC(2026, 10, 3, 15, 0), 'dentro del horario no cambia');
+    const { entregaDia } = await import('../src/bot.js');
+    const L = (d, h) => Date.UTC(2026, 10, d, h + 5, 0); // hora de Lima → UTC
+    assert.equal(entregaDia(L(3, 10), 'America/Lima'), 'HOY', 'martes 10 a. m.');
+    assert.equal(entregaDia(L(3, 14), 'America/Lima'), 'MAÑANA', 'martes 2 p. m.');
+    assert.equal(entregaDia(L(6, 15), 'America/Lima'), 'MAÑANA', 'viernes 3 p. m. → sábado');
+    assert.equal(entregaDia(L(7, 10), 'America/Lima'), 'HOY', 'sábado 10 a. m.');
+    assert.equal(entregaDia(L(7, 14), 'America/Lima'), 'el LUNES', 'sábado 2 p. m.');
+    assert.equal(entregaDia(L(8, 10), 'America/Lima'), 'MAÑANA lunes', 'domingo');
+    assert.equal(entregaDia(L(3, 14), 'America/Lima', { corte_h: 15 }), 'HOY', 'corte a las 3 p. m.');
     const { localDay } = await import('../src/util.js');
     assert.equal(localDay(Date.UTC(2026, 10, 3, 3, 0)), '2026-11-02', 'el día es el de Lima');
     assert.equal(parseReply('hola').valid, false, 'texto suelto no se manda');
@@ -596,6 +605,9 @@ try {
     assert.match(sys, /Eres la asesora de ventas de Porte Perú/);
     assert.match(sys, /999 111 222/);
     assert.match(sys, /ETIQUETAS DE ESTA CLIENTA: .*Talla S/);
+    assert.ok(!/\{(entrega|ahora|etiquetas|yape)\}/.test(sys), 'las llaves se llenan');
+    assert.match(sys, /escribe exactamente: (HOY|MAÑANA|MAÑANA lunes|el LUNES) \(/);
+    assert.match(sys, /AHORA MISMO/);
     const ia = (await msgsOf(c.id)).filter((m) => m.sender === 'ia');
     assert.equal(ia.length, 2);
     assert.equal(JSON.parse(c.bot_vars).colores, 'Negro');
@@ -735,6 +747,16 @@ try {
     assert.ok(!/a\. m\.|p\. m\./.test(sys.match(/AHORA[^\n]*/)?.[0] || ''), 'hora en 24 h');
     me = await call('PATCH', `/api/stores/${store.id}`, { country: 'PE', timezone: 'America/Lima', currency: 'PEN', language: 'es', hour12: true });
     assert.equal(me.stores.find((s) => s.id === store.id).timezone, 'America/Lima');
+  });
+  await step('entregas en Lima: hora de corte y días se guardan', async () => {
+    const r = await call('PATCH', `/api/stores/${store.id}/bot/settings`, { corte_h: 14, entrega_sab: false, entrega_horario: 'de 3 a 9 p.m.' });
+    assert.equal(r.settings.corte_h, 14);
+    assert.equal(r.settings.entrega_sab, 0);
+    assert.equal(r.settings.entrega_horario, 'de 3 a 9 p.m.');
+    const b = await call('GET', `/api/stores/${store.id}/bot`);
+    assert.ok(b.prompt_vars.some(([k]) => k === 'entrega'));
+    assert.match(b.entrega_ahora, /HOY|MAÑANA|LUNES|MARTES/);
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { corte_h: 13, entrega_sab: true, entrega_horario: 'entre 2 y 8 p.m.' });
   });
   await step('guardar el lienzo valida los bloques', async () => {
     const f = await call('GET', `/api/bot/flows/${flowId}`);
