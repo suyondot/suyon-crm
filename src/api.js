@@ -2,7 +2,7 @@
 import { Hono } from 'hono';
 import {
   now, fail, randomToken, sha256hex, hashPassword, safeEqual, cleanEmail, validEmail, clip,
-  ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError, windowOpen, GENERAL,
+  ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError, windowOpen, GENERAL, localDay,
 } from './util.js';
 import { createSession, destroySession, currentUser, requireUser, checkPassword, loadAccess, storeFor, companyFor, chatFor } from './auth.js';
 import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES } from './whatsapp.js';
@@ -773,6 +773,126 @@ api.delete('/chats/:id/labels/:labelId', async (c) => {
   ]);
   await bump(c.env, store.id);
   return c.json({ ok: true });
+});
+
+/* ---------------- Clientes ---------------- */
+
+// Datos que guardó el bot (talla, colores, distrito…): la asesora los puede corregir o borrar
+api.put('/chats/:id/datos', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const b = await body(c);
+  if (!b.datos || typeof b.datos !== 'object' || Array.isArray(b.datos)) fail(400, 'Datos inválidos.');
+  const out = {};
+  for (const [k, v] of Object.entries(b.datos).slice(0, 40)) {
+    const key = String(k).trim().toLowerCase().replace(/\s+/g, '_');
+    if (!/^[\wáéíóúñ]{1,30}$/.test(key)) fail(400, `El nombre «${k}» no vale: usa letras, números y _.`);
+    const val = clip(String(v ?? '').trim(), 200);
+    if (val) out[key] = val;
+  }
+  await c.env.DB.prepare('UPDATE chats SET bot_vars = ?, updated_at = ? WHERE id = ?').bind(JSON.stringify(out), now(), chat.id).run();
+  await bump(c.env, store.id);
+  return c.json({ ok: true, datos: out });
+});
+
+async function deleteMedia(env, storeId, chatId) {
+  const prefix = `s${storeId}/c${chatId}/`;
+  let cursor;
+  do {
+    const l = await env.MEDIA.list({ prefix, cursor, limit: 1000 });
+    if (l.objects.length) await env.MEDIA.delete(l.objects.map((o) => o.key));
+    cursor = l.truncated ? l.cursor : undefined;
+  } while (cursor);
+}
+
+// Vaciar conversación: borra mensajes y archivos, la clienta y sus datos se quedan (solo el dueño)
+api.delete('/chats/:id/messages', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'), 'config');
+  const db = c.env.DB;
+  await db.batch([
+    db.prepare('DELETE FROM messages WHERE chat_id = ?').bind(chat.id),
+    db.prepare('UPDATE bot_jobs SET canceled_at = ? WHERE chat_id = ? AND done_at IS NULL AND canceled_at IS NULL').bind(now(), chat.id),
+    db.prepare('UPDATE chats SET last_preview = NULL, unread = 0, bot_wait = 0, bot_node = NULL, updated_at = ? WHERE id = ?').bind(now(), chat.id),
+  ]);
+  c.executionCtx.waitUntil(deleteMedia(c.env, store.id, chat.id).catch((e) => console.error('r2', e)));
+  await bump(c.env, store.id);
+  return c.json({ ok: true });
+});
+
+// Borrar clienta: conversación, etiquetas, datos, llamadas y seguimientos (solo el dueño)
+api.delete('/chats/:id', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'), 'config');
+  const db = c.env.DB;
+  await db.batch([
+    db.prepare('DELETE FROM bot_jobs WHERE chat_id = ?').bind(chat.id),
+    db.prepare('DELETE FROM calls WHERE chat_id = ?').bind(chat.id),
+    db.prepare('DELETE FROM chat_labels WHERE chat_id = ?').bind(chat.id),
+    db.prepare('DELETE FROM messages WHERE chat_id = ?').bind(chat.id),
+    db.prepare('UPDATE notifications SET chat_id = NULL WHERE chat_id = ?').bind(chat.id),
+    db.prepare('DELETE FROM chats WHERE id = ?').bind(chat.id),
+  ]);
+  c.executionCtx.waitUntil(deleteMedia(c.env, store.id, chat.id).catch((e) => console.error('r2', e)));
+  await bump(c.env, store.id);
+  return c.json({ ok: true, deleted: chat.id });
+});
+
+// Lista de clientas con totales (para la sección Clientes)
+api.get('/stores/:id/clientes', async (c) => {
+  const st = await storeFor(c, c.req.param('id'));
+  const q = c.req.query();
+  const db = c.env.DB;
+  const where = ['c.store_id = ?', 'c.sim = 0'];
+  const vals = [st.id];
+  if (q.q) {
+    const like = `%${String(q.q).trim().replace(/[%_]/g, '')}%`;
+    const digits = String(q.q).replace(/\D/g, '');
+    where.push(digits.length >= 4 ? '(c.name LIKE ? OR c.profile_name LIKE ? OR c.bot_vars LIKE ? OR c.wa_id LIKE ?)' : '(c.name LIKE ? OR c.profile_name LIKE ? OR c.bot_vars LIKE ?)');
+    vals.push(like, like, like);
+    if (digits.length >= 4) vals.push(`%${digits}%`);
+  }
+  const lab = ids(String(q.labels || '').split(','));
+  if (lab.length) {
+    where.push(`c.id IN (SELECT chat_id FROM chat_labels WHERE label_id IN (${inList(lab.length)}) GROUP BY chat_id HAVING COUNT(*) = ?)`);
+    vals.push(...lab, lab.length);
+  }
+  if (q.origen === 'anuncio') where.push('c.ad_id IS NOT NULL');
+  if (q.origen === 'directo') where.push('c.ad_id IS NULL');
+  const limit = Math.min(Number(q.limit) || 50, 200);
+  const offset = Math.max(Number(q.offset) || 0, 0);
+  const w = where.join(' AND ');
+  const total = (await db.prepare(`SELECT COUNT(*) AS n FROM chats c WHERE ${w}`).bind(...vals).first()).n;
+  const { results } = await db.prepare(
+    `SELECT c.id, c.wa_id, c.name, c.profile_name, c.ad_id, c.ad_headline, c.created_at, c.last_msg_at, c.last_inbound_at, c.notes,
+       c.bot_vars, c.bot_paused, c.bot_flow_id, c.handler,
+       (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id) AS msgs
+     FROM chats c WHERE ${w} ORDER BY COALESCE(c.last_msg_at, c.created_at) DESC LIMIT ? OFFSET ?`
+  ).bind(...vals, limit, offset).all();
+  return c.json({ total, clientes: await attachLabels(db, results), offset, limit });
+});
+
+// Descargar clientas en Excel (CSV) — solo el dueño
+api.get('/stores/:id/clientes.csv', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const db = c.env.DB;
+  const { results } = await db.prepare(
+    `SELECT c.id, c.wa_id, c.name, c.profile_name, c.ad_id, c.created_at, c.last_msg_at, c.notes, c.bot_vars,
+       (SELECT GROUP_CONCAT(l.name, ' | ') FROM chat_labels cl JOIN labels l ON l.id = cl.label_id WHERE cl.chat_id = c.id) AS etiquetas
+     FROM chats c WHERE c.store_id = ? AND c.sim = 0 ORDER BY c.created_at DESC LIMIT 20000`
+  ).bind(st.id).all();
+  const keys = ['talla', 'colores', 'cantidad', 'destino', 'distrito', 'nombre', 'celular', 'dni', 'direccion', 'sede_shalom'];
+  const cell = (v) => {
+    let s = String(v ?? '');
+    if (/^[=+\-@]/.test(s)) s = "'" + s; // que Excel no lo tome como fórmula
+    return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const day = (t) => (t ? localDay(t, st.timezone) : '');
+  const rows = [['Nombre', 'Nombre en WhatsApp', 'Celular', 'Etiquetas', ...keys, 'Anuncio', 'Primer mensaje', 'Último mensaje', 'Notas'].join(',')];
+  for (const r of results) {
+    const v = JSON.parse(r.bot_vars || '{}');
+    rows.push([r.name, r.profile_name, '+' + r.wa_id, r.etiquetas, ...keys.map((k) => v[k]), r.ad_id, day(r.created_at), day(r.last_msg_at), r.notes].map(cell).join(','));
+  }
+  return new Response('﻿' + rows.join('\r\n'), {
+    headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="clientes-${st.id}-${localDay(now(), st.timezone)}.csv"` },
+  });
 });
 
 /* ---------------- Mensajes ---------------- */

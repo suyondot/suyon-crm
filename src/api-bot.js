@@ -259,6 +259,10 @@ r.post('/chats/:id/bot', async (c) => {
   if (b.action === 'pause') {
     await cancelJobs(c.env, chat.id);
     await db.prepare("UPDATE chats SET bot_paused = 1, handler = 'asesora', updated_at = ? WHERE id = ?").bind(now(), chat.id).run();
+  } else if (b.action === 'clear') {
+    // Borra lo que hizo el bot en este chat: datos guardados, paso y seguimientos (no toca la conversación)
+    await cancelJobs(c.env, chat.id);
+    await db.prepare('UPDATE chats SET bot_flow_id = NULL, bot_node = NULL, bot_wait = 0, bot_vars = NULL, updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
   } else if (b.action === 'resume') {
     await db.prepare("UPDATE chats SET bot_paused = 0, handler = 'bot', updated_at = ? WHERE id = ?").bind(now(), chat.id).run();
   } else if (b.action === 'start') {

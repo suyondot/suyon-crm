@@ -1,6 +1,7 @@
 // Suyon CRM — app web (bandeja de WhatsApp, etiquetas, configuración)
 import { webmOpusToOgg } from './ogg.js';
 import { initBot, renderBotTab, renderAvisos, botFicha, botDirty, resetBot } from './bot.js';
+import { initClientes, renderClientes, resetClientes, openCliente } from './clientes.js';
 
 /* =================== Utilidades =================== */
 const $ = (s, el = document) => el.querySelector(s);
@@ -22,6 +23,7 @@ const ICON = {
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg>',
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 21s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>',
   phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>',
+  users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/></svg>',
   bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="18" height="18"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
 };
@@ -230,8 +232,31 @@ async function boot() {
 
 function authShell(inner) {
   document.body.classList.add('auth-mode');
-  root().className = 'boot';
-  root().innerHTML = `<div class="auth"><span class="brand-mark">S</span>${inner}</div>`;
+  root().className = 'bootx';
+  root().innerHTML = `<div class="authx">
+    <section class="authbrand">
+      <div class="ab-top"><span class="ab-mark">S</span><b>Suyon CRM</b></div>
+      <div class="ab-copy">
+        <span class="ab-kicker">Para marcas de ropa que venden por WhatsApp</span>
+        <h2>El CRM de WhatsApp hecho para vender ropa.</h2>
+        <p>Bandeja, bot con IA, etiquetas, llamadas y pedidos en un solo lugar. Creado por una marca que vende así todos los días.</p>
+        <ul class="ab-list">
+          <li>Reconoce tallas y colores sin gastar en IA</li>
+          <li>IA Suyon conversa, toma los datos y pasa a tu asesora</li>
+          <li>Seguimientos automáticos dentro de la ventana gratis</li>
+          <li>Lima y provincia: Yape, Shalom y llamadas pendientes</li>
+        </ul>
+      </div>
+      <div class="ab-demo" aria-hidden="true">
+        <div class="abm in">Hola, ¿qué talla tienen? Uso 30 de jean</div>
+        <div class="abm out"><span>Bot</span>¡Te queda la <b>S</b>! 😍 Estos son tus colores 👇</div>
+        <div class="abtags"><i style="--c:#4A74D9">Talla S</i><i style="--c:#2E9E5E">pantalón prod</i></div>
+        <div class="abm out ia"><span>IA Suyon</span>Llevando 3 te sale a S/58.33 c/u 🔥 ¿A qué distrito te lo enviamos?</div>
+      </div>
+      <footer class="ab-foot">Hecho en Perú · Con la API oficial de WhatsApp</footer>
+    </section>
+    <section class="authside"><div class="auth">${inner}</div></section>
+  </div>`;
 }
 
 function formHandler(form, fn) {
@@ -269,7 +294,7 @@ function showSetup(st) {
 }
 
 function showLogin(msg) {
-  authShell(`<h1>Entrar</h1><p>Suyon CRM</p>
+  authShell(`<div class="auth-h"><h1>Bienvenido de vuelta</h1><p>Entra con tu correo y contraseña.</p></div>
     ${msg ? `<div class="okmsg">${esc(msg)}</div>` : ''}
     <form id="f" class="grid" style="gap:12px">
       <div class="field"><label for="email">Correo</label><input id="email" name="email" type="email" required autocomplete="email" autofocus></div>
@@ -388,6 +413,7 @@ function enterStore() {
   S.team = null;
   S.connSteps = null;
   resetBot();
+  resetClientes();
   if (S.storeId) pref.set('store', S.storeId);
   if (S.view === 'chats' && store() && !canChats()) S.view = 'pedidos';
   render();
@@ -417,6 +443,7 @@ async function loadLabels() {
 function navItems() {
   const items = [];
   if (canChats() || !store()) items.push(['chats', 'Chats', ICON.chat, S.unread[S.storeId] || 0]);
+  if (store() && canChats()) items.push(['clientes', 'Clientes', ICON.users, 0]);
   if (store() && canChats()) items.push(['avisos', 'Avisos', ICON.bell, S.avisos[S.storeId] || 0]);
   if (store() && !canChats()) items.push(['pedidos', 'Pedidos', ICON.box, 0]);
   if (owner() || (!S.me.stores.length && S.me.companies.some((c) => c.role === 'dueno'))) items.push(['config', 'Configuración', ICON.gear, 0]);
@@ -426,7 +453,7 @@ function navItems() {
 
 function render() {
   const st = store();
-  const titles = { chats: 'Chats', avisos: 'Avisos', pedidos: 'Pedidos', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
+  const titles = { chats: 'Chats', clientes: 'Clientes', avisos: 'Avisos', pedidos: 'Pedidos', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
   const roleName = st ? S.me.roles[st.role] : '';
   root().innerHTML = `
   <nav class="side" aria-label="Principal">
@@ -445,6 +472,7 @@ function render() {
   const content = $('#content');
   if (S.view === 'chats') renderChatsView(content);
   else if (S.view === 'avisos') renderAvisos(content);
+  else if (S.view === 'clientes') renderClientes(content);
   else if (S.view === 'pedidos') content.innerHTML = `<div class="empty" style="height:100%"><b>Pedidos</b><span>La lista de pedidos para despacho llega en la fase 4.</span></div>`;
   else renderConfig();
   drawStoreMenu();
@@ -1209,7 +1237,7 @@ function renderFicha() {
     <div class="sec"><h3>De dónde vino</h3>${c.ad_id ? `<dl class="kv"><dt>Anuncio</dt><dd>${esc(c.ad_headline || '—')}</dd><dt>ID anuncio</dt><dd class="mono">${esc(c.ad_id)}</dd><dt>Llegó</dt><dd>${esc(listTime(c.referral_at))}</dd></dl>` : '<p class="note" style="margin:0">Escribió directo, no desde un anuncio.</p>'}</div>
     ${botFicha(c)}
     <div class="sec"><h3>Notas</h3><textarea class="notesbox" id="cnotes" placeholder="Solo las ve tu equipo">${esc(c.notes || '')}</textarea></div>
-    <div class="sec"><button class="iconbtn" data-act="markunread">Marcar como no leído</button></div>`;
+    <div class="sec" style="display:flex;gap:8px;flex-wrap:wrap"><button class="iconbtn" data-act="markunread">Marcar como no leído</button><button class="iconbtn" data-act="vercliente">Ficha completa en Clientes</button></div>`;
   const save = async (field, value) => {
     try {
       await api('PATCH', `/chats/${c.id}`, { [field]: value });
@@ -2097,6 +2125,8 @@ document.addEventListener('click', async (e) => {
       return stopRec(true);
     case 'recsend':
       return stopRec(false);
+    case 'vercliente':
+      return S.openId && goCliente(S.openId);
     case 'markunread': {
       const c = S.chats.get(S.openId);
       await api('PATCH', `/chats/${c.id}`, { unread: true }).catch((er) => toast(er.message));
@@ -2189,6 +2219,25 @@ function refreshAvisos() {
 }
 
 initBot({ api, esc, toast, $, $$, S, store, goChat, fmtPhone, listTime, renderFicha, refreshAvisos });
+initClientes({
+  api, esc, toast, $, $$, S, goChat, fmtPhone, listTime, tagHTML, owner,
+  forgetMessages(id) {
+    S.msgs.delete(id);
+    const c = S.chats.get(id);
+    if (c) c.last_preview = null;
+  },
+  forgetChat(id) {
+    S.chats.delete(id);
+    S.msgs.delete(id);
+    if (S.openId === id) S.openId = null;
+  },
+});
+
+function goCliente(id) {
+  openCliente(id);
+  S.view = 'clientes';
+  render();
+}
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 

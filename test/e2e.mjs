@@ -762,6 +762,36 @@ try {
     assert.ok(after.labels.includes(labels.find((l) => l.name === '✅ LIMA').id));
     assert.equal((await call('POST', `/api/chats/${c.id}/llamada`, { result: 'raro' })).status, 400);
   });
+  await step('Clientes: lista, buscar por datos, editar datos, borrar lo del bot', async () => {
+    let r = await call('GET', `/api/stores/${store.id}/clientes?limit=200`);
+    assert.ok(r.total >= 5 && r.clientes.every((c) => !c.wa_id.startsWith('sim')), 'el simulador no sale');
+    const c = r.clientes.find((x) => x.wa_id === '51911111111');
+    assert.ok(c.msgs > 0 && Array.isArray(c.labels));
+    r = await call('GET', `/api/stores/${store.id}/clientes?q=Negro`);
+    assert.ok(r.clientes.some((x) => x.id === c.id), 'busca dentro de los datos del bot');
+    assert.equal((await call('PUT', `/api/chats/${c.id}/datos`, { datos: { 'mal dato!': 'x' } })).status, 400);
+    r = await call('PUT', `/api/chats/${c.id}/datos`, { datos: { talla: 'L', distrito: 'Los Olivos', vacio: '' } });
+    assert.deepEqual(r.datos, { talla: 'L', distrito: 'Los Olivos' });
+    assert.equal(JSON.parse((await call('GET', `/api/chats/${c.id}`)).chat.bot_vars).distrito, 'Los Olivos');
+    const csv = await (await call('GET', `/api/stores/${store.id}/clientes.csv`, undefined, { raw: true })).text();
+    assert.match(csv, /Celular/);
+    assert.match(csv, /Los Olivos/);
+    await call('POST', `/api/chats/${c.id}/bot`, { action: 'clear' });
+    const after = (await call('GET', `/api/chats/${c.id}`)).chat;
+    assert.equal(after.bot_vars, null);
+    assert.equal(after.bot_flow_id, null);
+  });
+  await step('Clientes: vaciar conversación y borrar clienta', async () => {
+    const c = await chatOf('51911111114');
+    assert.ok((await msgsOf(c.id)).length > 0);
+    assert.equal((await call('DELETE', `/api/chats/${c.id}/messages`)).ok, true);
+    assert.equal((await msgsOf(c.id)).length, 0);
+    assert.ok(await chatOf('51911111114'), 'la clienta se queda');
+    const d = await chatOf('51911111115');
+    assert.equal((await call('DELETE', `/api/chats/${d.id}`)).ok, true);
+    assert.equal(await chatOf('51911111115'), undefined);
+    assert.equal((await call('GET', `/api/chats/${d.id}`)).status, 404);
+  });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos']) assert.equal((await fetch(BASE + p)).status, 200);
     const app = await fetch(BASE + '/invitacion/abc');
