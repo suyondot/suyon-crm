@@ -1126,6 +1126,72 @@ try {
     assert.equal((await call('DELETE', `/api/stores/${sid}`, { confirm: 'Alumna' })).status, 200);
     assert.equal((await call('DELETE', `/api/stores/${n2.store_id}`, { confirm: 'Alumna 2' })).status, 200);
   });
+  await step('alumnos: registro con prueba gratis, precio, Panel Suyon y bloqueo', async () => {
+    const { statusOf, priceOf, DEFAULT_PLAN } = await import('../src/billing.js');
+    const T = Date.now();
+    assert.equal(statusOf({ plan_status: 'trial', trial_ends_at: T - 1 }, DEFAULT_PLAN, T).state, 'trial_over');
+    assert.equal(statusOf({ plan_status: 'trial', trial_ends_at: T - 1 }, DEFAULT_PLAN, T).blocked, true);
+    assert.equal(statusOf({ plan_status: 'active', paid_until: T - 864e5 }, DEFAULT_PLAN, T).state, 'grace');
+    assert.equal(statusOf({ plan_status: 'active', paid_until: T - 5 * 864e5 }, DEFAULT_PLAN, T).blocked, true);
+    assert.equal(priceOf(DEFAULT_PLAN, { numbers: 2, users: 3 }).total, 22);
+    // las empresas de Jordan quedan sin cobro
+    let me = await call('GET', '/api/me');
+    assert.ok(me.companies.every((x) => x.plan.state === 'free'));
+    // un alumno se registra solo (con su propia sesión)
+    let jar = '';
+    const as = async (method, path, data) => {
+      const res = await fetch(BASE + path, { method, headers: { 'x-crm': '1', 'content-type': 'application/json', ...(jar ? { cookie: jar } : {}) }, body: data ? JSON.stringify(data) : undefined });
+      const sc = res.headers.get('set-cookie');
+      if (sc) jar = sc.split(';')[0];
+      return { status: res.status, ...(await res.json().catch(() => ({}))) };
+    };
+    assert.equal((await as('GET', '/api/registro')).open, true);
+    assert.equal((await as('POST', '/api/registro', { name: 'Ana', email: 'ana@alumna.pe', password: 'corta', company: 'Ana Store' })).status, 400);
+    let r = await as('POST', '/api/registro', { name: 'Ana', email: 'ana@alumna.pe', password: 'clave-segura-9', company: 'Ana Store', phone: '999 111 222' });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal((await as('POST', '/api/registro', { name: 'Ana', email: 'ana@alumna.pe', password: 'clave-segura-9', company: 'Otra' })).status, 409);
+    me = await as('GET', '/api/me');
+    const co = me.companies[0];
+    assert.equal(co.role, 'dueno');
+    assert.equal(co.plan.state, 'trial');
+    assert.equal(co.plan.days_left, 15);
+    assert.equal(me.user.is_admin, false);
+    const s1 = await as('POST', `/api/companies/${co.id}/stores`, { name: 'Ana · Vestidos' });
+    assert.equal(s1.status, 200, JSON.stringify(s1));
+    let plan = await as('GET', `/api/companies/${co.id}/plan`);
+    assert.equal(plan.plan.price.total, 7);
+    await as('POST', `/api/companies/${co.id}/stores`, { name: 'Ana · Blusas' });
+    plan = await as('GET', `/api/companies/${co.id}/plan`);
+    assert.equal(plan.plan.price.total, 12);
+    assert.equal((await as('GET', '/api/admin/empresas')).status, 403, 'solo el administrador');
+    // Panel Suyon
+    let pn = await call('GET', '/api/admin/empresas');
+    const row = pn.empresas.find((x) => x.id === co.id);
+    assert.equal(row.state, 'trial');
+    assert.equal(row.owner_email, 'ana@alumna.pe');
+    assert.equal(row.monthly, 12);
+    assert.ok(pn.resumen.prueba >= 1);
+    // pausar acceso → la alumna no entra a su tienda (402), pero ve su plan
+    await call('POST', `/api/admin/empresas/${co.id}`, { action: 'bloquear' });
+    assert.equal((await as('GET', `/api/stores/${s1.store_id}/chats`)).status, 402);
+    assert.equal((await as('GET', `/api/companies/${co.id}/plan`)).status, 200);
+    assert.equal((await as('GET', '/api/me')).companies[0].plan.blocked, true);
+    // pagó por Yape → 1 mes activo
+    await call('POST', `/api/admin/empresas/${co.id}`, { action: 'pagado', months: 1, amount: 12, method: 'yape' });
+    me = await as('GET', '/api/me');
+    assert.equal(me.companies[0].plan.state, 'active');
+    assert.ok(me.companies[0].plan.days_left >= 29);
+    assert.equal((await as('GET', `/api/stores/${s1.store_id}/chats`)).status, 200);
+    plan = await as('GET', `/api/companies/${co.id}/plan`);
+    assert.equal(plan.pagos.length, 1);
+    assert.equal(plan.pagos[0].amount, 12);
+    // precios y registro cerrado
+    const cfg = await call('PATCH', '/api/admin/plan', { base: 9, signup_open: false, pay_info: 'Yape al 999 000 111', contact: '51999000111' });
+    assert.equal(cfg.plan.base, 9);
+    assert.equal((await fetch(BASE + '/api/registro', { method: 'POST', headers: { 'x-crm': '1', 'content-type': 'application/json' }, body: JSON.stringify({ name: 'X', email: 'x@y.pe', password: 'clave-segura-1', company: 'X' }) })).status, 403);
+    assert.equal((await call('GET', '/api/state', undefined, { keepCookie: false })).signup_open, false);
+    await call('PATCH', '/api/admin/plan', { base: 7, signup_open: true });
+  });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos']) assert.equal((await fetch(BASE + p)).status, 200);
     const app = await fetch(BASE + '/invitacion/abc');

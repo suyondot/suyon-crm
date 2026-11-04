@@ -5,6 +5,7 @@ import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendLis
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON } from './bot-template.js';
 import { draftFromChat, insertOrder } from './orders.js';
 import { onOrderCreated } from './automations.js';
+import { storeBlocked } from './billing.js';
 
 const MIN = 60e3;
 const MAX_STEPS = 40;
@@ -468,6 +469,7 @@ export async function onInbound(env, ctx, store, chatId, msg, { sim = false } = 
   ).bind(chatId, msg.id).run();
   await cancelJobs(env, chatId, msg.type === 'image' || msg.type === 'document' ? 'image' : 'reply');
   if (!settings.bot_on && !sim) return;
+  if (!sim && (await storeBlocked(env, store.id))) return; // plan vencido: los mensajes llegan, el bot no responde
   const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
   if (!chat || chat.bot_paused || (!sim && !audienceOk(settings, chat.wa_id))) return;
   const text = msg.body || (msg.type === 'audio' ? '[nota de voz]' : msg.type === 'image' ? '[foto]' : '');

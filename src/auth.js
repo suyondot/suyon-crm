@@ -1,5 +1,6 @@
 // Sesiones, usuarios y permisos por empresa/tienda
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { loadPlan, statusOf, DEFAULT_PLAN } from './billing.js';
 import { now, randomToken, sha256hex, hashPassword, safeEqual, fail } from './util.js';
 
 const COOKIE = 'sc_sess';
@@ -61,10 +62,15 @@ export async function loadAccess(c) {
   const user = await requireUser(c);
   const db = c.env.DB;
   const { results: mem } = await db.prepare(
-    `SELECT m.company_id, m.role, m.all_stores, co.name AS company_name FROM memberships m
+    `SELECT m.company_id, m.role, m.all_stores, co.name AS company_name, co.plan_status, co.trial_ends_at, co.paid_until FROM memberships m
      JOIN companies co ON co.id = m.company_id WHERE m.user_id = ? ORDER BY co.id`
   ).bind(user.id).all();
-  const companies = mem.map((m) => ({ id: m.company_id, name: m.company_name, role: m.role }));
+  const plan = mem.some((m) => m.plan_status && m.plan_status !== 'free') ? await loadPlan(c.env) : DEFAULT_PLAN;
+  const companies = mem.map((m) => {
+    const b = statusOf(m, plan);
+    return { id: m.company_id, name: m.company_name, role: m.role, plan: { state: b.state, blocked: b.blocked && !user.is_admin, days_left: b.days_left, until: b.until } };
+  });
+  const blockedCo = new Set(companies.filter((x) => x.plan.blocked).map((x) => x.id));
   let stores = [];
   if (mem.length) {
     const { results } = await db.prepare(
@@ -77,7 +83,7 @@ export async function loadAccess(c) {
        ORDER BY s.company_id, s.id`
     ).bind(user.id, user.id).all();
     const roleBy = Object.fromEntries(mem.map((m) => [m.company_id, m.role]));
-    stores = results.map((s) => ({ ...s, role: roleBy[s.company_id] }));
+    stores = results.map((s) => ({ ...s, role: roleBy[s.company_id], company_blocked: blockedCo.has(s.company_id) }));
   }
   const access = { user, companies, stores };
   c.set('access', access);
@@ -88,14 +94,18 @@ export async function storeFor(c, storeId, need = 'chats') {
   const { stores } = await loadAccess(c);
   const s = stores.find((x) => x.id === Number(storeId));
   if (!s) fail(404, 'No tienes acceso a esa tienda.');
+  if (s.company_blocked) fail(402, PLAN_OVER);
   checkRole(s.role, need);
   return s;
 }
 
-export async function companyFor(c, companyId, need = 'config') {
+const PLAN_OVER = 'Tu prueba gratis o tu plan de Control Total terminó. El dueño puede renovarlo en «Mi plan».';
+
+export async function companyFor(c, companyId, need = 'config', { allowBlocked = false } = {}) {
   const { companies } = await loadAccess(c);
   const co = companies.find((x) => x.id === Number(companyId));
   if (!co) fail(404, 'No tienes acceso a esa empresa.');
+  if (co.plan.blocked && !allowBlocked) fail(402, PLAN_OVER);
   checkRole(co.role, need);
   return co;
 }

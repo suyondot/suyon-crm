@@ -1,7 +1,7 @@
 // Service worker: permite instalar la app y abrirla aunque la red falle un momento.
 // Siempre intenta la red primero, así cada actualización llega al toque.
-const CACHE = 'scrm-v15';
-const SHELL = ['/', '/app.css', '/app.js', '/bot.js', '/clientes.js', '/reportes.js', '/pedidos.js', '/ogg.js', '/icon.svg', '/icon-192.png', '/manifest.webmanifest'];
+const CACHE = 'scrm-v16';
+const SHELL = ['/', '/app.css', '/app.js', '/bot.js', '/clientes.js', '/reportes.js', '/pedidos.js', '/panel.js', '/ogg.js', '/icon.svg', '/icon-192.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

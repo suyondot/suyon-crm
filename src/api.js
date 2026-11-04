@@ -10,6 +10,8 @@ import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
 import reportesApi from './api-reportes.js';
 import pedidosApi from './api-pedidos.js';
+import billingApi from './api-billing.js';
+import { loadPlan } from './billing.js';
 import { signupInfo, connectSignup } from './signup.js';
 
 const api = new Hono();
@@ -63,7 +65,10 @@ api.get('/state', async (c) => {
   const any = await c.env.DB.prepare('SELECT id FROM users LIMIT 1').first();
   if (!any) return c.json({ setup: true, code_set: !!c.env.SETUP_CODE });
   const u = await currentUser(c);
-  if (!u) return c.json({ login: true });
+  if (!u) {
+    const p = await loadPlan(c.env);
+    return c.json({ login: true, signup_open: !!p.signup_open, trial_days: p.trial_days });
+  }
   return c.json(await mePayload(c));
 });
 
@@ -1194,5 +1199,6 @@ api.get('/media/:id', async (c) => {
 api.route('/', botApi);
 api.route('/', reportesApi);
 api.route('/', pedidosApi);
+api.route('/', billingApi);
 
 export default api;

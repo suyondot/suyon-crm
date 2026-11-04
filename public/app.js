@@ -7,6 +7,7 @@ import { initReportes, renderReportes, resetReportes } from './reportes.js';
 // Marca: C y T (la T en rosado). Sin fondo: el fondo lo pone el contenedor.
 const LOGO = '<svg viewBox="38 90 400 332" aria-hidden="true" fill="none" stroke-linecap="round"><path d="M304 168A128 128 0 1 0 304 344" stroke="#fff" stroke-width="60"/><path d="M248 206H396M322 206V350" stroke="#F2B6C4" stroke-width="54"/></svg>';
 import { initPedidos, renderPedidos, resetPedidos, fichaPedidos, renderPedidosConfig } from './pedidos.js';
+import { initPanel, renderMiPlan, renderPaywall, renderPanel } from './panel.js';
 
 /* =================== Utilidades =================== */
 const $ = (s, el = document) => el.querySelector(s);
@@ -225,6 +226,7 @@ async function boot() {
   const rst = path.match(/^\/clave\/([\w-]+)/);
   if (inv) return showInvite(inv[1]);
   if (rst) return showReset(rst[1]);
+  if (path === '/registro') return showRegister();
   let st;
   try {
     st = await api('GET', '/state');
@@ -232,7 +234,7 @@ async function boot() {
     return authShell(`<h1>Sin conexión</h1><p>${esc(e.message)}</p><button class="send" onclick="location.reload()">Reintentar</button>`);
   }
   if (st.setup) return showSetup(st);
-  if (st.login) return showLogin();
+  if (st.login) return showLogin(null, st);
   startApp(st);
 }
 
@@ -299,7 +301,44 @@ function showSetup(st) {
   formHandler($('#f'), async (d) => startApp(await api('POST', '/setup', d)));
 }
 
-function showLogin(msg) {
+async function showRegister() {
+  let info = { open: false, trial_days: 15 };
+  try {
+    info = await api('GET', '/registro');
+  } catch {}
+  if (!info.open) {
+    authShell('<h1>Registro cerrado</h1><p>Por ahora se entra con invitación. Pídesela a quien te recomendó Control Total.</p><button class="send" id="go">Ya tengo cuenta</button>');
+    $('#go').onclick = () => {
+      history.replaceState(null, '', '/');
+      showLogin();
+    };
+    return;
+  }
+  const cur = info.currency === 'PEN' ? 'S/' : 'US$';
+  authShell(`<div class="auth-h"><h1>Prueba gratis ${info.trial_days} días</h1><p>Sin tarjeta. Después, ${cur}${info.base} al mes con 1 número de WhatsApp y 1 trabajadora (+${cur}${info.per_number} por número y +${cur}${info.per_user} por trabajadora extra).</p></div>
+    <form id="f" class="grid" style="gap:12px">
+      <div class="field"><label for="company">Nombre de tu marca o tienda</label><input id="company" name="company" required autocomplete="organization"></div>
+      <div class="field"><label for="name">Tu nombre</label><input id="name" name="name" required autocomplete="name"></div>
+      <div class="field"><label for="phone">Tu WhatsApp</label><input id="phone" name="phone" inputmode="tel" autocomplete="tel" placeholder="9xx xxx xxx"></div>
+      <div class="field"><label for="email">Tu correo</label><input id="email" name="email" type="email" required autocomplete="email"></div>
+      <div class="field"><label for="pw">Contraseña (mínimo 8)</label><input id="pw" name="password" type="password" minlength="8" required autocomplete="new-password"></div>
+      <input name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0">
+      <div class="err" hidden></div>
+      <button class="send" type="submit">Crear mi cuenta gratis</button>
+    </form>
+    <button class="link" id="haveacc">Ya tengo cuenta</button>`);
+  formHandler($('#f'), async (d) => {
+    await api('POST', '/registro', d);
+    history.replaceState(null, '', '/');
+    startApp(await api('GET', '/state'));
+  });
+  $('#haveacc').onclick = () => {
+    history.replaceState(null, '', '/');
+    showLogin();
+  };
+}
+
+function showLogin(msg, st) {
   authShell(`<div class="auth-h"><h1>Bienvenido de vuelta</h1><p>Entra con tu correo y contraseña.</p></div>
     ${msg ? `<div class="okmsg">${esc(msg)}</div>` : ''}
     <form id="f" class="grid" style="gap:12px">
@@ -308,9 +347,17 @@ function showLogin(msg) {
       <div class="err" hidden></div>
       <button class="send" type="submit">Entrar</button>
     </form>
-    <button class="link" id="forgot">Olvidé mi contraseña</button>`);
+    <button class="link" id="forgot">Olvidé mi contraseña</button>
+    ${st?.signup_open ? `<p class="note" style="margin:0;text-align:center">¿Nuevo en Control Total? <a href="/registro" id="toreg">Crea tu cuenta gratis · ${st.trial_days} días</a></p>` : ''}`);
   formHandler($('#f'), async (d) => startApp(await api('POST', '/login', d)));
   $('#forgot').onclick = showRecover;
+  const tr = $('#toreg');
+  if (tr)
+    tr.onclick = (ev) => {
+      ev.preventDefault();
+      history.pushState(null, '', '/registro');
+      showRegister();
+    };
 }
 
 function showRecover() {
@@ -427,7 +474,7 @@ function enterStore() {
   render();
   S.calls = [];
   S.callsOpen = false;
-  if (S.storeId && canChats()) {
+  if (S.storeId && canChats() && !planBlocked()) {
     loadLabels();
     loadChats();
     loadCalls();
@@ -448,6 +495,17 @@ async function loadLabels() {
 }
 
 /* ---------- Esqueleto ---------- */
+// Empresa de la tienda elegida (o la primera donde es dueño)
+function currentCompany() {
+  const st = store();
+  const cos = S.me?.companies || [];
+  return cos.find((c) => c.id === st?.company_id) || cos.find((c) => c.role === 'dueno') || cos[0] || null;
+}
+
+function planBlocked() {
+  return !!currentCompany()?.plan?.blocked;
+}
+
 function navItems() {
   const items = [];
   if (canChats() || !store()) items.push(['chats', 'Chats', ICON.chat, S.unread[S.storeId] || 0]);
@@ -457,12 +515,19 @@ function navItems() {
   if (owner() || (!S.me.stores.length && S.me.companies.some((c) => c.role === 'dueno'))) items.push(['config', 'Configuración', ICON.gear, 0]);
   else items.push(['config', 'Mi cuenta', ICON.user, 0]);
   if (store() && canChats()) items.push(['reportes', 'Reportes', ICON.chart, 0]);
+  if (S.me.user.is_admin) items.push(['panel', 'Panel Suyon', ICON.users, 0]);
+  if (planBlocked()) return items.filter(([v]) => ['config', 'panel'].includes(v));
   return items;
 }
 
 function render() {
   const st = store();
-  const titles = { chats: 'Chats', clientes: 'Clientes', reportes: 'Reportes', avisos: 'Avisos', pedidos: 'Pedidos', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
+  const co = currentCompany();
+  if (co?.plan?.blocked && !['config', 'panel'].includes(S.view)) {
+    S.view = 'config';
+    S.cfgTab = co.role === 'dueno' ? 'miplan' : 'cuenta';
+  }
+  const titles = { chats: 'Chats', clientes: 'Clientes', reportes: 'Reportes', avisos: 'Avisos', pedidos: 'Pedidos', panel: 'Panel Suyon', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
   const roleName = st ? S.me.roles[st.role] : '';
   root().innerHTML = `
   <nav class="side" aria-label="Principal">
@@ -475,6 +540,7 @@ function render() {
       <button class="store-top" data-act="stores" aria-label="Cambiar tienda"><span>${st ? esc(storeLabel(st)) : 'Elegir tienda'}</span><span class="caret">▾</span></button>
       <h1>${titles[S.view]}</h1>
       <span class="grow"></span>
+      ${co?.role === 'dueno' && co.plan && ['trial', 'grace'].includes(co.plan.state) ? `<button class="planpill ${co.plan.state === 'grace' || co.plan.days_left <= 3 ? 'warn' : ''}" data-nav="config" data-tab="miplan">${co.plan.state === 'trial' ? `Prueba gratis · ${co.plan.days_left} ${co.plan.days_left === 1 ? 'día' : 'días'}` : 'Tu plan venció · renovar'}</button>` : ''}
     </header>
     <div class="content" id="content"></div>
   </main>`;
@@ -484,6 +550,8 @@ function render() {
   else if (S.view === 'clientes') renderClientes(content);
   else if (S.view === 'reportes') renderReportes(content);
   else if (S.view === 'pedidos') renderPedidos(content);
+  else if (S.view === 'panel' && S.me.user.is_admin) renderPanel(content);
+  else if (co?.plan?.blocked && co.role !== 'dueno' && S.cfgTab !== 'cuenta') renderPaywall(content, co);
   else renderConfig();
   drawStoreMenu();
   updateTitle();
@@ -1602,7 +1670,11 @@ function cfgTabs() {
   // La pestaña de pedidos cambia según cómo vende la tienda: por mensajes (Pedidos) o por su web (Shopify)
   if (owner()) tabs.push(['general', 'General'], ['numero', 'Número de WhatsApp'], ['perfil', 'Perfil de WhatsApp'], ['pedidoscfg', store()?.canal === 'shopify' ? 'Shopify' : 'Pedidos'], ['etiquetas', 'Etiquetas'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
   if (S.me.companies.some((c) => c.role === 'dueno')) tabs.push(['empresa', 'Empresas']);
+  const co = currentCompany();
+  const showPlan = co?.role === 'dueno' && co.plan && co.plan.state !== 'free';
+  if (showPlan) tabs.push(['miplan', 'Mi plan']);
   tabs.push(['cuenta', 'Mi cuenta']);
+  if (co?.plan?.blocked) return tabs.filter(([k]) => k === 'miplan' || k === 'cuenta');
   return tabs;
 }
 
@@ -1616,7 +1688,7 @@ function renderConfig() {
     <nav class="cfgnav" aria-label="Secciones">${tabs.map(([k, l]) => `<button data-cfg="${k}" aria-current="${S.cfgTab === k}">${l}</button>`).join('')}
       ${st && owner() ? `<div class="cfgnote">Lo de General, Número, Perfil, Etiquetas, Bot y Equipo es de <b>${esc(st.name)}</b>${S.cfgTab === 'equipo' ? ` y su empresa` : ''}. Cambia de tienda arriba a la izquierda.</div>` : ''}</nav>
     <div id="cfgbody"></div></div></div>`;
-  ({ general: cfgGeneral, numero: cfgNumero, perfil: cfgPerfil, pedidoscfg: () => renderPedidosConfig($('#cfgbody')), etiquetas: cfgEtiquetas, bot: () => renderBotTab($('#cfgbody')), equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta })[S.cfgTab]();
+  ({ general: cfgGeneral, numero: cfgNumero, perfil: cfgPerfil, pedidoscfg: () => renderPedidosConfig($('#cfgbody')), etiquetas: cfgEtiquetas, bot: () => renderBotTab($('#cfgbody')), equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta, miplan: () => renderMiPlan($('#cfgbody'), currentCompany().id) })[S.cfgTab]();
 }
 
 function cfgGeneral() {
@@ -2198,8 +2270,8 @@ document.addEventListener('click', async (e) => {
     S.storeMenu = false;
     if (d.nav === 'config') S.health = null;
     render();
-    if (d.nav === 'chats' && canChats() && !S.chats.size) loadChats();
-    if (d.nav === 'config' && !S.labels.length && owner()) loadLabels();
+    if (d.nav === 'chats' && canChats() && !S.chats.size && !planBlocked()) loadChats();
+    if (d.nav === 'config' && !S.labels.length && owner() && !planBlocked()) loadLabels();
     return;
   }
   if (d.store) {
@@ -2471,6 +2543,7 @@ initClientes({
 
 initReportes({ api, esc, $, S, store });
 initPedidos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, listTime, canChats });
+initPanel({ api, esc, toast });
 
 function applyTheme(t) {
   if (t === 'auto') delete document.documentElement.dataset.theme;

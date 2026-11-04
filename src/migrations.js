@@ -425,6 +425,35 @@ export const MIGRATIONS = [
       `ALTER TABLE stores ADD COLUMN connected_via TEXT`,
     ],
   },
+  {
+    id: 11,
+    name: 'planes de alumnos: prueba gratis, suscripción y Panel Suyon',
+    sql: [
+      // free = sin cobro (empresas de Jordan) · trial = prueba gratis · active = pagado hasta paid_until · blocked = bloqueada a mano
+      `ALTER TABLE companies ADD COLUMN plan_status TEXT NOT NULL DEFAULT 'free'`,
+      `ALTER TABLE companies ADD COLUMN trial_ends_at INTEGER`,
+      `ALTER TABLE companies ADD COLUMN paid_until INTEGER`,
+      `ALTER TABLE companies ADD COLUMN owner_user_id INTEGER`,
+      `ALTER TABLE companies ADD COLUMN contact_phone TEXT`,
+      `ALTER TABLE companies ADD COLUMN created_via TEXT`,
+      `ALTER TABLE companies ADD COLUMN plan_note TEXT`,
+      `CREATE TABLE platform_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`,
+      `CREATE TABLE payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        amount REAL NOT NULL DEFAULT 0,
+        currency TEXT NOT NULL DEFAULT 'USD',
+        months INTEGER NOT NULL DEFAULT 1,
+        method TEXT,
+        note TEXT,
+        paid_from INTEGER,
+        paid_to INTEGER,
+        created_by INTEGER,
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX payments_company ON payments (company_id, created_at)`,
+    ],
+  },
 ];
 
 let ready = null;
