@@ -124,6 +124,7 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 - [ ] 4 · Pendiente de Pedidos: Sheet de Shalom (falta link), guías Shalom. (CAPI hecho en 2m.)
 - [ ] 5 · Control: embudo, CPA real por anuncio, llamadas.
 - [ ] 6 · Piloto 1 semana; luego migrar pantalón formal.
+- **Costo real de la IA = precio del modelo + 18% de impuesto** (Anthropic cobra IGV en Perú: US$10 de créditos = US$11.80; visto 4 nov 2026). `ia_usage.cost` guarda el precio SIN impuesto → en la billetera y en el margen a alumnos multiplicar por 1.18. Créditos de Anthropic vencen a 1 año. Cuenta de Claude Console: organización «Control Total» (pyme), recarga automática apagada al inicio.
 - [ ] 7 · Billetera para alumnos (idea de Jordan, 2 nov 2026): saldo prepagado por empresa que se recarga con tarjeta peruana (Culqi/Izipay/Mercado Pago) y se reparte entre "destinatarios": WhatsApp (Meta) e IA (OpenAI). Requisitos: negocio verificado en Meta + ser **Proveedor de tecnología / Solution Partner** con línea de crédito compartida (así lo hace Pancake); OpenAI con clave central y consumo medido por tienda. Mientras tanto: cada tienda usa su propia tarjeta en Meta y su propia clave de OpenAI.
 - Estimado realista: 2–4 semanas por sesiones.
 
