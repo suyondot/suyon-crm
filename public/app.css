@@ -1080,3 +1080,12 @@ a.iconbtn{text-decoration:none;color:inherit}
 }
 .trans{display:block;margin-top:6px;padding:6px 9px;border-radius:8px;background:color-mix(in srgb,var(--info) 9%,transparent);color:var(--fg);font-size:13px;font-style:italic;line-height:1.4;max-width:320px}
 .trans.off{color:var(--muted);background:var(--surface-2);font-style:normal;font-size:12px}
+
+/* Conectar WhatsApp con un clic */
+.esconn{border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
+.esbtns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.esbtn{display:flex;gap:10px;align-items:center;text-align:left;padding:12px 14px;border-radius:12px;min-height:58px}
+.esbtn span{display:grid;gap:2px}
+.esbtn small{font-weight:400;font-size:12px;opacity:.85}
+.esbtn svg{width:22px;height:22px;flex:none}
+@media (max-width:700px){.esbtns{grid-template-columns:1fr}}

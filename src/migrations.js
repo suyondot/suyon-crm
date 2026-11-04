@@ -416,6 +416,15 @@ export const MIGRATIONS = [
       `ALTER TABLE orders ADD COLUMN capi_at INTEGER`,
     ],
   },
+  {
+    id: 10,
+    name: 'conectar WhatsApp con un clic (token cifrado por tienda)',
+    sql: [
+      `ALTER TABLE stores ADD COLUMN token_enc TEXT`,
+      `ALTER TABLE stores ADD COLUMN wa_pin_enc TEXT`,
+      `ALTER TABLE stores ADD COLUMN connected_via TEXT`,
+    ],
+  },
 ];
 
 let ready = null;

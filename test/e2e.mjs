@@ -57,6 +57,18 @@ const meta = http.createServer(async (req, res) => {
     if (!String(req.headers['content-type'] || '').includes('multipart/form-data') || !raw.includes(Buffer.from('gpt-4o-mini-transcribe'))) return json(400, { error: { message: 'falta archivo o modelo' } });
     return json(200, { text: 'Hola, soy talla M y quiero el negro para Los Olivos' });
   }
+  if (p === 'oauth/access_token') {
+    // Registro insertado: el código de la ventana de Meta se cambia por el token de la tienda
+    if (url.searchParams.get('client_id') !== 'APP123' || url.searchParams.get('client_secret') !== SECRET) return json(400, { error: { message: 'bad app' } });
+    if (url.searchParams.get('code') !== 'es-code-1234567890') return json(400, { error: { message: 'This authorization code has expired' } });
+    return json(200, { access_token: 'es-token-1', token_type: 'bearer' });
+  }
+  if (auth === 'Bearer es-token-1') {
+    if (req.method === 'POST' && p === '770000000001/subscribed_apps') return json(200, { success: true });
+    if (req.method === 'POST' && p === '880000000001/register') return json(200, { success: /^\d{6}$/.test(body?.pin || '') });
+    if (req.method === 'GET' && p === '880000000001') return json(200, { display_phone_number: '+51 955 000 001', verified_name: 'Tienda Alumna', quality_rating: 'GREEN', id: '880000000001' });
+    return json(404, { error: { code: 100, message: 'Unknown path ' + p } });
+  }
   if (auth !== 'Bearer test-token') return json(401, { error: { code: 190, message: 'Invalid OAuth access token' } });
   if (req.method === 'POST' && p === `${WABA_ID}/dataset`) return json(200, { id: 'DS777' });
   if (req.method === 'POST' && p === 'DS777/events') return json(200, { events_received: body?.data?.length || 0 });
@@ -121,7 +133,7 @@ await new Promise((r) => meta.listen(META_PORT, '127.0.0.1', r));
 const VARS = {
   GRAPH_API: `http://127.0.0.1:${META_PORT}`, ANTHROPIC_API: `http://127.0.0.1:${META_PORT}`, TEST_MODE: '1',
   WA_TOKEN: 'test-token', WA_VERIFY_TOKEN: 'verifica123', META_APP_SECRET: SECRET, SETUP_CODE: 'inicio-prueba', ANTHROPIC_API_KEY: 'ia-test-key', SHOPIFY_SECRET: 'shp-secret',
-  OPENAI_API: `http://127.0.0.1:${META_PORT}`, OPENAI_API_KEY: 'oa-test-key',
+  OPENAI_API: `http://127.0.0.1:${META_PORT}`, OPENAI_API_KEY: 'oa-test-key', META_APP_ID: 'APP123', META_ES_CONFIG: 'CFG1',
 };
 const wd = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--persist-to', persist, ...Object.entries(VARS).flatMap(([k, v]) => ['--var', `${k}:${v}`]), '--show-interactive-dev-session=false'], { stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
 let log = '';
@@ -1081,6 +1093,38 @@ try {
     assert.equal(r.ok, true, JSON.stringify(r));
     const pic = calls.filter((x) => x.method === 'POST' && x.path === `${PHONE_ID}/whatsapp_business_profile`).pop();
     assert.equal(pic.body.profile_picture_handle, 'HANDLE1');
+  });
+  await step('conectar WhatsApp con un clic (Registro insertado)', async () => {
+    const me = await call('GET', '/api/me');
+    const n = await call('POST', `/api/companies/${me.companies[0].id}/stores`, { name: 'Alumna', canal: 'mensajes' });
+    const sid = n.store_id;
+    const info = await call('GET', `/api/stores/${sid}/whatsapp/signup`);
+    assert.equal(info.ready, true, JSON.stringify(info));
+    assert.equal(info.app_id, 'APP123');
+    assert.equal(info.config_id, 'CFG1');
+    // código vencido → no se conecta y queda el error
+    let r = await call('POST', `/api/stores/${sid}/whatsapp/signup`, { code: 'es-code-expired000', phone_number_id: '880000000001', waba_id: '770000000001' });
+    assert.equal(r.ok, false);
+    assert.match(r.error, /30 segundos/);
+    r = await call('POST', `/api/stores/${sid}/whatsapp/signup`, { code: 'es-code-1234567890', phone_number_id: '880000000001', waba_id: '770000000001' });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const st = r.stores.find((x) => x.id === sid);
+    assert.equal(st.status, 'activo');
+    assert.equal(st.connected_via, 'embedded');
+    assert.equal(st.verified_name, 'Tienda Alumna');
+    const reg = calls.filter((x) => x.path === '880000000001/register').pop();
+    assert.ok(/^\d{6}$/.test(reg.body.pin));
+    // el token quedó guardado cifrado y se usa después (Probar conexión)
+    const before = calls.length;
+    await call('POST', `/api/stores/${sid}/connect`);
+    assert.ok(calls.slice(before).some((x) => x.path === '880000000001'), 'usa el token de la tienda');
+    // el mismo número no puede ir en otra tienda
+    const n2 = await call('POST', `/api/companies/${me.companies[0].id}/stores`, { name: 'Alumna 2' });
+    r = await call('POST', `/api/stores/${n2.store_id}/whatsapp/signup`, { code: 'es-code-1234567890', phone_number_id: '880000000001', waba_id: '770000000001' });
+    assert.equal(r.ok, false);
+    assert.match(r.error, /ya está en la tienda/);
+    assert.equal((await call('DELETE', `/api/stores/${sid}`, { confirm: 'Alumna' })).status, 200);
+    assert.equal((await call('DELETE', `/api/stores/${n2.store_id}`, { confirm: 'Alumna 2' })).status, 200);
   });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos']) assert.equal((await fetch(BASE + p)).status, 200);

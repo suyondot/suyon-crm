@@ -1,4 +1,5 @@
 // Cliente de la API oficial de WhatsApp (Cloud API de Meta)
+import { openText } from './secret.js';
 import { HttpError } from './util.js';
 
 // Mensajes de error de Meta en palabras simples
@@ -38,7 +39,20 @@ export function friendlyMetaError(err) {
   return code ? `${base} (código ${code})` : base;
 }
 
-export function tokenFor(env, store) {
+// Token de la tienda: el que dio Meta al conectar con un clic (cifrado en la base) o el secreto de Cloudflare
+const opened = new Map();
+export async function tokenFor(env, store) {
+  if (store.__token) return store.__token; // token recién entregado por Meta (al conectar con un clic)
+  if (store.token_enc) {
+    if (!opened.has(store.token_enc)) {
+      try {
+        opened.set(store.token_enc, await openText(env, store.token_enc));
+      } catch (e) {
+        throw new HttpError(400, `No se pudo leer el token de esta tienda: ${e.message} Vuelve a conectar el número.`);
+      }
+    }
+    return opened.get(store.token_enc);
+  }
   const name = store.token_secret || 'WA_TOKEN';
   const t = env[name];
   if (!t) throw new HttpError(400, `Falta el token de WhatsApp. Ponlo en Cloudflare como secreto "${name}".`);
@@ -46,7 +60,7 @@ export function tokenFor(env, store) {
 }
 
 async function graph(env, store, path, { method = 'GET', json, form } = {}) {
-  const token = tokenFor(env, store);
+  const token = await tokenFor(env, store);
   const headers = { Authorization: `Bearer ${token}` };
   let body;
   if (json) {
@@ -73,7 +87,7 @@ export function graphCall(env, store, path, opts) {
 
 // Datos del token para diagnosticar permisos (no expone el token)
 export async function tokenInfo(env, store) {
-  const token = tokenFor(env, store);
+  const token = await tokenFor(env, store);
   const d = (await graph(env, store, `debug_token?input_token=${encodeURIComponent(token)}`)).data || {};
   let app = null;
   try {
@@ -110,7 +124,7 @@ export async function getPhoneInfo(env, store) {
 // Busca a qué cuenta de WhatsApp Business pertenece el número, con los permisos del token.
 // Devuelve también lo que revisó, para poder explicar qué pasó si no la encuentra.
 export async function findWaba(env, store) {
-  const token = tokenFor(env, store);
+  const token = await tokenFor(env, store);
   const report = { found: null, tried: [], error: null };
   let dbg;
   try {
@@ -197,7 +211,7 @@ export async function markRead(env, store, wamid) {
 // Descarga un archivo que mandó la clienta (Meta guarda el id ~30 días)
 export async function downloadMedia(env, store, mediaId) {
   const info = await graph(env, store, mediaId);
-  const res = await fetch(info.url, { headers: { Authorization: `Bearer ${tokenFor(env, store)}` } });
+  const res = await fetch(info.url, { headers: { Authorization: `Bearer ${await tokenFor(env, store)}` } });
   if (!res.ok) throw new Error(`No se pudo descargar el archivo (HTTP ${res.status})`);
   return { body: await res.arrayBuffer(), mime: info.mime_type || res.headers.get('content-type') || 'application/octet-stream', size: info.file_size };
 }
@@ -236,7 +250,7 @@ export async function setProfile(env, store, fields) {
 
 // Foto de perfil: se sube con la «subida reanudable» de Meta y se usa el código que devuelve
 export async function setProfilePhoto(env, store, bytes, mime) {
-  const token = tokenFor(env, store);
+  const token = await tokenFor(env, store);
   let appId = env.META_APP_ID;
   if (!appId) appId = (await graph(env, store, `debug_token?input_token=${encodeURIComponent(token)}`))?.data?.app_id;
   if (!appId) throw new HttpError(400, 'No se encontró el ID de la app de Meta. Ponlo en Cloudflare como variable META_APP_ID.');

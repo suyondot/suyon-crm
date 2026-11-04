@@ -1761,6 +1761,127 @@ function statusPill(s) {
   return s === 'activo' ? '<span class="pillst st-on">Conectado</span>' : '<span class="pillst st-off" style="background:var(--warn-soft);color:var(--warn)">Sin conectar</span>';
 }
 
+/* ---- Conectar WhatsApp con un clic (Registro insertado de Meta) ---- */
+async function drawSignup(st) {
+  const box = $('#esconn');
+  if (!box) return;
+  if (S.es?.storeId !== st.id) {
+    try {
+      S.es = { ...(await api('GET', `/stores/${st.id}/whatsapp/signup`)), storeId: st.id };
+    } catch (e) {
+      S.es = { storeId: st.id, error: e.message, falta: [] };
+    }
+  }
+  const es = S.es;
+  if (!$('#esconn')) return;
+  const linked = st.connected_via === 'embedded' || st.connected_via === 'coexistencia';
+  if (!es.ready) {
+    box.innerHTML = `<h3>Conectar con un clic</h3>
+      <p class="sub">Con este botón, tú o tus alumnos conectan su número sin copiar identificadores ni tokens: se abre la ventana de Meta, eligen su cuenta, ponen el código SMS y listo.</p>
+      <div class="warnbox"><b>Falta un paso en Meta para encender el botón.</b>
+        <ol>${es.falta?.includes('config') ? `<li>En Meta for Developers → tu app <b>SUYON CRM</b> → <b>Inicio de sesión con Facebook para empresas</b> → <b>Configuraciones</b> → «Crear desde plantilla» → <b>WhatsApp Embedded Signup</b>. Copia el <b>ID de configuración</b>.</li>
+          <li>En <b>Inicio de sesión con Facebook para empresas → Configuración</b>, agrega <span class="mono">${esc(location.origin)}</span> en «Dominios permitidos» y en «URI de redireccionamiento de OAuth válidos». Activa «Inicio de sesión con el SDK de JavaScript».</li>
+          <li>Pásame ese ID de configuración por el chat (no es una clave, se puede compartir) y lo pongo.</li>` : ''}
+          ${es.falta?.includes('app') ? '<li>Falta el ID de la app: pásamelo por el chat (está arriba en Meta for Developers, no es una clave).</li>' : ''}
+          ${es.falta?.includes('secret') ? '<li>Falta el secreto <span class="mono">META_APP_SECRET</span> en Cloudflare.</li>' : ''}</ol>
+        ${es.error ? `<p class="note">${esc(es.error)}</p>` : ''}</div>`;
+    return;
+  }
+  box.innerHTML = `<h3>Conectar con un clic</h3>
+    <p class="sub">${linked ? `Este número se conectó con Meta${st.connected_via === 'coexistencia' ? ' y sigue en la app WhatsApp Business del celular' : ''}. Si cambias de número, vuelve a conectarlo aquí.` : 'Se abre la ventana de Meta: eliges tu portafolio, tu número y pones el código SMS. Control Total hace el resto.'}</p>
+    <div class="esbtns">
+      <button class="send esbtn" id="es-new" type="button">${ICON.wa || ''}<span><b>${linked ? 'Conectar otro número' : 'Conectar WhatsApp'}</b><small>Número nuevo, solo para la API</small></span></button>
+      <button class="iconbtn esbtn" id="es-coex" type="button"><span><b>Ya uso WhatsApp Business en el celular</b><small>Lo sigues usando en el celular y también aquí</small></span></button>
+    </div>
+    <p class="note" style="margin:8px 0 0">Después de conectar, agrega una tarjeta en la cuenta de WhatsApp (Meta cobra los mensajes que no son gratis).</p>`;
+  loadFbSdk(es).catch(() => {});
+  $('#es-new').onclick = () => startSignup(st, false);
+  $('#es-coex').onclick = () => startSignup(st, true);
+}
+
+function loadFbSdk(info) {
+  if (window.FB && window.__fbReady) return Promise.resolve(window.FB);
+  if (window.__fbLoading) return window.__fbLoading;
+  window.__fbLoading = new Promise((resolve, reject) => {
+    window.fbAsyncInit = () => {
+      window.FB.init({ appId: info.app_id, autoLogAppEvents: true, xfbml: false, version: info.version });
+      window.__fbReady = true;
+      resolve(window.FB);
+    };
+    const sc = document.createElement('script');
+    sc.src = 'https://connect.facebook.net/es_LA/sdk.js';
+    sc.async = true;
+    sc.defer = true;
+    sc.crossOrigin = 'anonymous';
+    sc.onerror = () => {
+      window.__fbLoading = null;
+      reject(new Error('No se pudo abrir Meta. Revisa tu internet o apaga el bloqueador de anuncios en esta página.'));
+    };
+    document.head.appendChild(sc);
+  });
+  return window.__fbLoading;
+}
+
+function startSignup(st, coex) {
+  const es = S.es;
+  // FB.login tiene que salir justo con el toque (si no, el navegador bloquea la ventana)
+  if (!window.FB || !window.__fbReady) {
+    toast('Cargando Meta… toca otra vez en unos segundos');
+    loadFbSdk(es).catch((e) => toast(e.message, 6000));
+    return;
+  }
+  let session = null;
+  const onMsg = (ev) => {
+    let host = '';
+    try {
+      host = new URL(ev.origin).hostname;
+    } catch {}
+    if (!/(^|\.)facebook\.com$/.test(host)) return;
+    let d = ev.data;
+    try {
+      if (typeof d === 'string') d = JSON.parse(d);
+    } catch {
+      return;
+    }
+    if (d && d.type === 'WA_EMBEDDED_SIGNUP') session = d;
+  };
+  window.addEventListener('message', onMsg);
+  const done = (resp) => {
+    (async () => {
+      const code = resp?.authResponse?.code;
+      // El aviso de la ventana puede llegar un poco después que el código
+      for (let i = 0; i < 10 && code && !session; i++) await new Promise((r) => setTimeout(r, 200));
+      window.removeEventListener('message', onMsg);
+      if (!code) {
+        toast(session?.event === 'CANCEL' ? 'Se cerró la ventana de Meta sin terminar.' : session?.event === 'ERROR' ? `Meta dio un error: ${session.data?.error_message || ''}` : 'No se completó la conexión.', 6000);
+        return;
+      }
+      toast('Conectando tu número…', 8000);
+      try {
+        const r = await api('POST', `/stores/${st.id}/whatsapp/signup`, {
+          code,
+          phone_number_id: session?.data?.phone_number_id || null,
+          waba_id: session?.data?.waba_id || null,
+          coexistencia: coex || session?.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+        });
+        setMe(r);
+        S.connSteps = { steps: r.steps || [], ok: r.ok, error: r.error };
+        S.es = null;
+        toast(r.ok ? '¡Número conectado!' : 'No se pudo terminar: mira el detalle', 5000);
+        render();
+      } catch (e) {
+        toast(e.message, 6000);
+      }
+    })();
+  };
+  window.FB.login(done, {
+    config_id: es.config_id,
+    response_type: 'code',
+    override_default_response_type: true,
+    extras: coex ? { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' } : { setup: {}, sessionInfoVersion: '3' },
+  });
+}
+
 function cfgNumero() {
   const st = store();
   const body = $('#cfgbody');
@@ -1770,6 +1891,7 @@ function cfgNumero() {
   body.innerHTML = `
   <div class="ph"><div><h2>${esc(st.name)}</h2><p>Este número es la tienda: sus chats, etiquetas y equipo son solo suyos.</p></div><span class="grow"></span>${statusPill(st.status)}</div>
   <div class="grid">
+    <div class="card esconn" id="esconn"><h3>Conectar con un clic</h3><span class="spin"></span></div>
     <div class="card"><h3>Conexión</h3>
       ${st.status === 'activo'
         ? `<p class="sub">Conectado como <b>${esc(st.verified_name || '—')}</b> · <span class="mono">${esc(st.phone_display || '')}</span></p>`
@@ -1825,6 +1947,7 @@ function cfgNumero() {
     <div class="card danger"><h3>Borrar tienda</h3><p class="sub">Borra sus chats, mensajes, archivos y etiquetas para siempre. No toca nada en Meta.</p>
       <button class="btn-danger" data-act="delstore">Borrar ${esc(st.name)}</button></div>
   </div>`;
+  drawSignup(st);
   let color = st.color;
   $('#ssw').onclick = (e) => {
     const b = e.target.closest('[data-swatch]');

@@ -10,6 +10,7 @@ import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
 import reportesApi from './api-reportes.js';
 import pedidosApi from './api-pedidos.js';
+import { signupInfo, connectSignup } from './signup.js';
 
 const api = new Hono();
 const H24 = 24 * 3600e3;
@@ -34,7 +35,7 @@ function publicStore(s) {
   const out = {
     id: s.id, company_id: s.company_id, name: s.name, color: s.color, phone_display: s.phone_display,
     status: s.status, verified_name: s.verified_name, role: s.role, rev: s.rev,
-    timezone: s.timezone, country: s.country, currency: s.currency, language: s.language, hour12: s.hour12, canal: s.canal || 'mensajes',
+    timezone: s.timezone, country: s.country, currency: s.currency, language: s.language, hour12: s.hour12, canal: s.canal || 'mensajes', connected_via: s.connected_via || null,
   };
   if (s.role === 'dueno') {
     Object.assign(out, {
@@ -537,6 +538,26 @@ api.post('/stores/:id/connect', async (c) => {
     await db.prepare("UPDATE stores SET status = 'pendiente', connect_error = ? WHERE id = ?").bind(clip(e.message, 300), st.id).run();
     c.set('access', undefined);
     return c.json({ ok: false, steps, error: e.message, ...(await mePayload(c)) }, 200);
+  }
+});
+
+// Conectar WhatsApp con un clic (Registro insertado de Meta)
+api.get('/stores/:id/whatsapp/signup', async (c) => {
+  await storeFor(c, c.req.param('id'), 'config');
+  return c.json(await signupInfo(c.env, new URL(c.req.url).origin));
+});
+
+api.post('/stores/:id/whatsapp/signup', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const b = await body(c);
+  try {
+    const r = await connectSignup(c.env, st, { code: b.code, phone_number_id: b.phone_number_id, waba_id: b.waba_id, coexistencia: !!b.coexistencia });
+    c.set('access', undefined);
+    return c.json({ ok: true, steps: r.steps, ...(await mePayload(c)) });
+  } catch (e) {
+    await c.env.DB.prepare('UPDATE stores SET connect_error = ? WHERE id = ?').bind(clip(e.message, 300), st.id).run();
+    c.set('access', undefined);
+    return c.json({ ok: false, steps: [], error: e.message, ...(await mePayload(c)) }, 200);
   }
 });
 
