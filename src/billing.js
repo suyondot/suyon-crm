@@ -14,6 +14,8 @@ export const DEFAULT_PLAN = {
   included_users: 1,
   pay_info: '', // cómo pagar (Yape, cuenta…): lo escribe el administrador en el Panel, no va en el código
   contact: '', // WhatsApp del administrador para avisar el pago
+  legal_name: '', // titular que se muestra en /planes (lo pide la pasarela de pagos)
+  ruc: '',
 };
 
 export async function loadPlan(env) {
@@ -38,6 +40,8 @@ export async function savePlan(env, patch) {
   if ('currency' in patch) next.currency = ['USD', 'PEN'].includes(patch.currency) ? patch.currency : cur.currency;
   if ('pay_info' in patch) next.pay_info = String(patch.pay_info || '').slice(0, 1500);
   if ('contact' in patch) next.contact = String(patch.contact || '').replace(/[^\d+]/g, '').slice(0, 20);
+  if ('legal_name' in patch) next.legal_name = String(patch.legal_name || '').trim().slice(0, 120);
+  if ('ruc' in patch) next.ruc = String(patch.ruc || '').replace(/\D/g, '').slice(0, 11);
   await env.DB.prepare("INSERT INTO platform_settings (key, value, updated_at) VALUES ('plan', ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
     .bind(JSON.stringify(next), now()).run();
   return next;

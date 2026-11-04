@@ -136,7 +136,10 @@ function draw(content) {
         <div class="field"><label>Días de prueba gratis</label><input name="trial_days" type="number" min="0" max="90" value="${p.trial_days}"></div>
         <div class="field"><label>Días de gracia al vencer</label><input name="grace_days" type="number" min="0" max="30" value="${p.grace_days}"></div>
         <div class="field"><label>Tu WhatsApp para avisar el pago</label><input name="contact" value="${e(p.contact || '')}" placeholder="51999888777" inputmode="tel"></div>
+        <div class="field"><label>Titular (sale en la página de planes)</label><input name="legal_name" value="${e(p.legal_name || '')}" placeholder="Tu nombre o razón social"></div>
+        <div class="field"><label>RUC</label><input name="ruc" value="${e(p.ruc || '')}" inputmode="numeric" maxlength="11"></div>
       </div>
+      <p class="note" style="margin:0">Página pública de precios y condiciones (la que revisa Culqi): <a href="/planes" target="_blank" rel="noopener">${e(location.origin)}/planes</a></p>
       <div class="field"><label>Cómo te pagan (lo ven tus alumnos al renovar)</label><textarea name="pay_info" rows="3" class="notesbox" placeholder="Ej: Yape al 9xx xxx xxx a nombre de … y manda la captura por WhatsApp">${e(p.pay_info || '')}</textarea></div>
       <label class="check"><input type="checkbox" name="signup_open" ${p.signup_open ? 'checked' : ''}> Registro abierto (cualquiera puede crear su cuenta con prueba gratis)</label>
       <div class="err" hidden></div><div><button class="send" type="submit">Guardar</button></div></form>

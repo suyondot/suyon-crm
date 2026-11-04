@@ -66,3 +66,40 @@ export function termsPage(env) {
 <p>Puedes dejar de recibir mensajes en cualquier momento escribiendo "STOP" o bloqueando el número.</p>
 <p>Contacto: <a href="mailto:${email}">${email}</a></p>`);
 }
+
+// Página pública de planes y condiciones de la suscripción (la revisan Culqi / Mercado Pago)
+export function plansPage(env, plan) {
+  const email = env.CONTACT_EMAIL || 'storesuyo@gmail.com';
+  const cur = plan.currency === 'PEN' ? 'S/' : 'US$';
+  const m = (n) => `${cur}${Number(n).toLocaleString('es-PE')}`;
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+  const wa = plan.contact ? `<li>WhatsApp: <a href="https://wa.me/${esc(String(plan.contact).replace(/\D/g, ''))}">+${esc(String(plan.contact).replace(/\D/g, ''))}</a></li>` : '';
+  const titular = plan.legal_name ? `<li>Titular: ${esc(plan.legal_name)}${plan.ruc ? ` · RUC ${esc(plan.ruc)}` : ''}</li>` : '';
+  return shell('Planes y precios', `
+<h1>Control Total · Planes y precios</h1>
+<small>Sistema para vender ropa por WhatsApp · Última actualización: noviembre de 2026</small>
+<p>Control Total es un software en línea (suscripción mensual) para marcas que venden por WhatsApp: bandeja de chats del equipo, bot y asistente con IA, etiquetas, llamadas, pedidos de Lima y provincia, clientes y reportes. Se usa desde el navegador, en computadora o celular, con la API oficial de WhatsApp.</p>
+<h2>Precios</h2>
+<ul>
+<li><b>Prueba gratis de ${esc(plan.trial_days)} días</b>, sin tarjeta.</li>
+<li><b>Plan base: ${m(plan.base)} al mes</b>. Incluye 1 número de WhatsApp, la cuenta del dueño y 1 trabajadora.</li>
+<li><b>Número de WhatsApp adicional: ${m(plan.per_number)} al mes</b> cada uno.</li>
+<li><b>Trabajadora adicional: ${m(plan.per_user)} al mes</b> cada una.</li>
+<li>Ejemplo: 2 números y 3 trabajadoras = ${m(plan.base)} + ${m(plan.per_number)} + ${m(2 * plan.per_user)} = <b>${m(plan.base + plan.per_number + 2 * plan.per_user)} al mes</b>.</li>
+</ul>
+<p><small>No incluido: lo que Meta cobra por los mensajes de WhatsApp (se paga directo a Meta con la tarjeta del cliente) y el consumo de inteligencia artificial (con la clave propia del cliente o con saldo prepagado).</small></p>
+<h2>Cómo se cobra</h2>
+<p>Al terminar la prueba, el pago es mensual con tarjeta de crédito o débito a través de una pasarela de pagos autorizada. El cobro se renueva automáticamente cada mes por el monto del plan según los números y trabajadoras activos. Control Total no guarda los datos de la tarjeta: los procesa la pasarela de pagos.</p>
+<h2>Cancelación</h2>
+<p>Puedes cancelar cuando quieras desde «Mi plan» o escribiéndonos. Al cancelar no se hacen más cobros y el acceso sigue hasta el final del mes ya pagado. Tus datos se conservan 30 días por si vuelves; después puedes pedir que los borremos.</p>
+<h2>Reembolsos</h2>
+<p>Si hubo un cobro por error o duplicado, lo devolvemos completo; escríbenos dentro de los 7 días siguientes al cobro. Los meses ya iniciados no se reembolsan, salvo que el servicio no haya funcionado por una falla nuestra.</p>
+<h2>Contacto</h2>
+<ul>
+${titular}
+<li>Correo: <a href="mailto:${esc(email)}">${esc(email)}</a></li>
+${wa}
+<li>Lima, Perú</li>
+</ul>
+<p><a href="/registro"><b>Crear mi cuenta gratis</b></a> · <a href="/terminos">Términos del servicio</a> · <a href="/privacidad">Política de privacidad</a></p>`);
+}

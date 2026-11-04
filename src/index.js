@@ -4,7 +4,8 @@ import { ensureSchema } from './migrations.js';
 import { HttpError, safeEqual, now } from './util.js';
 import api from './api.js';
 import { verifySignature, processWebhook, logWebhook } from './webhook.js';
-import { privacyPage, deletionPage, termsPage } from './pages.js';
+import { privacyPage, deletionPage, termsPage, plansPage } from './pages.js';
+import { loadPlan } from './billing.js';
 import { runJobs } from './bot.js';
 import { runOrderJobs } from './automations.js';
 import { handleShopify } from './shopify.js';
@@ -85,6 +86,7 @@ app.post('/webhook', async (c) => {
 app.get('/privacidad', (c) => c.html(privacyPage(c.env)));
 app.get('/eliminar-datos', (c) => c.html(deletionPage(c.env)));
 app.get('/terminos', (c) => c.html(termsPage(c.env)));
+app.get('/planes', async (c) => c.html(plansPage(c.env, await loadPlan(c.env))));
 
 app.onError((err, c) => {
   if (err instanceof HttpError) return c.json({ error: err.message, ...(err.extra || {}) }, err.status);

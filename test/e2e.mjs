@@ -1193,7 +1193,10 @@ try {
     await call('PATCH', '/api/admin/plan', { base: 7, signup_open: true });
   });
   await step('páginas para Meta', async () => {
-    for (const p of ['/privacidad', '/eliminar-datos', '/terminos']) assert.equal((await fetch(BASE + p)).status, 200);
+    for (const p of ['/privacidad', '/eliminar-datos', '/terminos', '/planes']) assert.equal((await fetch(BASE + p)).status, 200);
+    const planes = await (await fetch(BASE + '/planes')).text();
+    assert.match(planes, /US\$7 al mes/);
+    assert.match(planes, /Reembolsos/);
     const app = await fetch(BASE + '/invitacion/abc');
     assert.equal(app.status, 200, 'la app web carga en rutas propias');
   });
