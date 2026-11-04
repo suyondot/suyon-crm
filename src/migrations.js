@@ -454,6 +454,29 @@ export const MIGRATIONS = [
       `CREATE INDEX payments_company ON payments (company_id, created_at)`,
     ],
   },
+  {
+    id: 12,
+    name: 'demos agendadas desde la página pública',
+    sql: [
+      // status: nueva · confirmada · hecha · no_vino · cancelada
+      `CREATE TABLE demos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        starts_at INTEGER NOT NULL,
+        dur_min INTEGER NOT NULL DEFAULT 30,
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        brand TEXT,
+        sells TEXT,
+        volume TEXT,
+        note TEXT,
+        status TEXT NOT NULL DEFAULT 'nueva',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX demos_start ON demos (starts_at)`,
+      `CREATE INDEX demos_phone ON demos (phone, starts_at)`,
+    ],
+  },
 ];
 
 let ready = null;

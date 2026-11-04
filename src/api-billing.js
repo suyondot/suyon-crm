@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { now, fail, hashPassword } from './util.js';
 import { requireUser, companyFor, createSession } from './auth.js';
 import { loadPlan, savePlan, billingOf, statusOf, addPayment, usageOf, priceOf } from './billing.js';
+import { loadAgenda, saveAgenda, freeSlots, bookDemo, dayLabel, timeLabel, gcalLink, DEMO_STATUS } from './agenda.js';
 
 const r = new Hono();
 const DAY = 864e5;
@@ -152,6 +153,56 @@ r.post('/admin/empresas/:id', async (c) => {
     default:
       fail(400, 'Acción desconocida.');
   }
+  return c.json({ ok: true });
+});
+
+/* ---------- Agenda de demos (página pública + Panel) ---------- */
+
+r.get('/agenda', async (c) => {
+  const ag = await loadAgenda(c.env);
+  const p = await loadPlan(c.env);
+  return c.json({ on: !!ag.on, tz: ag.tz, dur_min: ag.dur_min, where: ag.where, contact: p.contact || null, days: await freeSlots(c.env, ag) });
+});
+
+r.post('/agenda', async (c) => {
+  const ag = await loadAgenda(c.env);
+  return c.json({ ok: true, demo: await bookDemo(c.env, ag, await body(c)) });
+});
+
+r.get('/admin/agenda', async (c) => {
+  await requireAdmin(c);
+  return c.json({ agenda: await loadAgenda(c.env) });
+});
+
+r.patch('/admin/agenda', async (c) => {
+  await requireAdmin(c);
+  return c.json({ agenda: await saveAgenda(c.env, await body(c)) });
+});
+
+r.get('/admin/demos', async (c) => {
+  await requireAdmin(c);
+  const ag = await loadAgenda(c.env);
+  const t = now();
+  const { results } = await c.env.DB.prepare('SELECT * FROM demos WHERE starts_at >= ? ORDER BY starts_at LIMIT 300').bind(t - 45 * DAY).all();
+  const demos = results.map((d) => ({
+    ...d,
+    dia: dayLabel(d.starts_at, ag.tz),
+    hora: timeLabel(d.starts_at, ag.tz),
+    gcal: gcalLink({ title: `Demo Control Total · ${d.name}${d.brand ? ` (${d.brand})` : ''}`, start: d.starts_at, mins: d.dur_min, details: `WhatsApp: +${d.phone}\nMarca: ${d.brand || '—'}\nVende: ${d.sells || '—'}\nChats al día: ${d.volume || '—'}${d.note ? `\nNota: ${d.note}` : ''}`, where: ag.where }),
+  }));
+  const nuevas = demos.filter((d) => d.status === 'nueva' && d.starts_at > t).length;
+  return c.json({ demos, nuevas, agenda: ag });
+});
+
+r.patch('/admin/demos/:id', async (c) => {
+  await requireAdmin(c);
+  const b = await body(c);
+  const id = Number(c.req.param('id'));
+  const d = await c.env.DB.prepare('SELECT id FROM demos WHERE id = ?').bind(id).first();
+  if (!d) fail(404, 'Esa demo no existe.');
+  if ('status' in b && !DEMO_STATUS.includes(b.status)) fail(400, 'Estado no válido.');
+  await c.env.DB.prepare('UPDATE demos SET status = COALESCE(?, status), note = CASE WHEN ? THEN ? ELSE note END, updated_at = ? WHERE id = ?')
+    .bind(b.status || null, 'note' in b ? 1 : 0, txt(b.note, 400) || null, now(), id).run();
   return c.json({ ok: true });
 });
 

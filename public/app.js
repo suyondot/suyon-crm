@@ -234,7 +234,13 @@ async function boot() {
     return authShell(`<h1>Sin conexión</h1><p>${esc(e.message)}</p><button class="send" onclick="location.reload()">Reintentar</button>`);
   }
   if (st.setup) return showSetup(st);
-  if (st.login) return showLogin(null, st);
+  if (st.login) {
+    // Visitante nuevo en la web (no en la app instalada) → página pública
+    const app = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    if (path === '/' && !app && !location.search.includes('login')) return location.replace('/inicio');
+    return showLogin(null, st);
+  }
+  if (path === '/entrar') history.replaceState(null, '', '/');
   startApp(st);
 }
 
@@ -438,6 +444,7 @@ function loggedOut() {
 
 /* =================== App principal =================== */
 function startApp(me) {
+  if (location.pathname === '/entrar') history.replaceState(null, '', '/');
   document.body.classList.remove('auth-mode');
   root().className = 'app';
   setMe(me);
@@ -515,7 +522,7 @@ function navItems() {
   if (owner() || (!S.me.stores.length && S.me.companies.some((c) => c.role === 'dueno'))) items.push(['config', 'Configuración', ICON.gear, 0]);
   else items.push(['config', 'Mi cuenta', ICON.user, 0]);
   if (store() && canChats()) items.push(['reportes', 'Reportes', ICON.chart, 0]);
-  if (S.me.user.is_admin) items.push(['panel', 'Panel Suyon', ICON.users, 0]);
+  if (S.me.user.is_admin) items.push(['panel', 'Panel Suyon', ICON.users, S.me.demos_nuevas || 0]);
   if (planBlocked()) return items.filter(([v]) => ['config', 'panel'].includes(v));
   return items;
 }

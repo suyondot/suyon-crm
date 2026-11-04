@@ -78,12 +78,12 @@ export async function renderPaywall(content, company) {
 }
 
 /* =================== Panel Suyon (solo administrador) =================== */
-const PN = { data: null, q: '', f: '' };
+const PN = { data: null, q: '', f: '', tab: 'empresas', demos: null, df: 'proximas' };
 
 export async function renderPanel(content) {
   content.innerHTML = '<div class="page pnl"><div class="empty" style="padding:40px"><span class="spin"></span></div></div>';
   try {
-    PN.data = await H.api('GET', '/admin/empresas');
+    [PN.data, PN.demos] = await Promise.all([H.api('GET', '/admin/empresas'), H.api('GET', '/admin/demos')]);
   } catch (er) {
     content.innerHTML = `<div class="page"><div class="err">${e(er.message)}</div></div>`;
     return;
@@ -91,7 +91,11 @@ export async function renderPanel(content) {
   draw(content);
 }
 
+const tabs = () => `<div class="seg pntabs" role="tablist">${[['empresas', 'Empresas'], ['demos', `Demos${PN.demos?.nuevas ? ` <span class="pnbadge">${PN.demos.nuevas}</span>` : ''}`], ['horarios', 'Horarios de demo']].map(([k, l]) => `<button data-ptab="${k}" aria-pressed="${PN.tab === k}">${l}</button>`).join('')}</div>`;
+
 function draw(content) {
+  if (PN.tab === 'demos') return drawDemos(content);
+  if (PN.tab === 'horarios') return drawHorarios(content);
   const d = PN.data;
   const p = d.plan;
   const rs = d.resumen;
@@ -100,6 +104,7 @@ function draw(content) {
   const regUrl = `${location.origin}/registro`;
   content.innerHTML = `<div class="page pnl">
     <div class="ph"><div><h2>Panel Suyon</h2><p>Tus alumnos: quién está en prueba, quién pagó y cuánto entra al mes. Solo tú lo ves.</p></div></div>
+    ${tabs()}
     <div class="clikpis">
       <div class="clikpi"><span>Ingreso mensual</span><b>${money(rs.mensual, p.currency)}</b><small>${rs.pagando} pagando</small></div>
       <div class="clikpi"><span>En prueba</span><b>${rs.prueba}</b><small>${p.trial_days} días gratis</small></div>
@@ -156,6 +161,7 @@ function draw(content) {
     }, 250);
   };
   root.onclick = async (ev) => {
+    if (tabClick(ev, content)) return;
     const f = ev.target.closest('[data-pf]');
     if (f) {
       PN.f = f.dataset.pf;
@@ -193,6 +199,127 @@ function draw(content) {
     try {
       PN.data.plan = (await H.api('PATCH', '/admin/plan', d)).plan;
       PN.data = await H.api('GET', '/admin/empresas');
+      H.toast('Guardado');
+      draw(content);
+    } catch (er) {
+      const x = form.querySelector('.err');
+      x.textContent = er.message;
+      x.hidden = false;
+    }
+  };
+}
+
+function tabClick(ev, content) {
+  const t = ev.target.closest('[data-ptab]');
+  if (!t) return false;
+  PN.tab = t.dataset.ptab;
+  draw(content);
+  return true;
+}
+
+/* ---------- Demos agendadas ---------- */
+const DST = {
+  nueva: ['Nueva', 't-info'],
+  confirmada: ['Confirmada', 't-ok'],
+  hecha: ['Hecha', 't-mute'],
+  no_vino: ['No vino', 't-warn'],
+  cancelada: ['Cancelada', 't-bad'],
+};
+const dpill = (st) => `<span class="opill ${(DST[st] || DST.nueva)[1]}">${(DST[st] || DST.nueva)[0]}</span>`;
+
+function waConfirm(d) {
+  const msg = `Hola ${d.name.split(' ')[0]} 👋 Soy Jordan de Control Total. Te confirmo tu demo el ${d.dia} a las ${d.hora}. ${PN.demos.agenda.where || ''} ¿Te queda bien?`;
+  return `https://wa.me/${d.phone}?text=${encodeURIComponent(msg)}`;
+}
+
+function drawDemos(content) {
+  const t = Date.now();
+  const all = PN.demos.demos;
+  const list = PN.df === 'proximas' ? all.filter((d) => d.starts_at + d.dur_min * 6e4 > t && d.status !== 'cancelada') : all.filter((d) => !(d.starts_at + d.dur_min * 6e4 > t && d.status !== 'cancelada')).reverse();
+  const pub = `${location.origin}/inicio#demo`;
+  let lastDay = '';
+  content.innerHTML = `<div class="page pnl">
+    <div class="ph"><div><h2>Panel Suyon</h2><p>Demos que la gente agenda desde tu página. Confírmalas por WhatsApp y pásalas a tu Google Calendar.</p></div></div>
+    ${tabs()}
+    <div class="pedhead">
+      <div class="seg">${[['proximas', 'Próximas'], ['pasadas', 'Pasadas y canceladas']].map(([k, l]) => `<button data-df="${k}" aria-pressed="${PN.df === k}">${l}</button>`).join('')}</div>
+      <span class="note">Enlace para agendar: <span class="mono">${e(pub)}</span> <button type="button" class="iconbtn sm" data-copy="${e(pub)}">Copiar</button></span>
+    </div>
+    <div class="demolist">${list.map((d) => {
+      const head = d.dia !== lastDay ? `<h4 class="demoday">${e(d.dia)}</h4>` : '';
+      lastDay = d.dia;
+      return `${head}<div class="card demo" data-dm="${d.id}">
+        <div class="demotime"><b>${e(d.hora)}</b><small>${d.dur_min} min</small></div>
+        <div class="demoinfo"><b>${e(d.name)}</b>${d.brand ? ` · ${e(d.brand)}` : ''} ${dpill(d.status)}
+          <small><a href="https://wa.me/${e(d.phone)}" target="_blank" rel="noopener">+${e(d.phone)}</a>${d.sells ? ` · Vende: ${e(d.sells)}` : ''}${d.volume ? ` · ${e(d.volume)} chats al día` : ''}</small>
+          ${d.note ? `<small>«${e(d.note)}»</small>` : ''}</div>
+        <div class="demoacts">
+          <a class="iconbtn sm" href="${e(waConfirm(d))}" target="_blank" rel="noopener">Confirmar por WhatsApp</a>
+          <a class="iconbtn sm" href="${e(d.gcal)}" target="_blank" rel="noopener">A mi Google Calendar</a>
+          <details class="pnmore"><summary class="iconbtn sm">Estado</summary><div class="pnmenu">
+            ${Object.entries(DST).map(([k, [l]]) => `<button data-ds="${k}">${l}</button>`).join('')}
+          </div></details>
+        </div></div>`;
+    }).join('') || `<div class="card empty" style="padding:30px;text-align:center"><p class="note" style="margin:0">${PN.df === 'proximas' ? 'Todavía no hay demos agendadas. Comparte tu enlace para agendar.' : 'Nada por aquí.'}</p></div>`}</div>
+  </div>`;
+  const root = content.querySelector('.pnl');
+  root.onclick = async (ev) => {
+    if (tabClick(ev, content)) return;
+    const f = ev.target.closest('[data-df]');
+    if (f) {
+      PN.df = f.dataset.df;
+      return draw(content);
+    }
+    const s = ev.target.closest('[data-ds]');
+    if (!s) return;
+    const id = Number(s.closest('[data-dm]').dataset.dm);
+    if (s.dataset.ds === 'cancelada' && !confirm('¿Cancelar esta demo? El horario vuelve a quedar libre.')) return;
+    try {
+      await H.api('PATCH', `/admin/demos/${id}`, { status: s.dataset.ds });
+      PN.demos = await H.api('GET', '/admin/demos');
+      H.toast('Listo');
+      draw(content);
+    } catch (er) {
+      H.toast(er.message, 5000);
+    }
+  };
+}
+
+/* ---------- Horarios en que das demos ---------- */
+const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+function drawHorarios(content) {
+  const a = PN.demos.agenda;
+  content.innerHTML = `<div class="page pnl">
+    <div class="ph"><div><h2>Panel Suyon</h2><p>Elige los días y horas en que puedes dar demos. La página solo muestra esos horarios y nunca dos demos a la vez.</p></div></div>
+    ${tabs()}
+    <form class="card" id="pnag"><h3>Horarios de demo</h3>
+      <label class="check"><input type="checkbox" name="on" ${a.on ? 'checked' : ''}> Recibir demos desde la página</label>
+      <div class="field"><label>Días</label><div class="pndays">${DIAS.map((l, i) => `<label class="pnday"><input type="checkbox" name="d${i}" ${a.days.includes(i) ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></div>
+      <div class="fields3">
+        <div class="field"><label>Desde</label><input name="from" type="time" value="${e(a.from)}" step="900"></div>
+        <div class="field"><label>Hasta</label><input name="to" type="time" value="${e(a.to)}" step="900"></div>
+        <div class="field"><label>Duración de cada demo (min)</label><input name="dur_min" type="number" min="15" max="120" step="5" value="${a.dur_min}"></div>
+        <div class="field"><label>Pausa desde (vacío = sin pausa)</label><input name="pausa_from" type="time" value="${e(a.pausa_from || '')}" step="900"></div>
+        <div class="field"><label>Pausa hasta</label><input name="pausa_to" type="time" value="${e(a.pausa_to || '')}" step="900"></div>
+        <div class="field"><label>Cada cuánto empieza una (min)</label><input name="slot_min" type="number" min="15" max="120" step="5" value="${a.slot_min}"></div>
+        <div class="field"><label>Anticipación mínima (horas)</label><input name="min_hours" type="number" min="0" max="72" value="${a.min_hours}"></div>
+        <div class="field"><label>Hasta cuántos días adelante</label><input name="max_days" type="number" min="1" max="60" value="${a.max_days}"></div>
+      </div>
+      <div class="field"><label>Días sin demos (feriados, viajes)</label><input name="off_dates" value="${e(a.off_dates || '')}" placeholder="2026-12-25, 2026-12-31"></div>
+      <div class="field"><label>Dónde es la demo (lo ve la persona al agendar)</label><input name="where" value="${e(a.where || '')}" maxlength="300"></div>
+      <p class="note" style="margin:0">Hora de Lima. Las demos nuevas salen en la pestaña Demos y con un número en «Panel Suyon».</p>
+      <div class="err" hidden></div><div><button class="send" type="submit">Guardar</button></div></form>
+  </div>`;
+  const root = content.querySelector('.pnl');
+  root.onclick = (ev) => tabClick(ev, content);
+  const form = root.querySelector('#pnag');
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const d = Object.fromEntries(new FormData(form));
+    const out = { on: !!d.on, days: DIAS.map((_, i) => (d[`d${i}`] ? i : -1)).filter((i) => i >= 0) };
+    for (const k of ['from', 'to', 'pausa_from', 'pausa_to', 'dur_min', 'slot_min', 'min_hours', 'max_days', 'off_dates', 'where']) out[k] = d[k];
+    try {
+      PN.demos.agenda = (await H.api('PATCH', '/admin/agenda', out)).agenda;
       H.toast('Guardado');
       draw(content);
     } catch (er) {

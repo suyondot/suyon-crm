@@ -50,8 +50,12 @@ function publicStore(s) {
 
 async function mePayload(c) {
   const a = await loadAccess(c);
+  const demos = a.user.is_admin
+    ? (await c.env.DB.prepare("SELECT COUNT(*) AS n FROM demos WHERE status = 'nueva' AND starts_at > ?").bind(Date.now()).first().catch(() => null))?.n || 0
+    : 0;
   return {
     user: { id: a.user.id, name: a.user.name, email: a.user.email, is_admin: !!a.user.is_admin },
+    demos_nuevas: demos,
     companies: a.companies,
     stores: a.stores.map(publicStore),
     roles: ROLES,

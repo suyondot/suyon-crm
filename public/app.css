@@ -1107,3 +1107,19 @@ a.iconbtn{text-decoration:none;color:inherit}
 .pnmenu{position:absolute;right:0;top:calc(100% + 4px);z-index:10;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);display:grid;min-width:170px;padding:4px}
 .pnmenu button{border:0;background:none;text-align:left;padding:8px 10px;border-radius:7px;font-size:13px;color:var(--fg);cursor:pointer}
 .pnmenu button:hover{background:var(--surface-2)}
+
+/* Panel · demos agendadas */
+.pntabs{margin:0 0 14px;align-self:flex-start}
+.pnbadge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--bad,#c0392b);color:#fff;font-size:11px;font-weight:700;margin-left:4px}
+.demolist{display:grid;gap:10px}
+.demoday{margin:12px 0 0;font-size:13px;color:var(--muted)}.demoday::first-letter{text-transform:uppercase}
+.demo{display:grid;grid-template-columns:90px 1fr auto;gap:14px;align-items:center;padding:14px 16px}
+.demotime b{display:block;font-size:16px}.demotime small,.demoinfo small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.demoinfo .opill{margin-left:6px;vertical-align:1px}
+.demoacts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.pndays{display:flex;gap:6px;flex-wrap:wrap}
+.pnday input{position:absolute;opacity:0;pointer-events:none}
+.pnday span{display:inline-block;padding:7px 12px;border:1px solid var(--line);border-radius:999px;cursor:pointer;font-size:13.5px}
+.pnday input:checked+span{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.pnday input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:760px){.demo{grid-template-columns:70px 1fr}.demoacts{grid-column:1/-1;justify-content:flex-start}}
