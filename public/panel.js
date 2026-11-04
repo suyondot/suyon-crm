@@ -4,7 +4,7 @@ export function initPanel(ctx) {
   H = ctx;
 }
 const e = (s) => H.esc(s);
-const money = (n, cur = 'USD') => `${cur === 'PEN' ? 'S/' : 'US$'}${(Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-PE')}`;
+const money = (n) => `S/${(Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-PE')}`;
 const day = (t) => (t ? new Date(t).toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 const STATE = {
   free: ['Sin cobro', 't-mute'],
@@ -17,9 +17,13 @@ const STATE = {
 };
 const pill = (st) => `<span class="opill ${(STATE[st] || STATE.free)[1]}">${(STATE[st] || STATE.free)[0]}</span>`;
 
+const per = (m) => (m === 1 ? '1 mes' : `${m} meses`);
 function priceBox(p) {
-  return `<table class="ptable plprice"><tbody>${p.price.lines.map((l) => `<tr><td>${e(l.label)}</td><td class="r mono">${money(l.amount, p.price.currency)}</td></tr>`).join('')}
-    <tr class="pltot"><td><b>Total al mes</b></td><td class="r mono"><b>${money(p.price.total, p.price.currency)}</b></td></tr></tbody></table>`;
+  const opts = p.options || [];
+  return `<table class="ptable plprice"><tbody>${p.price.lines.map((l) => `<tr><td>${e(l.label)}</td><td class="r mono">${money(l.amount)}</td></tr>`).join('')}
+    <tr class="pltot"><td><b>Total al mes</b> (pagando mes a mes)</td><td class="r mono"><b>${money(p.price.monthly)}</b></td></tr></tbody></table>
+    ${opts.length > 1 ? `<h4 style="margin:14px 0 6px">Paga varios meses y ahorra</h4><table class="ptable plprice"><thead><tr><th>Pagas</th><th class="r">Al mes</th><th class="r">Total</th><th class="r">Ahorras</th></tr></thead><tbody>
+      ${opts.map((o) => `<tr><td>${per(o.months)}</td><td class="r mono">${money(o.monthly)}</td><td class="r mono"><b>${money(o.total)}</b></td><td class="r mono">${o.saving > 0 ? money(o.saving) : '—'}</td></tr>`).join('')}</tbody></table>` : ''}`;
 }
 
 function payBox(p) {
@@ -122,9 +126,9 @@ function draw(content) {
         <td>${pill(x.state)}</td>
         <td>${x.until ? `${day(x.until)}${x.days_left ? `<small>${x.days_left} días</small>` : ''}` : '—'}</td>
         <td>${x.numbers} ${x.numbers === 1 ? 'número' : 'números'} (${x.conectados} conectados)<small>${x.users} ${x.users === 1 ? 'trabajadora' : 'trabajadoras'}</small></td>
-        <td class="r mono">${money(x.monthly, p.currency)}${x.cobrado ? `<small>cobrado ${money(x.cobrado, p.currency)}</small>` : ''}</td>
+        <td class="r mono">${money(x.monthly)}${x.cobrado ? `<small>cobrado ${money(x.cobrado)}</small>` : ''}</td>
         <td class="r"><div class="pnacts">
-          <button class="iconbtn sm" data-pa="pagado">Pagó 1 mes</button>
+          <button class="iconbtn sm" data-pa="pagado">Registrar pago</button>
           <details class="pnmore"><summary class="iconbtn sm">Más</summary><div class="pnmenu">
             <button data-pa="dias">Dar días extra</button>
             <button data-pa="prueba">Reiniciar prueba</button>
@@ -135,16 +139,25 @@ function draw(content) {
     <form class="card" id="pnplan"><h3>Precios y registro</h3>
       <p class="sub">Enlace para que tus alumnos se registren solos: <span class="mono">${e(regUrl)}</span> <button type="button" class="iconbtn sm" data-copy="${e(regUrl)}">Copiar</button></p>
       <div class="fields3">
-        <div class="field"><label>Plan base al mes</label><input name="base" type="number" step="0.5" min="0" value="${p.base}"></div>
-        <div class="field"><label>Cada número extra</label><input name="per_number" type="number" step="0.5" min="0" value="${p.per_number}"></div>
-        <div class="field"><label>Cada trabajadora extra</label><input name="per_user" type="number" step="0.5" min="0" value="${p.per_user}"></div>
-        <div class="field"><label>Moneda</label><select name="currency"><option value="USD" ${p.currency === 'USD' ? 'selected' : ''}>Dólares (US$)</option><option value="PEN" ${p.currency === 'PEN' ? 'selected' : ''}>Soles (S/)</option></select></div>
+        <div class="field"><label>Plan base al mes (S/)</label><input name="base" type="number" step="0.5" min="0" value="${p.base}"></div>
+        <div class="field"><label>Cada número extra al mes (S/)</label><input name="per_number" type="number" step="0.5" min="0" value="${p.per_number}"></div>
+        <div class="field"><label>Cada trabajadora extra al mes (S/)</label><input name="per_user" type="number" step="0.5" min="0" value="${p.per_user}"></div>
+        <div class="field"><label>Pack desde cuántos extras</label><input name="pack_min" type="number" min="2" max="50" value="${p.pack_min || 2}"></div>
         <div class="field"><label>Días de prueba gratis</label><input name="trial_days" type="number" min="0" max="90" value="${p.trial_days}"></div>
         <div class="field"><label>Días de gracia al vencer</label><input name="grace_days" type="number" min="0" max="30" value="${p.grace_days}"></div>
         <div class="field"><label>Tu WhatsApp para avisar el pago</label><input name="contact" value="${e(p.contact || '')}" placeholder="51999888777" inputmode="tel"></div>
         <div class="field"><label>Titular (sale en la página de planes)</label><input name="legal_name" value="${e(p.legal_name || '')}" placeholder="Tu nombre o razón social"></div>
         <div class="field"><label>RUC</label><input name="ruc" value="${e(p.ruc || '')}" inputmode="numeric" maxlength="11"></div>
       </div>
+      <div class="field"><label>Rebajas por pagar varios meses (soles menos, por mes)</label>
+        <table class="ptable pnper"><thead><tr><th>Paga</th><th>Al plan base</th><th>A cada extra suelto</th><th>A cada extra en pack</th><th class="r">Ejemplo: base + 2 extras</th></tr></thead><tbody>
+        ${p.periods.map((x) => `<tr data-per="${x.months}"><td><b>${per(x.months)}</b></td>
+          <td><input type="number" step="0.5" min="0" data-k="base_off" value="${x.base_off}" aria-label="Rebaja al plan base, ${per(x.months)}"></td>
+          <td><input type="number" step="0.5" min="0" data-k="extra_off" value="${x.extra_off}" aria-label="Rebaja a cada extra suelto, ${per(x.months)}"></td>
+          <td><input type="number" step="0.5" min="0" data-k="pack_off" value="${x.pack_off}" aria-label="Rebaja a cada extra en pack, ${per(x.months)}"></td>
+          <td class="r mono">${money(p.base - x.base_off + 2 * (p.per_number - x.pack_off))}/mes</td></tr>`).join('')}
+        </tbody></table>
+        <p class="note" style="margin:4px 0 0">Ejemplo: en «12 meses», plan base ${money(p.base)} − ${money(p.periods[3]?.base_off || 0)} = ${money(p.base - (p.periods[3]?.base_off || 0))} al mes. Pack = cuando lleva ${p.pack_min || 2} o más extras (números + trabajadoras).</p></div>
       <p class="note" style="margin:0">Página pública de precios y condiciones (la que revisa Culqi): <a href="/planes" target="_blank" rel="noopener">${e(location.origin)}/planes</a></p>
       <div class="field"><label>Cómo te pagan (lo ven tus alumnos al renovar)</label><textarea name="pay_info" rows="3" class="notesbox" placeholder="Ej: Yape al 9xx xxx xxx a nombre de … y manda la captura por WhatsApp">${e(p.pay_info || '')}</textarea></div>
       <label class="check"><input type="checkbox" name="signup_open" ${p.signup_open ? 'checked' : ''}> Registro abierto (cualquiera puede crear su cuenta con prueba gratis)</label>
@@ -175,9 +188,14 @@ function draw(content) {
     const act = a.dataset.pa;
     const payload = { action: act };
     if (act === 'pagado') {
-      const amt = prompt(`¿Cuánto pagó ${co.name}? (1 mes, sugerido ${co.monthly})`, String(co.monthly));
+      const opts = co.options || [{ months: 1, total: co.monthly }];
+      const m = prompt(`¿Cuántos meses pagó ${co.name}? Escribe 1, 3, 6 o 12.\n\n${opts.map((o) => `${per(o.months)}: ${money(o.total)}`).join('\n')}`, '1');
+      if (m === null) return;
+      const o = opts.find((x) => x.months === Number(m));
+      if (!o) return H.toast('Escribe 1, 3, 6 o 12.', 4000);
+      const amt = prompt(`¿Cuánto pagó ${co.name} por ${per(o.months)}? (precio: ${money(o.total)})`, String(o.total));
       if (amt === null) return;
-      Object.assign(payload, { months: 1, amount: Number(amt) || 0, method: 'yape' });
+      Object.assign(payload, { months: o.months, amount: Number(amt) || 0, method: 'yape' });
     } else if (act === 'dias') {
       const d = prompt(`¿Cuántos días extra le das a ${co.name}?`, '7');
       if (!d) return;
@@ -197,6 +215,7 @@ function draw(content) {
     ev.preventDefault();
     const d = Object.fromEntries(new FormData(form));
     d.signup_open = !!d.signup_open;
+    d.periods = [...form.querySelectorAll('[data-per]')].map((tr) => ({ months: Number(tr.dataset.per), ...Object.fromEntries([...tr.querySelectorAll('input')].map((i) => [i.dataset.k, Number(i.value) || 0])) }));
     try {
       PN.data.plan = (await H.api('PATCH', '/admin/plan', d)).plan;
       PN.data = await H.api('GET', '/admin/empresas');

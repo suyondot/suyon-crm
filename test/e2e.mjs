@@ -1133,7 +1133,7 @@ try {
     assert.equal(statusOf({ plan_status: 'trial', trial_ends_at: T - 1 }, DEFAULT_PLAN, T).blocked, true);
     assert.equal(statusOf({ plan_status: 'active', paid_until: T - 864e5 }, DEFAULT_PLAN, T).state, 'grace');
     assert.equal(statusOf({ plan_status: 'active', paid_until: T - 5 * 864e5 }, DEFAULT_PLAN, T).blocked, true);
-    assert.equal(priceOf(DEFAULT_PLAN, { numbers: 2, users: 3 }).total, 22);
+    assert.equal(priceOf(DEFAULT_PLAN, { numbers: 2, users: 3 }).total, 70, 'base + 3 extras en pack a S/15');
     // las empresas de Jordan quedan sin cobro
     let me = await call('GET', '/api/me');
     assert.ok(me.companies.every((x) => x.plan.state === 'free'));
@@ -1159,17 +1159,27 @@ try {
     const s1 = await as('POST', `/api/companies/${co.id}/stores`, { name: 'Ana · Vestidos' });
     assert.equal(s1.status, 200, JSON.stringify(s1));
     let plan = await as('GET', `/api/companies/${co.id}/plan`);
-    assert.equal(plan.plan.price.total, 7);
+    assert.equal(plan.plan.price.total, 25);
+    assert.equal(plan.plan.price.currency, 'PEN');
+    assert.deepEqual(plan.plan.options.map((o) => o.total), [25, 69, 132, 240], 'base sola: 1, 3, 6 y 12 meses');
     await as('POST', `/api/companies/${co.id}/stores`, { name: 'Ana · Blusas' });
     plan = await as('GET', `/api/companies/${co.id}/plan`);
-    assert.equal(plan.plan.price.total, 12);
+    assert.equal(plan.plan.price.total, 43, '1 número extra suelto = S/18');
+    await as('POST', `/api/companies/${co.id}/stores`, { name: 'Ana · Polos' });
+    plan = await as('GET', `/api/companies/${co.id}/plan`);
+    assert.equal(plan.plan.price.monthly, 55, '2 extras = pack a S/15');
+    assert.ok(plan.plan.price.pack);
+    assert.deepEqual(plan.plan.options.map((o) => o.monthly), [55, 51, 48, 44]);
+    assert.equal(plan.plan.options[3].total, 528);
+    assert.equal(plan.plan.options[3].saving, 204);
     assert.equal((await as('GET', '/api/admin/empresas')).status, 403, 'solo el administrador');
     // Panel Suyon
     let pn = await call('GET', '/api/admin/empresas');
     const row = pn.empresas.find((x) => x.id === co.id);
     assert.equal(row.state, 'trial');
     assert.equal(row.owner_email, 'ana@alumna.pe');
-    assert.equal(row.monthly, 12);
+    assert.equal(row.monthly, 55);
+    assert.equal(row.options.find((o) => o.months === 3).total, 153);
     assert.ok(pn.resumen.prueba >= 1);
     // pausar acceso → la alumna no entra a su tienda (402), pero ve su plan
     await call('POST', `/api/admin/empresas/${co.id}`, { action: 'bloquear' });
@@ -1181,21 +1191,34 @@ try {
     me = await as('GET', '/api/me');
     assert.equal(me.companies[0].plan.state, 'active');
     assert.ok(me.companies[0].plan.days_left >= 29);
+    // sin monto: se calcula el precio de 3 meses y suma 90 días
+    await call('POST', `/api/admin/empresas/${co.id}`, { action: 'pagado', months: 3, method: 'yape' });
+    plan = await as('GET', `/api/companies/${co.id}/plan`);
+    assert.equal(plan.pagos[0].amount, 153);
+    assert.equal(plan.pagos[0].currency, 'PEN');
+    assert.ok(plan.plan.days_left >= 119);
     assert.equal((await as('GET', `/api/stores/${s1.store_id}/chats`)).status, 200);
     plan = await as('GET', `/api/companies/${co.id}/plan`);
-    assert.equal(plan.pagos.length, 1);
-    assert.equal(plan.pagos[0].amount, 12);
+    assert.equal(plan.pagos.length, 2);
+    assert.equal(plan.pagos[1].amount, 12);
+    // rebajas por meses editables
+    const per = await call('PATCH', '/api/admin/plan', { periods: [{ months: 12, base_off: 4, extra_off: 3, pack_off: 7 }], currency: 'USD' });
+    assert.equal(per.plan.currency, 'PEN', 'siempre soles');
+    assert.equal(per.plan.periods.find((x) => x.months === 12).pack_off, 7);
+    assert.equal(per.plan.periods.find((x) => x.months === 3).pack_off, 4, 'los demás no cambian');
+    await call('PATCH', '/api/admin/plan', { periods: [{ months: 12, base_off: 5, extra_off: 3, pack_off: 6 }] });
     // precios y registro cerrado
     const cfg = await call('PATCH', '/api/admin/plan', { base: 9, signup_open: false, pay_info: 'Yape al 999 000 111', contact: '51999000111' });
     assert.equal(cfg.plan.base, 9);
     assert.equal((await fetch(BASE + '/api/registro', { method: 'POST', headers: { 'x-crm': '1', 'content-type': 'application/json' }, body: JSON.stringify({ name: 'X', email: 'x@y.pe', password: 'clave-segura-1', company: 'X' }) })).status, 403);
     assert.equal((await call('GET', '/api/state', undefined, { keepCookie: false })).signup_open, false);
-    await call('PATCH', '/api/admin/plan', { base: 7, signup_open: true });
+    await call('PATCH', '/api/admin/plan', { base: 25, signup_open: true });
   });
   await step('página pública y agenda de demos', async () => {
     const home = await (await fetch(BASE + '/inicio')).text();
     assert.match(home, /Vende ropa por WhatsApp/);
-    assert.match(home, /US\$7/);
+    assert.match(home, /S\/25/);
+    assert.ok(!/US\$/.test(home), 'nada en dólares');
     assert.ok(!/IA Suyon/.test(home), 'la página pública no dice IA Suyon');
     const ag = await call('PATCH', '/api/admin/agenda', { days: [0, 1, 2, 3, 4, 5, 6], from: '00:00', to: '23:30', pausa_from: '', min_hours: 0, max_days: 3, dur_min: 30, slot_min: 30 });
     assert.equal(ag.agenda.days.length, 7);
@@ -1268,20 +1291,22 @@ try {
     await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: f.id });
     await call('POST', `/api/stores/${sid}/sim/send`, { text: '¿Cuánto cuesta?' });
     const sys = iaCalls.slice(n).pop()?.system || '';
-    assert.match(sys, /Plan base: US\$7 al mes/);
+    assert.match(sys, /Plan base S\/25 al mes/);
+    assert.match(sys, /12 meses: plan base S\/20 al mes/);
     assert.match(sys, /\/inicio#demo/);
   });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos', '/planes']) assert.equal((await fetch(BASE + p)).status, 200);
     const planes = await (await fetch(BASE + '/planes')).text();
-    assert.match(planes, /US\$7 al mes/);
+    assert.match(planes, /S\/25 al mes/);
+    assert.match(planes, /12 meses/);
     assert.match(planes, /Reembolsos/);
     const app = await fetch(BASE + '/invitacion/abc');
     assert.equal(app.status, 200, 'la app web carga en rutas propias');
   });
   console.log(`\nTodo bien: ${passed} pruebas pasaron.`);
 } catch (e) {
-  console.error('\nFALLÓ:', e.message);
+  console.error('\nFALLÓ:', e.message, (e.stack || '').split('\n').find((l) => l.includes('e2e.mjs')));
   console.error(log.split('\n').filter((l) => /error|Error|✘/.test(l)).slice(-15).join('\n'));
   process.exitCode = 1;
 } finally {

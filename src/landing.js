@@ -52,11 +52,12 @@ const COMPARA = [
 export function landingPage(env, plan, { logged = false, extra = {} } = {}) {
   const video = extra.video;
   const testi = extra.testimonios || [];
-  const cur = plan.currency === 'PEN' ? 'S/' : 'US$';
+  const cur = 'S/';
   const wa = String(plan.contact || '').replace(/\D/g, '');
   const waLink = wa ? `https://wa.me/${wa}?text=${encodeURIComponent('Hola, quiero saber más de Control Total')}` : null;
   const email = env.CONTACT_EMAIL || 'storesuyo@gmail.com';
-  const P = { cur, base: +plan.base, num: +plan.per_number, usr: +plan.per_user, trial: +plan.trial_days, open: !!plan.signup_open };
+  const P = { cur, base: +plan.base, num: +plan.per_number, usr: +plan.per_user, trial: +plan.trial_days, open: !!plan.signup_open, pack: +plan.pack_min || 2, periods: plan.periods || [] };
+  const anual = P.periods.find((x) => x.months === 12);
   const startHref = P.open ? '/registro' : '#demo';
   const startTxt = P.open ? `Prueba ${P.trial} días gratis` : 'Agenda una demo';
 
@@ -260,13 +261,20 @@ section{scroll-margin-top:80px}
 .calc h3{font-size:22px}
 .ctl{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .ctl label{font-weight:600}.ctl small{display:block;color:var(--muted);font-weight:400;font-size:14px}
-.stepper{display:flex;align-items:center;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.stepper{display:flex;align-items:center;border:1px solid var(--line);border-radius:999px;overflow:hidden;flex:none}
+.ctl label{flex:1;min-width:0}
+@media (max-width:420px){.stepper button{width:38px;height:42px}.stepper output{min-width:26px}.calc{padding:22px 18px}}
 .stepper button{width:44px;height:44px;border:0;background:transparent;color:var(--fg);font:600 22px var(--body);cursor:pointer}
 .stepper button:hover{background:var(--rose-soft)}
 .stepper output{min-width:34px;text-align:center;font:700 18px var(--display)}
 .total{margin-top:auto;padding-top:18px;border-top:1px dashed var(--line);display:flex;align-items:baseline;justify-content:space-between}
 .total b{font:800 38px/1 var(--display)}
 .calc .fine{font-size:14px;color:var(--muted);margin:0}
+.pers{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:var(--bg);padding:5px;border-radius:14px;border:1px solid var(--line)}
+.pers button{position:relative;border:0;background:transparent;color:var(--fg);border-radius:10px;padding:10px 4px;font:600 14px var(--body);cursor:pointer}
+.pers button[aria-pressed="true"]{background:var(--wine);color:#fff}
+.pers i{position:absolute;left:50%;top:-11px;transform:translateX(-50%);white-space:nowrap;font:700 10.5px var(--body);font-style:normal;background:var(--rose);color:var(--ink);padding:2px 7px;border-radius:999px}
+.calc .pay{margin:-8px 0 0;font-size:15px;color:var(--muted)}.calc .pay b{color:var(--ok)}
 @media (max-width:860px){.price{grid-template-columns:1fr}}
 
 /* Agenda */
@@ -552,12 +560,13 @@ ${testi.length ? `<section class="sec" id="testimonios" style="padding-top:0"><d
 </div></section>
 
 <section class="sec" id="precios" style="background:var(--surface);border-block:1px solid var(--line)"><div class="wrap">
-  <div class="sec-head reveal"><p class="kicker">Precios</p><h2>Un solo plan. Pagas por lo que usas.</h2><p>${P.trial ? `${P.trial} días gratis para probar todo, sin tarjeta.` : 'Prueba todo antes de pagar.'} Luego, mes a mes y sin contrato.</p></div>
+  <div class="sec-head reveal"><p class="kicker">Precios</p><h2>Un solo plan. Pagas por lo que usas.</h2><p>${P.trial ? `${P.trial} días gratis para probar todo, sin tarjeta.` : 'Prueba todo antes de pagar.'} Luego pagas mes a mes, o 3, 6 o 12 meses con descuento. Sin contrato.</p></div>
   <div class="price reveal">
     <div class="plan">
       <span class="tag">${P.trial ? `${P.trial} días gratis` : 'Plan único'}</span>
       <div class="amt">${cur}${P.base}<small> / mes</small></div>
-      <p style="margin:0;color:rgba(255,255,255,.75)">Incluye 1 número de WhatsApp, tu cuenta de dueño y 1 trabajadora.</p>
+      ${anual && anual.base_off ? `<p style="margin:0 0 6px;color:var(--rose);font-weight:600">o ${cur}${P.base - anual.base_off} al mes pagando 12 meses</p>` : ''}
+      <p style="margin:0;color:rgba(255,255,255,.75)">Incluye 1 número de WhatsApp, tu cuenta de dueño y 1 trabajadora. Cada número o trabajadora extra: ${cur}${P.num} al mes, y menos desde ${P.pack} extras.</p>
       <ul>
         <li>${I.check}<span>Bandeja, etiquetas y llamadas</span></li>
         <li>${I.check}<span>Bot, seguimientos e IA con tus reglas</span></li>
@@ -568,9 +577,11 @@ ${testi.length ? `<section class="sec" id="testimonios" style="padding-top:0"><d
     </div>
     <div class="calc" id="calc">
       <h3>Calcula tu plan</h3>
-      <div class="ctl"><label for="cn">Números de WhatsApp<small>+${cur}${P.num} cada uno extra</small></label><div class="stepper"><button type="button" data-c="n" data-d="-1" aria-label="Menos números">−</button><output id="cn">1</output><button type="button" data-c="n" data-d="1" aria-label="Más números">+</button></div></div>
-      <div class="ctl"><label for="cu">Trabajadoras<small>+${cur}${P.usr} cada una extra (el dueño no cuenta)</small></label><div class="stepper"><button type="button" data-c="u" data-d="-1" aria-label="Menos trabajadoras">−</button><output id="cu">1</output><button type="button" data-c="u" data-d="1" aria-label="Más trabajadoras">+</button></div></div>
-      <div class="total"><span>Total al mes</span><b id="ctot">${cur}${P.base}</b></div>
+      <div class="pers" role="group" aria-label="Cuántos meses pagas">${P.periods.map((x, i) => `<button type="button" data-m="${x.months}" aria-pressed="${i === 0}">${x.months === 1 ? '1 mes' : `${x.months} meses`}${x.months === 12 ? '<i>mejor precio</i>' : ''}</button>`).join('')}</div>
+      <div class="ctl"><label for="cn">Números de WhatsApp<small id="cnx">+${cur}${P.num} cada uno extra</small></label><div class="stepper"><button type="button" data-c="n" data-d="-1" aria-label="Menos números">−</button><output id="cn">1</output><button type="button" data-c="n" data-d="1" aria-label="Más números">+</button></div></div>
+      <div class="ctl"><label for="cu">Trabajadoras<small id="cux">+${cur}${P.usr} cada una extra (el dueño no cuenta)</small></label><div class="stepper"><button type="button" data-c="u" data-d="-1" aria-label="Menos trabajadoras">−</button><output id="cu">1</output><button type="button" data-c="u" data-d="1" aria-label="Más trabajadoras">+</button></div></div>
+      <div class="total"><span>Al mes</span><b id="ctot">${cur}${P.base}</b></div>
+      <p class="pay" id="cpay" aria-live="polite">Pagas ${cur}${P.base} cada mes.</p>
       <p class="fine">Aparte, directo a cada proveedor: lo que Meta cobra por los mensajes (con tu tarjeta en Meta) y el consumo de la IA. <a href="/planes">Ver condiciones</a>.</p>
     </div>
   </div>
@@ -600,7 +611,8 @@ ${testi.length ? `<section class="sec" id="testimonios" style="padding-top:0"><d
     <details><summary>¿Necesito saber de IA o programar?</summary><p>No. Empiezas desde una plantilla de venta de ropa y cambias tus precios, tallas, colores y fotos. Antes de encender el bot, lo pruebas en el simulador.</p></details>
     <details><summary>¿Qué pasa si la IA no sabe responder?</summary><p>No inventa: pasa el chat a tu asesora y te deja un aviso. La IA solo habla de tus productos y la clienta puede pedir una persona cuando quiera.</p></details>
     <details><summary>¿Me pueden bloquear el número?</summary><p>Las reglas son las mismas que para cualquier herramienta oficial. Lo que causa bloqueos es que te reporten o mandar mensajes masivos a quien no te escribió. Control Total está hecho para responder a quien te escribe y hacer seguimiento dentro de lo que Meta permite.</p></details>
-    <details><summary>¿Puedo cancelar cuando quiera?</summary><p>Sí. Es mes a mes, sin contrato. Al cancelar no se cobra más y usas lo que ya pagaste hasta el final del mes. <a href="/planes">Ver condiciones</a>.</p></details>
+    <details><summary>¿Los números y trabajadoras extra son un pago único?</summary><p>No: se pagan junto con tu plan, cada mes o por el periodo que elijas. Si llevas ${P.pack} o más extras, cada uno sale más barato, y si pagas 3, 6 o 12 meses, más barato todavía.</p></details>
+    <details><summary>¿Puedo cancelar cuando quiera?</summary><p>Sí, no hay contrato. Al cancelar no se cobra más y sigues usando lo que ya pagaste hasta que termine (1, 3, 6 o 12 meses). <a href="/planes">Ver condiciones</a>.</p></details>
     <details><summary>¿Quién puede ver mis chats?</summary><p>Solo tu equipo, cada persona con su usuario y su rol. Las claves de tu número se guardan cifradas. <a href="/privacidad">Política de privacidad</a>.</p></details>
   </div>
 </div></section>
@@ -645,18 +657,41 @@ document.addEventListener('click', (e) => {
   document.body.appendChild(z);
 });
 
-// Calculadora
-const C = { n: 1, u: 1 };
+// Calculadora (misma cuenta que el sistema: pack y rebaja por meses)
+const C = { n: 1, u: 1, m: 1 };
 const money = (v) => P.cur + (Math.round(v * 100) / 100).toLocaleString('es-PE');
+function calc() {
+  const per = P.periods.find((x) => x.months === C.m) || { months: 1, base_off: 0, extra_off: 0, pack_off: 0 };
+  const xn = Math.max(C.n - 1, 0), xu = Math.max(C.u - 1, 0);
+  const pack = xn + xu >= P.pack;
+  const off = pack ? per.pack_off : per.extra_off;
+  const pn = Math.max(P.num - off, 0), pu = Math.max(P.usr - off, 0);
+  const monthly = Math.max(P.base - per.base_off, 0) + xn * pn + xu * pu;
+  const full = (P.base + xn * P.num + xu * P.usr) * per.months;
+  const total = monthly * per.months;
+  $('#cn').textContent = C.n;
+  $('#cu').textContent = C.u;
+  $('#cnx').textContent = '+' + money(pn) + ' cada uno extra' + (off ? ' (antes ' + money(P.num) + ')' : '');
+  $('#cux').textContent = '+' + money(pu) + ' cada una extra' + (off ? ' (antes ' + money(P.usr) + ')' : '') + ' · el dueño no cuenta';
+  $('#ctot').textContent = money(monthly);
+  const save = Math.round((full - total) * 100) / 100;
+  $('#cpay').innerHTML = (per.months === 1 ? 'Pagas ' + money(total) + ' cada mes.' : 'Pagas ' + money(total) + ' por ' + per.months + ' meses.') +
+    (save > 0 ? ' <b>Ahorras ' + money(save) + '</b>' + (pack ? ' (precio pack)' : '') + '.' : (xn + xu === 1 ? ' Desde ' + P.pack + ' extras cada uno baja de precio.' : ''));
+}
 $('#calc').addEventListener('click', (e) => {
+  const m = e.target.closest('[data-m]');
+  if (m) {
+    C.m = Number(m.dataset.m);
+    $('#calc').querySelectorAll('[data-m]').forEach((b) => b.setAttribute('aria-pressed', String(b === m)));
+    return calc();
+  }
   const b = e.target.closest('[data-c]');
   if (!b) return;
   const k = b.dataset.c;
   C[k] = Math.min(Math.max(C[k] + Number(b.dataset.d), k === 'n' ? 1 : 0), 20);
-  $('#cn').textContent = C.n;
-  $('#cu').textContent = C.u;
-  $('#ctot').textContent = money(P.base + Math.max(C.n - 1, 0) * P.num + Math.max(C.u - 1, 0) * P.usr);
+  calc();
 });
+calc();
 
 // Simulación del chat
 const msgs = $('#msgs'), chips = $('#chips');

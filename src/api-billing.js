@@ -2,7 +2,7 @@
 import { Hono } from 'hono';
 import { now, fail, hashPassword } from './util.js';
 import { requireUser, companyFor, createSession } from './auth.js';
-import { loadPlan, savePlan, billingOf, statusOf, addPayment, usageOf, priceOf } from './billing.js';
+import { loadPlan, savePlan, billingOf, statusOf, addPayment, usageOf, priceOf, optionsOf } from './billing.js';
 import { loadLanding, setVideo, removeVideo, addTestimonio, removeTestimonio } from './landing-data.js';
 import { loadAgenda, saveAgenda, freeSlots, bookDemo, dayLabel, timeLabel, gcalLink, DEMO_STATUS } from './agenda.js';
 
@@ -27,7 +27,7 @@ async function requireAdmin(c) {
 // Datos públicos para la pantalla de registro
 r.get('/registro', async (c) => {
   const p = await loadPlan(c.env);
-  return c.json({ open: !!p.signup_open, trial_days: p.trial_days, base: p.base, per_number: p.per_number, per_user: p.per_user, currency: p.currency });
+  return c.json({ open: !!p.signup_open, trial_days: p.trial_days, base: p.base, per_number: p.per_number, per_user: p.per_user, currency: 'PEN' });
 });
 
 // Un alumno crea su cuenta: empresa nueva en prueba gratis
@@ -98,7 +98,7 @@ r.get('/admin/empresas', async (c) => {
     return {
       id: x.id, name: x.name, owner_email: x.owner_email, owner_name: x.owner_name, contact_phone: x.contact_phone, created_at: x.created_at, created_via: x.created_via,
       plan_status: x.plan_status, state: st.state, blocked: st.blocked, until: st.until, days_left: st.days_left,
-      numbers: x.numbers, conectados: x.conectados, users: x.users, monthly: price.total, last_activity: x.last_activity, cobrado: x.cobrado, note: x.plan_note,
+      numbers: x.numbers, conectados: x.conectados, users: x.users, monthly: price.monthly, options: optionsOf(plan, { numbers: x.numbers, users: x.users }).map((o) => ({ months: o.months, total: o.total })), last_activity: x.last_activity, cobrado: x.cobrado, note: x.plan_note,
     };
   });
   const sum = (f) => empresas.filter(f).length;
@@ -127,7 +127,7 @@ r.post('/admin/empresas/:id', async (c) => {
     case 'pagado': {
       const usage = await usageOf(c.env, co.id);
       const plan = await loadPlan(c.env);
-      const amount = b.amount != null && b.amount !== '' ? Number(b.amount) : priceOf(plan, usage).total * (Number(b.months) || 1);
+      const amount = b.amount != null && b.amount !== '' ? Number(b.amount) : priceOf(plan, usage, Number(b.months) || 1).total;
       await addPayment(c.env, co, { months: b.months, amount, method: b.method || 'yape', note: b.note, userId: admin.id });
       break;
     }

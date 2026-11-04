@@ -320,8 +320,8 @@ async function showRegister() {
     };
     return;
   }
-  const cur = info.currency === 'PEN' ? 'S/' : 'US$';
-  authShell(`<div class="auth-h"><h1>Prueba gratis ${info.trial_days} días</h1><p>Sin tarjeta. Después, ${cur}${info.base} al mes con 1 número de WhatsApp y 1 trabajadora (+${cur}${info.per_number} por número y +${cur}${info.per_user} por trabajadora extra).</p></div>
+  const cur = 'S/';
+  authShell(`<div class="auth-h"><h1>Prueba gratis ${info.trial_days} días</h1><p>Sin tarjeta. Después, ${cur}${info.base} al mes con 1 número de WhatsApp y 1 trabajadora (+${cur}${info.per_number} al mes por cada número o trabajadora extra). Más barato si pagas 3, 6 o 12 meses.</p></div>
     <form id="f" class="grid" style="gap:12px">
       <div class="field"><label for="company">Nombre de tu marca o tienda</label><input id="company" name="company" required autocomplete="organization"></div>
       <div class="field"><label for="name">Tu nombre</label><input id="name" name="name" required autocomplete="name"></div>

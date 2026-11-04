@@ -477,6 +477,14 @@ export const MIGRATIONS = [
       `CREATE INDEX demos_phone ON demos (phone, starts_at)`,
     ],
   },
+  {
+    id: 13,
+    name: 'precios en soles: S/25 base, S/18 por número y por trabajadora (decisión de Jordan, 4 nov)',
+    sql: [
+      `UPDATE platform_settings SET value = json_set(value, '$.currency', 'PEN', '$.base', 25, '$.per_number', 18, '$.per_user', 18), updated_at = CAST(strftime('%s','now') AS INTEGER) * 1000 WHERE key = 'plan'`,
+      `UPDATE payments SET currency = 'PEN'`,
+    ],
+  },
 ];
 
 let ready = null;

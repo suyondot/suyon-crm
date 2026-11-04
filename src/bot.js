@@ -5,7 +5,7 @@ import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendLis
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON } from './bot-template.js';
 import { draftFromChat, insertOrder } from './orders.js';
 import { onOrderCreated } from './automations.js';
-import { storeBlocked, loadPlan } from './billing.js';
+import { storeBlocked, loadPlan, priceText } from './billing.js';
 
 const MIN = 60e3;
 const MAX_STEPS = 40;
@@ -527,7 +527,7 @@ export const PROMPT_VARS = [
   ['talla', 'Talla que guardó el bot'], ['colores', 'Colores elegidos'], ['cantidad', 'Cantidad'], ['destino', 'Destino'], ['distrito', 'Distrito'],
   ['nombre', 'Nombre para el pedido'], ['celular', 'Celular para el pedido'], ['dni', 'DNI'], ['direccion', 'Dirección'], ['sede_shalom', 'Sede Shalom'],
   ['precio_base', 'Control Total: plan base al mes'], ['precio_numero', 'Control Total: número extra'], ['precio_trabajadora', 'Control Total: trabajadora extra'],
-  ['dias_prueba', 'Control Total: días de prueba gratis'], ['enlace_demo', 'Enlace para agendar demo'], ['enlace_registro', 'Enlace para crear cuenta'], ['enlace_web', 'Página de Control Total'],
+  ['dias_prueba', 'Control Total: días de prueba gratis'], ['tabla_precios', 'Control Total: precios con pack y planes de 3, 6 y 12 meses'], ['enlace_demo', 'Enlace para agendar demo'], ['enlace_registro', 'Enlace para crear cuenta'], ['enlace_web', 'Página de Control Total'],
 ];
 const DATA_KEYS = ['talla', 'colores', 'cantidad', 'destino', 'distrito', 'nombre', 'celular', 'dni', 'direccion', 'sede_shalom'];
 
@@ -551,11 +551,11 @@ function fillPrompt(text, settings, labels, vars) {
   };
   const pl = settings.__plan;
   if (pl) {
-    const cur = pl.currency === 'PEN' ? 'S/' : 'US$';
+    const cur = 'S/';
     const web = settings.__url || '';
     Object.assign(map, {
       precio_base: `${cur}${pl.base}`, precio_numero: `${cur}${pl.per_number}`, precio_trabajadora: `${cur}${pl.per_user}`,
-      dias_prueba: String(pl.trial_days), enlace_demo: `${web}/inicio#demo`, enlace_registro: `${web}/registro`, enlace_web: `${web}/inicio`,
+      dias_prueba: String(pl.trial_days), tabla_precios: priceText(pl), enlace_demo: `${web}/inicio#demo`, enlace_registro: `${web}/registro`, enlace_web: `${web}/inicio`,
     });
   }
   for (const k of DATA_KEYS) map[k] = vars[k] ? String(vars[k]) : '(todavía no lo dijo)';
