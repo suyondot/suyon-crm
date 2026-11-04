@@ -34,7 +34,9 @@
   "vars": {
     "GRAPH_API": "https://graph.facebook.com/v23.0",
     "APP_NAME": "Control Total",
-    "CONTACT_EMAIL": "storesuyo@gmail.com"
+    "CONTACT_EMAIL": "storesuyo@gmail.com",
+    // Botón «Conectar con un clic»: ID de la configuración «WhatsApp Embedded Signup» (no es secreto)
+    "META_ES_CONFIG": "996370686168010"
   }
 
   // Secretos (se ponen en Cloudflare, NUNCA aquí):
