@@ -433,7 +433,7 @@ PREGUNTAS FRECUENTES
 - ¿Cuánto cobra Meta? Meta cobra aparte, directo a tu tarjeta, según el tipo de mensaje. Si la clienta llega por un anuncio de clic a WhatsApp y respondes dentro de las primeras 24 h, los mensajes de los siguientes 3 días son gratis. El sistema muestra cuándo un chat está en esa ventana.
 - ¿Necesito saber de IA o programar? No. Hay una plantilla para vender ropa y solo cambias precios, tallas, colores y fotos.
 - ¿Me pueden bloquear el número? Las reglas son las mismas que para cualquier herramienta oficial. Lo que causa bloqueos es que te reporten o mandar mensajes masivos a quien no te escribió.
-- ¿Puedo cancelar? Sí, es mes a mes, sin contrato.
+- ¿Puedo cancelar? No hay contrato: puede cancelar la renovación cuando quiera y sigue usando lo que pagó hasta que termine. Lo ya pagado no se devuelve. Si se equivocó de plan (ej. pagó 6 meses y quería 3), que escriba por WhatsApp dentro de las 48 horas: se le cambia al plan correcto y se le devuelve la diferencia. Para cualquier devolución usa el caso "persona".
 - ¿Sirve para otros productos? Está pensado para ropa, calzado y accesorios (tallas y colores), pero sirve para cualquier tienda que venda por WhatsApp. Si es otro rubro, recomiéndale la demo.
 - ¿Quién ve mis chats? Solo su equipo, cada uno con su usuario.
 - La demo es una videollamada de 30 minutos con Jordan: elige día y hora en {enlace_demo}.`;

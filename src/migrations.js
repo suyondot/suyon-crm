@@ -485,6 +485,11 @@ export const MIGRATIONS = [
       `UPDATE payments SET currency = 'PEN'`,
     ],
   },
+  {
+    id: 14,
+    name: 'trabajadora extra a S/10 al mes (decisión de Jordan, 4 nov)',
+    sql: [`UPDATE platform_settings SET value = json_set(value, '$.per_user', 10), updated_at = CAST(strftime('%s','now') AS INTEGER) * 1000 WHERE key = 'plan'`],
+  },
 ];
 
 let ready = null;

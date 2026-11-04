@@ -9,14 +9,14 @@ export const DEFAULT_PLAN = {
   currency: 'PEN', // siempre soles
   base: 25, // al mes: incluye 1 número + el dueño + 1 trabajadora
   per_number: 18, // cada número extra, al mes
-  per_user: 18, // cada trabajadora extra, al mes
+  per_user: 10, // cada trabajadora extra, al mes
   pack_min: 2, // desde cuántos extras (números + trabajadoras) es «pack»
-  // Rebajas por mes según cuántos meses paga (soles): al plan base, a cada extra suelto y a cada extra en pack
+  // Rebajas por mes según cuántos meses paga (soles): al plan base, a cada número extra suelto, a cada número extra en pack y a cada trabajadora extra
   periods: [
-    { months: 1, base_off: 0, extra_off: 0, pack_off: 3 },
-    { months: 3, base_off: 2, extra_off: 1, pack_off: 4 },
-    { months: 6, base_off: 3, extra_off: 2, pack_off: 5 },
-    { months: 12, base_off: 5, extra_off: 3, pack_off: 6 },
+    { months: 1, base_off: 0, extra_off: 0, pack_off: 3, user_off: 0 },
+    { months: 3, base_off: 2, extra_off: 1, pack_off: 4, user_off: 0 },
+    { months: 6, base_off: 3, extra_off: 2, pack_off: 5, user_off: 0 },
+    { months: 12, base_off: 5, extra_off: 3, pack_off: 6, user_off: 0 },
   ],
   included_numbers: 1,
   included_users: 1,
@@ -53,7 +53,7 @@ export async function savePlan(env, patch) {
     const off = (v) => Math.round(num(v, 0, 0, 1000) * 100) / 100;
     next.periods = [1, 3, 6, 12].map((m) => {
       const x = patch.periods.find((y) => Number(y.months) === m) || cur.periods.find((y) => y.months === m) || { months: m };
-      return { months: m, base_off: off(x.base_off), extra_off: off(x.extra_off), pack_off: off(x.pack_off) };
+      return { months: m, base_off: off(x.base_off), extra_off: off(x.extra_off), pack_off: off(x.pack_off), user_off: off(x.user_off) };
     });
   }
   if ('pay_info' in patch) next.pay_info = String(patch.pay_info || '').slice(0, 1500);
@@ -98,11 +98,12 @@ export function priceOf(plan, usage, months = 1) {
   const off = pack ? per.pack_off : per.extra_off;
   const base = Math.max(plan.base - per.base_off, 0);
   const pn = Math.max(plan.per_number - off, 0);
-  const pu = Math.max(plan.per_user - off, 0);
+  const uoff = Number(per.user_off) || 0;
+  const pu = Math.max(plan.per_user - uoff, 0);
   const lines = [{ label: `Plan base: ${plan.included_numbers} número + el dueño + ${plan.included_users} trabajadora${per.base_off ? ` (antes ${soles(plan.base)})` : ''}`, amount: r2(base) }];
   const tag = pack ? ' · precio pack' : '';
   if (xn) lines.push({ label: `${xn} ${xn === 1 ? 'número extra' : 'números extra'} × ${soles(pn)}${off ? ` (antes ${soles(plan.per_number)})` : ''}${tag}`, amount: r2(xn * pn) });
-  if (xu) lines.push({ label: `${xu} ${xu === 1 ? 'trabajadora extra' : 'trabajadoras extra'} × ${soles(pu)}${off ? ` (antes ${soles(plan.per_user)})` : ''}${tag}`, amount: r2(xu * pu) });
+  if (xu) lines.push({ label: `${xu} ${xu === 1 ? 'trabajadora extra' : 'trabajadoras extra'} × ${soles(pu)}${uoff ? ` (antes ${soles(plan.per_user)})` : ''}`, amount: r2(xu * pu) });
   const monthly = r2(lines.reduce((a, l) => a + l.amount, 0));
   const full = r2((plan.base + xn * plan.per_number + xu * plan.per_user) * per.months);
   const total = r2(monthly * per.months);
@@ -117,8 +118,8 @@ export function optionsOf(plan, usage) {
 // Texto corto de precios para la IA de ventas
 export function priceText(plan) {
   const per = plan.periods || DEFAULT_PLAN.periods;
-  const row = (p) => `${p.months === 1 ? '1 mes' : `${p.months} meses`}: plan base ${soles(plan.base - p.base_off)} al mes; cada extra ${soles(plan.per_number - p.extra_off)} al mes, o ${soles(plan.per_number - p.pack_off)} si lleva ${plan.pack_min || 2} o más extras (pack)`;
-  return `Plan base ${soles(plan.base)} al mes (1 número de WhatsApp + el dueño + 1 trabajadora). Cada número de WhatsApp extra o trabajadora extra: ${soles(plan.per_number)} al mes. Pack: desde ${plan.pack_min || 2} extras, cada extra baja de precio. Pagando varios meses de una vez sale más barato:\n${per.map((p) => `- ${row(p)}`).join('\n')}`;
+  const row = (p) => `${p.months === 1 ? '1 mes' : `${p.months} meses`}: plan base ${soles(plan.base - p.base_off)} al mes; cada número extra ${soles(plan.per_number - p.extra_off)} al mes, o ${soles(plan.per_number - p.pack_off)} en pack; cada trabajadora extra ${soles(plan.per_user - (p.user_off || 0))} al mes`;
+  return `Plan base ${soles(plan.base)} al mes (1 número de WhatsApp + el dueño + 1 trabajadora). Cada número de WhatsApp extra: ${soles(plan.per_number)} al mes. Cada trabajadora extra: ${soles(plan.per_user)} al mes. Pack: si lleva ${plan.pack_min || 2} o más extras (números y trabajadoras sumados), cada número extra baja de precio. Pagando varios meses de una vez sale más barato:\n${per.map((p) => `- ${row(p)}`).join('\n')}`;
 }
 
 export async function billingOf(env, co, plan) {

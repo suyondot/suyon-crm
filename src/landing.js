@@ -566,7 +566,7 @@ ${testi.length ? `<section class="sec" id="testimonios" style="padding-top:0"><d
       <span class="tag">${P.trial ? `${P.trial} días gratis` : 'Plan único'}</span>
       <div class="amt">${cur}${P.base}<small> / mes</small></div>
       ${anual && anual.base_off ? `<p style="margin:0 0 6px;color:var(--rose);font-weight:600">o ${cur}${P.base - anual.base_off} al mes pagando 12 meses</p>` : ''}
-      <p style="margin:0;color:rgba(255,255,255,.75)">Incluye 1 número de WhatsApp, tu cuenta de dueño y 1 trabajadora. Cada número o trabajadora extra: ${cur}${P.num} al mes, y menos desde ${P.pack} extras.</p>
+      <p style="margin:0;color:rgba(255,255,255,.75)">Incluye 1 número de WhatsApp, tu cuenta de dueño y 1 trabajadora. Número extra: ${cur}${P.num} al mes (menos desde ${P.pack} extras). Trabajadora extra: ${cur}${P.usr} al mes.</p>
       <ul>
         <li>${I.check}<span>Bandeja, etiquetas y llamadas</span></li>
         <li>${I.check}<span>Bot, seguimientos e IA con tus reglas</span></li>
@@ -611,8 +611,8 @@ ${testi.length ? `<section class="sec" id="testimonios" style="padding-top:0"><d
     <details><summary>¿Necesito saber de IA o programar?</summary><p>No. Empiezas desde una plantilla de venta de ropa y cambias tus precios, tallas, colores y fotos. Antes de encender el bot, lo pruebas en el simulador.</p></details>
     <details><summary>¿Qué pasa si la IA no sabe responder?</summary><p>No inventa: pasa el chat a tu asesora y te deja un aviso. La IA solo habla de tus productos y la clienta puede pedir una persona cuando quiera.</p></details>
     <details><summary>¿Me pueden bloquear el número?</summary><p>Las reglas son las mismas que para cualquier herramienta oficial. Lo que causa bloqueos es que te reporten o mandar mensajes masivos a quien no te escribió. Control Total está hecho para responder a quien te escribe y hacer seguimiento dentro de lo que Meta permite.</p></details>
-    <details><summary>¿Los números y trabajadoras extra son un pago único?</summary><p>No: se pagan junto con tu plan, cada mes o por el periodo que elijas. Si llevas ${P.pack} o más extras, cada uno sale más barato, y si pagas 3, 6 o 12 meses, más barato todavía.</p></details>
-    <details><summary>¿Puedo cancelar cuando quiera?</summary><p>Sí, no hay contrato. Al cancelar no se cobra más y sigues usando lo que ya pagaste hasta que termine (1, 3, 6 o 12 meses). <a href="/planes">Ver condiciones</a>.</p></details>
+    <details><summary>¿Los números y trabajadoras extra son un pago único?</summary><p>No: se pagan junto con tu plan, cada mes o por el periodo que elijas. Si llevas ${P.pack} o más extras, cada número extra sale más barato, y si pagas 3, 6 o 12 meses, más barato todavía.</p></details>
+    <details><summary>¿Puedo cancelar cuando quiera?</summary><p>Sí, no hay contrato. Al cancelar no se cobra más y sigues usando lo que ya pagaste hasta que termine (1, 3, 6 o 12 meses). Lo ya pagado no se devuelve; si te equivocaste de plan, escríbenos por WhatsApp en las primeras 48 horas y te cambiamos al correcto devolviéndote la diferencia. <a href="/planes">Ver condiciones</a>.</p></details>
     <details><summary>¿Quién puede ver mis chats?</summary><p>Solo tu equipo, cada persona con su usuario y su rol. Las claves de tu número se guardan cifradas. <a href="/privacidad">Política de privacidad</a>.</p></details>
   </div>
 </div></section>
@@ -661,18 +661,19 @@ document.addEventListener('click', (e) => {
 const C = { n: 1, u: 1, m: 1 };
 const money = (v) => P.cur + (Math.round(v * 100) / 100).toLocaleString('es-PE');
 function calc() {
-  const per = P.periods.find((x) => x.months === C.m) || { months: 1, base_off: 0, extra_off: 0, pack_off: 0 };
+  const per = P.periods.find((x) => x.months === C.m) || { months: 1, base_off: 0, extra_off: 0, pack_off: 0, user_off: 0 };
   const xn = Math.max(C.n - 1, 0), xu = Math.max(C.u - 1, 0);
   const pack = xn + xu >= P.pack;
   const off = pack ? per.pack_off : per.extra_off;
-  const pn = Math.max(P.num - off, 0), pu = Math.max(P.usr - off, 0);
+  const uoff = per.user_off || 0;
+  const pn = Math.max(P.num - off, 0), pu = Math.max(P.usr - uoff, 0);
   const monthly = Math.max(P.base - per.base_off, 0) + xn * pn + xu * pu;
   const full = (P.base + xn * P.num + xu * P.usr) * per.months;
   const total = monthly * per.months;
   $('#cn').textContent = C.n;
   $('#cu').textContent = C.u;
   $('#cnx').textContent = '+' + money(pn) + ' cada uno extra' + (off ? ' (antes ' + money(P.num) + ')' : '');
-  $('#cux').textContent = '+' + money(pu) + ' cada una extra' + (off ? ' (antes ' + money(P.usr) + ')' : '') + ' · el dueño no cuenta';
+  $('#cux').textContent = '+' + money(pu) + ' cada una extra' + (uoff ? ' (antes ' + money(P.usr) + ')' : '') + ' · el dueño no cuenta';
   $('#ctot').textContent = money(monthly);
   const save = Math.round((full - total) * 100) / 100;
   $('#cpay').innerHTML = (per.months === 1 ? 'Pagas ' + money(total) + ' cada mes.' : 'Pagas ' + money(total) + ' por ' + per.months + ' meses.') +

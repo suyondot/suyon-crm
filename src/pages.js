@@ -87,22 +87,22 @@ export function plansPage(env, plan, opts = []) {
 <li><b>Plan base: ${m(plan.base)} al mes</b>. Incluye 1 número de WhatsApp, la cuenta del dueño y 1 trabajadora.</li>
 <li><b>Número de WhatsApp adicional: ${m(plan.per_number)} al mes</b> cada uno.</li>
 <li><b>Trabajadora adicional: ${m(plan.per_user)} al mes</b> cada una.</li>
-<li><b>Pack:</b> desde ${pk} adicionales (números y trabajadoras sumados), cada adicional tiene un precio menor.</li>
+<li><b>Pack:</b> desde ${pk} adicionales (números y trabajadoras sumados), cada número adicional tiene un precio menor.</li>
 <li>Los adicionales se pagan junto con el plan, en cada periodo; no son un pago único.</li>
 </ul>
 <h2>Pagando varios meses</h2>
 <p>Puedes pagar 1, 3, 6 o 12 meses de una vez. Mientras más meses, menor el precio por mes:</p>
-<table style="width:100%;border-collapse:collapse;font-size:15px"><thead><tr style="text-align:left;border-bottom:1px solid var(--line)"><th style="padding:6px 4px">Pagas</th><th>Plan base al mes</th><th>Cada adicional al mes</th><th>Cada adicional en pack</th></tr></thead><tbody>
-${(plan.periods || []).map((x) => `<tr style="border-bottom:1px solid var(--line)"><td style="padding:6px 4px">${per(x.months)}</td><td>${m(plan.base - x.base_off)}</td><td>${m(plan.per_number - x.extra_off)}</td><td>${m(plan.per_number - x.pack_off)}</td></tr>`).join('')}
+<table style="width:100%;border-collapse:collapse;font-size:15px"><thead><tr style="text-align:left;border-bottom:1px solid var(--line)"><th style="padding:6px 4px">Pagas</th><th>Plan base al mes</th><th>Número adicional</th><th>Número adicional en pack</th><th>Trabajadora adicional</th></tr></thead><tbody>
+${(plan.periods || []).map((x) => `<tr style="border-bottom:1px solid var(--line)"><td style="padding:6px 4px">${per(x.months)}</td><td>${m(plan.base - x.base_off)}</td><td>${m(plan.per_number - x.extra_off)}</td><td>${m(plan.per_number - x.pack_off)}</td><td>${m(plan.per_user - (x.user_off || 0))}</td></tr>`).join('')}
 </tbody></table>
 ${ej.length ? `<p>Ejemplo con 2 números y 2 trabajadoras (2 adicionales, precio pack): ${ej.map((o) => `${per(o.months)} = <b>${m(o.total)}</b> (${m(o.monthly)} al mes)`).join(' · ')}.</p>` : ''}
 <p><small>No incluido: lo que Meta cobra por los mensajes de WhatsApp (se paga directo a Meta con la tarjeta del cliente) y el consumo de inteligencia artificial (con la clave propia del cliente o con saldo prepagado).</small></p>
 <h2>Cómo se cobra</h2>
 <p>Al terminar la prueba, eliges pagar 1, 3, 6 o 12 meses, con tarjeta de crédito o débito a través de una pasarela de pagos autorizada. El cobro se renueva automáticamente al final de cada periodo por el monto del plan según los números y trabajadoras activos. Control Total no guarda los datos de la tarjeta: los procesa la pasarela de pagos.</p>
 <h2>Cancelación</h2>
-<p>Puedes cancelar cuando quieras desde «Mi plan» o escribiéndonos. Al cancelar no se hacen más cobros y el acceso sigue hasta el final del periodo ya pagado (1, 3, 6 o 12 meses). Tus datos se conservan 30 días por si vuelves; después puedes pedir que los borremos.</p>
+<p>Puedes cancelar la renovación cuando quieras desde «Mi plan» o escribiéndonos. Al cancelar no se hacen más cobros y el acceso sigue hasta el final del periodo ya pagado (1, 3, 6 o 12 meses). Un periodo ya pagado no se cancela ni se devuelve. Tus datos se conservan 30 días por si vuelves; después puedes pedir que los borremos.</p>
 <h2>Reembolsos</h2>
-<p>Si hubo un cobro por error o duplicado, lo devolvemos completo; escríbenos dentro de los 7 días siguientes al cobro. Los periodos ya pagados no se reembolsan, salvo que el servicio no haya funcionado por una falla nuestra.</p>
+<p>Los pagos no tienen devolución. Hay dos excepciones:</p><ul><li><b>Te equivocaste de plan</b> (por ejemplo, pagaste 6 meses y querías 3): escríbenos por WhatsApp dentro de las 48 horas siguientes al pago. Te cambiamos al plan correcto y te devolvemos la diferencia. No se cancela el pago completo.</li><li><b>Cobro duplicado o error del sistema de pagos:</b> te devolvemos el cobro que no correspondía.</li></ul>
 <h2>Contacto</h2>
 <ul>
 ${titular}

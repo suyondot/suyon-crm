@@ -150,12 +150,13 @@ function draw(content) {
         <div class="field"><label>RUC</label><input name="ruc" value="${e(p.ruc || '')}" inputmode="numeric" maxlength="11"></div>
       </div>
       <div class="field"><label>Rebajas por pagar varios meses (soles menos, por mes)</label>
-        <table class="ptable pnper"><thead><tr><th>Paga</th><th>Al plan base</th><th>A cada extra suelto</th><th>A cada extra en pack</th><th class="r">Ejemplo: base + 2 extras</th></tr></thead><tbody>
+        <table class="ptable pnper"><thead><tr><th>Paga</th><th>Al plan base</th><th>A cada número extra suelto</th><th>A cada número extra en pack</th><th>A cada trabajadora extra</th><th class="r">Ejemplo: base + 1 número + 1 trabajadora</th></tr></thead><tbody>
         ${p.periods.map((x) => `<tr data-per="${x.months}"><td><b>${per(x.months)}</b></td>
           <td><input type="number" step="0.5" min="0" data-k="base_off" value="${x.base_off}" aria-label="Rebaja al plan base, ${per(x.months)}"></td>
           <td><input type="number" step="0.5" min="0" data-k="extra_off" value="${x.extra_off}" aria-label="Rebaja a cada extra suelto, ${per(x.months)}"></td>
-          <td><input type="number" step="0.5" min="0" data-k="pack_off" value="${x.pack_off}" aria-label="Rebaja a cada extra en pack, ${per(x.months)}"></td>
-          <td class="r mono">${money(p.base - x.base_off + 2 * (p.per_number - x.pack_off))}/mes</td></tr>`).join('')}
+          <td><input type="number" step="0.5" min="0" data-k="pack_off" value="${x.pack_off}" aria-label="Rebaja a cada número extra en pack, ${per(x.months)}"></td>
+          <td><input type="number" step="0.5" min="0" data-k="user_off" value="${x.user_off || 0}" aria-label="Rebaja a cada trabajadora extra, ${per(x.months)}"></td>
+          <td class="r mono">${money(p.base - x.base_off + (p.per_number - x.pack_off) + (p.per_user - (x.user_off || 0)))}/mes</td></tr>`).join('')}
         </tbody></table>
         <p class="note" style="margin:4px 0 0">Ejemplo: en «12 meses», plan base ${money(p.base)} − ${money(p.periods[3]?.base_off || 0)} = ${money(p.base - (p.periods[3]?.base_off || 0))} al mes. Pack = cuando lleva ${p.pack_min || 2} o más extras (números + trabajadoras).</p></div>
       <p class="note" style="margin:0">Página pública de precios y condiciones (la que revisa Culqi): <a href="/planes" target="_blank" rel="noopener">${e(location.origin)}/planes</a></p>

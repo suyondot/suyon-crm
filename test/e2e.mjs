@@ -1133,7 +1133,7 @@ try {
     assert.equal(statusOf({ plan_status: 'trial', trial_ends_at: T - 1 }, DEFAULT_PLAN, T).blocked, true);
     assert.equal(statusOf({ plan_status: 'active', paid_until: T - 864e5 }, DEFAULT_PLAN, T).state, 'grace');
     assert.equal(statusOf({ plan_status: 'active', paid_until: T - 5 * 864e5 }, DEFAULT_PLAN, T).blocked, true);
-    assert.equal(priceOf(DEFAULT_PLAN, { numbers: 2, users: 3 }).total, 70, 'base + 3 extras en pack a S/15');
+    assert.equal(priceOf(DEFAULT_PLAN, { numbers: 2, users: 3 }).total, 60, 'base + 1 número en pack (S/15) + 2 trabajadoras (S/10)');
     // las empresas de Jordan quedan sin cobro
     let me = await call('GET', '/api/me');
     assert.ok(me.companies.every((x) => x.plan.state === 'free'));
@@ -1207,6 +1207,7 @@ try {
     assert.equal(per.plan.periods.find((x) => x.months === 12).pack_off, 7);
     assert.equal(per.plan.periods.find((x) => x.months === 3).pack_off, 4, 'los demás no cambian');
     await call('PATCH', '/api/admin/plan', { periods: [{ months: 12, base_off: 5, extra_off: 3, pack_off: 6 }] });
+    assert.equal((await call('GET', '/api/admin/plan')).plan.per_user, 10, 'trabajadora extra S/10');
     // precios y registro cerrado
     const cfg = await call('PATCH', '/api/admin/plan', { base: 9, signup_open: false, pay_info: 'Yape al 999 000 111', contact: '51999000111' });
     assert.equal(cfg.plan.base, 9);
@@ -1300,6 +1301,7 @@ try {
     const planes = await (await fetch(BASE + '/planes')).text();
     assert.match(planes, /S\/25 al mes/);
     assert.match(planes, /12 meses/);
+    assert.match(planes, /48 horas/);
     assert.match(planes, /Reembolsos/);
     const app = await fetch(BASE + '/invitacion/abc');
     assert.equal(app.status, 200, 'la app web carga en rutas propias');
