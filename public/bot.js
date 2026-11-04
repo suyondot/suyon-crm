@@ -191,7 +191,7 @@ function drawFlow() {
   if (!B.flow) {
     box.innerHTML = `<div class="card empty" style="gap:10px"><b>Todavía no hay flujos en esta tienda</b>
       <span>La plantilla trae tu flujo «ventas pantalón» de Botcake: precios, talla (todas las frases), colores por talla, IA con tu prompt, casos especiales y los 2 seguimientos.</span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="send" data-bact="tpl">Crear desde «Ventas pantalón»</button><button class="iconbtn" data-bact="blank">Flujo vacío</button></div></div>`;
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="send" data-bact="tpl">Crear desde «Ventas pantalón»</button>${C.S.me?.user?.is_admin ? '<button class="iconbtn" data-bact="tplct" title="Tu asistente para vender Control Total: responde dudas del plan y manda el enlace de la demo">Crear «Ventas Control Total»</button>' : ''}<button class="iconbtn" data-bact="blank">Flujo vacío</button></div></div>`;
     return;
   }
   box.innerHTML = `${flowBar()}
@@ -1163,16 +1163,22 @@ document.addEventListener('click', async (ev) => {
         B.zoom = null;
         return applyZoom();
       case 'tpl':
+      case 'tplct':
       case 'blank': {
-        const r = await C.api('POST', `/stores/${B.storeId}/bot/flows`, { template: d.bact === 'tpl' ? 'pantalon' : null });
+        const r = await C.api('POST', `/stores/${B.storeId}/bot/flows`, { template: { tpl: 'pantalon', tplct: 'ventas_ct' }[d.bact] || null });
         B.flowId = r.id;
         await load();
         C.toast('Flujo creado. Está apagado hasta que lo actives.');
         return draw();
       }
       case 'newflow': {
-        const tpl = confirm('¿Crear desde la plantilla «Ventas pantalón»? (Cancelar = flujo vacío)');
-        const r = await C.api('POST', `/stores/${B.storeId}/bot/flows`, { template: tpl ? 'pantalon' : null });
+        const admin = C.S.me?.user?.is_admin;
+        const ans = admin
+          ? prompt('¿Qué plantilla? Escribe 1, 2 o 3:\n1 = Ventas pantalón\n2 = Ventas Control Total (tu asistente para vender el sistema)\n3 = Flujo vacío', '1')
+          : confirm('¿Crear desde la plantilla «Ventas pantalón»? (Cancelar = flujo vacío)') ? '1' : '3';
+        if (ans === null) return;
+        const tpl = { 1: 'pantalon', 2: 'ventas_ct' }[String(ans).trim()] || null;
+        const r = await C.api('POST', `/stores/${B.storeId}/bot/flows`, { template: tpl });
         B.flowId = r.id;
         await load();
         return draw();

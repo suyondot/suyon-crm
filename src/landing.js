@@ -38,7 +38,20 @@ function feature({ id, kicker, title, text, bullets, img, alt, flip, extra = '' 
 </section>`;
 }
 
-export function landingPage(env, plan, { logged = false } = {}) {
+const COMPARA = [
+  ['Bandeja de WhatsApp para todo el equipo, con roles', 'Sí, en la herramienta de chats', true],
+  ['Bot que reconoce tallas, números de jean y colores sin gastar IA', 'Depende del bot; muchas veces son frases exactas', true],
+  ['IA con tus reglas que pasa a la asesora cuando hay que cobrar', 'Otra herramienta y otro pago', true],
+  ['Pedidos de Lima y provincia con estados', 'Excel, cuaderno o capturas al grupo', true],
+  ['Lista diaria de «personas para llamar»', 'A mano', true],
+  ['Ventas por anuncio, talla, color y distrito', 'Sumando a mano', true],
+  ['Compras reales enviadas a Meta para tus anuncios', 'Casi nunca', true],
+  ['Lo que pagas', 'Varias suscripciones', 'Un solo plan'],
+];
+
+export function landingPage(env, plan, { logged = false, extra = {} } = {}) {
+  const video = extra.video;
+  const testi = extra.testimonios || [];
   const cur = plan.currency === 'PEN' ? 'S/' : 'US$';
   const wa = String(plan.contact || '').replace(/\D/g, '');
   const waLink = wa ? `https://wa.me/${wa}?text=${encodeURIComponent('Hola, quiero saber más de Control Total')}` : null;
@@ -295,6 +308,28 @@ section{scroll-margin-top:80px}
 .faq details[open] summary::after{transform:rotate(45deg)}
 .faq details p{margin:0 0 18px;color:var(--muted)}
 
+/* Video, comparación y testimonios */
+.vid{padding-bottom:0}
+.vbox{max-width:900px;margin:0 auto;border-radius:20px;overflow:hidden;background:#000;box-shadow:var(--shadow)}
+.vbox video{display:block;width:100%;max-height:80vh;background:#000}
+.cmp{max-width:980px;margin:0 auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.cmp-row{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:16px;padding:16px 22px;border-top:1px solid var(--line);align-items:center;font-size:15.5px}
+.cmp-row:first-child{border-top:0}
+.cmp-head{background:var(--ink);color:#fff;font-weight:700;font-family:var(--display);font-size:16px}
+.cmp-head span:last-child{display:flex;align-items:center;gap:8px;color:var(--rose)}
+.cmp-a{color:var(--muted)}
+.cmp-b{display:flex;align-items:center;gap:8px;font-weight:600}
+.cmp-b svg{width:22px;height:22px;padding:3px;border-radius:50%;background:var(--ok-soft);color:var(--ok)}
+.cmp-b em{font-style:normal}
+@media (max-width:640px){.cmp-row{grid-template-columns:1fr 1fr;gap:6px 14px;padding:14px 16px}.cmp-row>span:first-child{grid-column:1/-1;font-weight:600}.cmp-head>span:first-child{display:none}}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.tcard{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:24px;display:flex;flex-direction:column;gap:18px}
+.tcard blockquote{margin:0;font-size:17px;line-height:1.55}
+.tcard figcaption{display:flex;align-items:center;gap:12px;margin-top:auto}
+.tcard img,.tini{width:48px;height:48px;border-radius:50%;object-fit:cover;flex:none}
+.tini{display:grid;place-items:center;background:var(--rose-soft);color:var(--wine);font:700 20px var(--display)}
+.tcard small{display:block;color:var(--muted)}
+
 /* Cierre y pie */
 .final{background:var(--wine);color:#fff;text-align:center;padding:80px 0}
 .final h2{font-size:clamp(30px,4vw,50px);max-width:760px;margin:0 auto 16px}
@@ -339,6 +374,11 @@ footer a{text-decoration:none}footer a:hover{color:#fff}
   </div>
 </div></section>
 <div class="strip"><div class="wrap"><span>${I.chat || I.people} Bandeja para tu equipo</span><span>${I.bot} Bot sin IA</span><span>${I.spark} IA con tus reglas</span><span>${I.box} Pedidos Lima y provincia</span><span>${I.chart} Reportes por anuncio</span></div></div>
+
+${video ? `<section class="sec vid" id="video"><div class="wrap">
+  <div class="sec-head reveal"><p class="kicker">Míralo en 1 minuto</p><h2>Así funciona Control Total.</h2></div>
+  <div class="vbox reveal"><video controls playsinline preload="metadata" src="/inicio/media/${esc(video.name)}"></video></div>
+</div></section>` : ''}
 
 <section class="sec"><div class="wrap">
   <div class="sec-head reveal"><p class="kicker">El problema</p><h2>Vender por WhatsApp no debería ser correr detrás de cada chat.</h2></div>
@@ -472,6 +512,14 @@ ${feature({
   </div>
 </div></section>
 
+<section class="sec" id="comparar" style="padding-top:0"><div class="wrap">
+  <div class="sec-head reveal"><p class="kicker">Compara</p><h2>Herramientas sueltas o todo en un solo lugar.</h2><p>Lo que normalmente se arma juntando una bandeja de chats, un bot aparte y un Excel.</p></div>
+  <div class="cmp reveal" role="table" aria-label="Comparación">
+    <div class="cmp-row cmp-head" role="row"><span role="columnheader"></span><span role="columnheader">Herramientas sueltas</span><span role="columnheader">${MARK(22)} Control Total</span></div>
+    ${COMPARA.map(([q, a, b]) => `<div class="cmp-row" role="row"><span role="rowheader">${q}</span><span role="cell" class="cmp-a">${a}</span><span role="cell" class="cmp-b">${b === true ? `${I.check}<em>Incluido</em>` : `<b>${b}</b>`}</span></div>`).join('')}
+  </div>
+</div></section>
+
 <section class="sec" style="padding-top:0"><div class="wrap">
   <div class="origin reveal">
     ${MARK(120).replace('width="120" height="120"', 'class="big" width="120" height="120"')}
@@ -481,6 +529,11 @@ ${feature({
     <p>Cada función salió de un problema real del día a día: tallas de jean, «yapeo más tarde», sedes de Shalom, cortes de entrega a la 1 p. m. Por eso habla como tu tienda.</p></div>
   </div>
 </div></section>
+
+${testi.length ? `<section class="sec" id="testimonios" style="padding-top:0"><div class="wrap">
+  <div class="sec-head reveal"><p class="kicker">Lo que dicen</p><h2>Tiendas que ya venden con Control Total.</h2></div>
+  <div class="tgrid reveal">${testi.map((t) => `<figure class="tcard"><blockquote>«${esc(t.text)}»</blockquote><figcaption>${t.photo ? `<img src="/inicio/media/${esc(t.photo)}" alt="" width="48" height="48" loading="lazy">` : `<span class="tini">${esc((t.name || '?').trim().charAt(0).toUpperCase())}</span>`}<span><b>${esc(t.name)}</b>${t.brand ? `<small>${esc(t.brand)}</small>` : ''}</span></figcaption></figure>`).join('')}</div>
+</div></section>` : ''}
 
 <section class="sec" style="padding-top:0"><div class="wrap">
   <div class="sec-head reveal"><p class="kicker">¿Es para ti?</p><h2>Te va a servir si…</h2></div>

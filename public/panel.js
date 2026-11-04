@@ -91,11 +91,12 @@ export async function renderPanel(content) {
   draw(content);
 }
 
-const tabs = () => `<div class="seg pntabs" role="tablist">${[['empresas', 'Empresas'], ['demos', `Demos${PN.demos?.nuevas ? ` <span class="pnbadge">${PN.demos.nuevas}</span>` : ''}`], ['horarios', 'Horarios de demo']].map(([k, l]) => `<button data-ptab="${k}" aria-pressed="${PN.tab === k}">${l}</button>`).join('')}</div>`;
+const tabs = () => `<div class="seg pntabs" role="tablist">${[['empresas', 'Empresas'], ['demos', `Demos${PN.demos?.nuevas ? ` <span class="pnbadge">${PN.demos.nuevas}</span>` : ''}`], ['horarios', 'Horarios de demo'], ['pagina', 'Página pública']].map(([k, l]) => `<button data-ptab="${k}" aria-pressed="${PN.tab === k}">${l}</button>`).join('')}</div>`;
 
 function draw(content) {
   if (PN.tab === 'demos') return drawDemos(content);
   if (PN.tab === 'horarios') return drawHorarios(content);
+  if (PN.tab === 'pagina') return drawPagina(content);
   const d = PN.data;
   const p = d.plan;
   const rs = d.resumen;
@@ -326,6 +327,93 @@ function drawHorarios(content) {
       const x = form.querySelector('.err');
       x.textContent = er.message;
       x.hidden = false;
+    }
+  };
+}
+
+/* ---------- Página pública: video y testimonios ---------- */
+async function drawPagina(content) {
+  if (!PN.landing) {
+    try {
+      PN.landing = (await H.api('GET', '/admin/landing')).landing;
+    } catch (er) {
+      H.toast(er.message, 5000);
+      return;
+    }
+  }
+  const L = PN.landing;
+  const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
+  content.innerHTML = `<div class="page pnl">
+    <div class="ph"><div><h2>Panel Suyon</h2><p>Lo que se ve en tu página pública. <a href="/inicio" target="_blank" rel="noopener">Abrir la página</a></p></div></div>
+    ${tabs()}
+    <div class="grid" style="gap:14px">
+      <div class="card"><h3>Video de 1 minuto</h3>
+        <p class="sub">Sale debajo de la portada con el título «Míralo en 1 minuto». Graba la pantalla mostrando un chat, el bot, un pedido y un reporte. MP4, hasta 50 MB (1 minuto en 720p pesa unos 15 MB).</p>
+        ${L.video ? `<video controls preload="metadata" src="/inicio/media/${e(L.video.name)}" style="width:100%;max-width:560px;border-radius:12px;background:#000"></video>
+          <p class="note" style="margin:6px 0 0">${mb(L.video.size)} · subido el ${day(L.video.at)}</p>` : '<p class="note" style="margin:0">Todavía no hay video. Mientras no subas uno, esa sección no sale.</p>'}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <label class="send" style="cursor:pointer">${L.video ? 'Cambiar video' : 'Subir video'}<input type="file" accept="video/mp4,video/webm,video/quicktime" id="pnvid" hidden></label>
+          ${L.video ? '<button class="iconbtn" data-pl="delvid">Quitar video</button>' : ''}
+        </div><p class="note" id="pnvidst" hidden style="margin:8px 0 0"></p></div>
+      <div class="card"><h3>Testimonios</h3>
+        <p class="sub">Solo de personas reales que usan Control Total y te dieron permiso. La sección sale cuando hay al menos uno.</p>
+        ${L.testimonios.length ? `<div class="demolist" style="margin-bottom:14px">${L.testimonios.map((t) => `<div class="card demo" style="grid-template-columns:56px 1fr auto" data-tid="${e(t.id)}">
+          ${t.photo ? `<img src="/inicio/media/${e(t.photo)}" alt="" style="width:48px;height:48px;border-radius:50%;object-fit:cover">` : `<span class="av" style="width:48px;height:48px;background:var(--accent)">${e(t.name.charAt(0))}</span>`}
+          <div class="demoinfo"><b>${e(t.name)}</b>${t.brand ? ` · ${e(t.brand)}` : ''}<small>«${e(t.text)}»</small></div>
+          <button class="iconbtn sm" data-pl="deltes">Borrar</button></div>`).join('')}</div>` : ''}
+        <form id="pntes" class="fields3" style="align-items:end">
+          <div class="field"><label>Nombre</label><input name="name" maxlength="60" required placeholder="Ej. Carla Ramos"></div>
+          <div class="field"><label>Marca o tienda</label><input name="brand" maxlength="60" placeholder="Ej. Carla Store"></div>
+          <div class="field"><label>Foto (opcional)</label><input name="photo" type="file" accept="image/jpeg,image/png,image/webp"></div>
+          <div class="field" style="grid-column:1/-1"><label>Lo que dijo (con sus palabras)</label><textarea name="text" rows="3" maxlength="500" class="notesbox" required></textarea></div>
+          <label class="check" style="grid-column:1/-1"><input type="checkbox" name="permiso" value="1"> Esta persona usa Control Total y me dio permiso para publicar su nombre, su foto y lo que dijo.</label>
+          <div style="grid-column:1/-1"><div class="err" hidden></div><button class="send" type="submit">Agregar testimonio</button></div>
+        </form></div>
+    </div></div>`;
+  const root = content.querySelector('.pnl');
+  const reload = (landing) => {
+    PN.landing = landing;
+    drawPagina(content);
+  };
+  root.onclick = async (ev) => {
+    if (tabClick(ev, content)) return;
+    const b = ev.target.closest('[data-pl]');
+    if (!b) return;
+    try {
+      if (b.dataset.pl === 'delvid' && confirm('¿Quitar el video de la página?')) reload((await H.api('DELETE', '/admin/landing/video')).landing);
+      if (b.dataset.pl === 'deltes' && confirm('¿Borrar este testimonio?')) reload((await H.api('DELETE', `/admin/landing/testimonios/${b.closest('[data-tid]').dataset.tid}`)).landing);
+    } catch (er) {
+      H.toast(er.message, 5000);
+    }
+  };
+  root.querySelector('#pnvid').onchange = async (ev) => {
+    const f = ev.target.files[0];
+    if (!f) return;
+    const st = root.querySelector('#pnvidst');
+    st.hidden = false;
+    st.textContent = `Subiendo ${mb(f.size)}… no cierres esta pantalla.`;
+    const fd = new FormData();
+    fd.append('file', f);
+    try {
+      reload((await H.api('POST', '/admin/landing/video', fd)).landing);
+      H.toast('Video subido');
+    } catch (er) {
+      st.textContent = er.message;
+    }
+  };
+  const form = root.querySelector('#pntes');
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const btn = form.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      reload((await H.api('POST', '/admin/landing/testimonios', new FormData(form))).landing);
+      H.toast('Testimonio agregado');
+    } catch (er) {
+      const x = form.querySelector('.err');
+      x.textContent = er.message;
+      x.hidden = false;
+      btn.disabled = false;
     }
   };
 }

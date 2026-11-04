@@ -7,7 +7,7 @@ import { kindForMime, SEND_RULES } from './whatsapp.js';
 import {
   NODE_TYPES, IA_MODELS, PROMPT_VARS, entregaDia, loadSettings, loadFlow, flowStats, startFlow, cancelJobs, testIA, addLabel, onInbound, runJob,
 } from './bot.js';
-import { flowPantalon, PROMPT_PANTALON, KNOWLEDGE_PANTALON, TEMPLATE_ASSETS } from './bot-template.js';
+import { flowPantalon, PROMPT_PANTALON, KNOWLEDGE_PANTALON, TEMPLATE_ASSETS, flowVentasCT, PROMPT_VENTAS_CT, KNOWLEDGE_VENTAS_CT } from './bot-template.js';
 
 const r = new Hono();
 const body = async (c) => {
@@ -156,10 +156,18 @@ async function flowFor(c, id, need = 'config') {
 r.post('/stores/:id/bot/flows', async (c) => {
   const st = await storeFor(c, c.req.param('id'), 'config');
   const b = await body(c);
+  const web = String(c.env.PUBLIC_URL || new URL(c.req.url).origin).replace(/\/+$/, '');
   const graph = b.template === 'pantalon'
     ? flowPantalon()
+    : b.template === 'ventas_ct'
+    ? flowVentasCT(web)
     : { v: 1, start: 'inicio', nodes: [{ id: 'inicio', type: 'start', x: 360, y: 40, title: 'Clienta nueva', trigger: { new_chat: true, ads: 'all', ad_ids: [], keywords: [] }, labels: [], next: null }], sequences: [] };
-  const name = str(b.name || (b.template === 'pantalon' ? 'Ventas pantalón' : 'Flujo nuevo'), 60);
+  const name = str(b.name || ({ pantalon: 'Ventas pantalón', ventas_ct: 'Ventas Control Total' }[b.template] || 'Flujo nuevo'), 60);
+  // La plantilla de Control Total trae su propio prompt (solo si la tienda no tiene uno propio)
+  if (b.template === 'ventas_ct') {
+    const cur = await loadSettings(c.env, st.id);
+    if (!cur.ia_prompt || cur.ia_prompt.trim() === PROMPT_PANTALON.trim()) await saveSettings(c.env, st.id, { ia_prompt: PROMPT_VENTAS_CT, ia_knowledge: KNOWLEDGE_VENTAS_CT });
+  }
   const res = await c.env.DB.prepare('INSERT INTO bot_flows (store_id, name, active, graph, created_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)')
     .bind(st.id, name, JSON.stringify(validateGraph(graph)), now(), now()).run();
   await loadSettings(c.env, st.id).then((s) => (s.updated_at ? null : saveSettings(c.env, st.id, {})));

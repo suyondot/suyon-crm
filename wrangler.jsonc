@@ -12,7 +12,7 @@
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/webhook", "/privacidad", "/eliminar-datos", "/terminos", "/planes", "/inicio", "/__test/*", "/shopify/*"]
+    "run_worker_first": ["/api/*", "/webhook", "/privacidad", "/eliminar-datos", "/terminos", "/planes", "/inicio", "/inicio/*", "/__test/*", "/shopify/*"]
   },
 
   "d1_databases": [
@@ -35,6 +35,8 @@
     "GRAPH_API": "https://graph.facebook.com/v23.0",
     "APP_NAME": "Control Total",
     "CONTACT_EMAIL": "storesuyo@gmail.com",
+    // Dirección pública (enlaces que manda el asistente de ventas)
+    "PUBLIC_URL": "https://suyon-crm.storesuyo.workers.dev",
     // Botón «Conectar con un clic»: ID de la configuración «WhatsApp Embedded Signup» (no es secreto)
     "META_ES_CONFIG": "996370686168010"
   }

@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { now, fail, hashPassword } from './util.js';
 import { requireUser, companyFor, createSession } from './auth.js';
 import { loadPlan, savePlan, billingOf, statusOf, addPayment, usageOf, priceOf } from './billing.js';
+import { loadLanding, setVideo, removeVideo, addTestimonio, removeTestimonio } from './landing-data.js';
 import { loadAgenda, saveAgenda, freeSlots, bookDemo, dayLabel, timeLabel, gcalLink, DEMO_STATUS } from './agenda.js';
 
 const r = new Hono();
@@ -204,6 +205,35 @@ r.patch('/admin/demos/:id', async (c) => {
   await c.env.DB.prepare('UPDATE demos SET status = COALESCE(?, status), note = CASE WHEN ? THEN ? ELSE note END, updated_at = ? WHERE id = ?')
     .bind(b.status || null, 'note' in b ? 1 : 0, txt(b.note, 400) || null, now(), id).run();
   return c.json({ ok: true });
+});
+
+/* ---------- Página pública: video y testimonios ---------- */
+const form = async (c) => {
+  try {
+    return await c.req.formData();
+  } catch {
+    fail(400, 'No llegó el archivo. Intenta de nuevo.');
+  }
+};
+r.get('/admin/landing', async (c) => {
+  await requireAdmin(c);
+  return c.json({ landing: await loadLanding(c.env) });
+});
+r.post('/admin/landing/video', async (c) => {
+  await requireAdmin(c);
+  return c.json({ landing: await setVideo(c.env, (await form(c)).get('file')) });
+});
+r.delete('/admin/landing/video', async (c) => {
+  await requireAdmin(c);
+  return c.json({ landing: await removeVideo(c.env) });
+});
+r.post('/admin/landing/testimonios', async (c) => {
+  await requireAdmin(c);
+  return c.json({ landing: await addTestimonio(c.env, await form(c)) });
+});
+r.delete('/admin/landing/testimonios/:id', async (c) => {
+  await requireAdmin(c);
+  return c.json({ landing: await removeTestimonio(c.env, c.req.param('id')) });
 });
 
 export default r;

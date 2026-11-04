@@ -5,7 +5,7 @@ import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendLis
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON } from './bot-template.js';
 import { draftFromChat, insertOrder } from './orders.js';
 import { onOrderCreated } from './automations.js';
-import { storeBlocked } from './billing.js';
+import { storeBlocked, loadPlan } from './billing.js';
 
 const MIN = 60e3;
 const MAX_STEPS = 40;
@@ -526,6 +526,8 @@ export const PROMPT_VARS = [
   ['etiquetas', 'Etiquetas de la clienta'], ['yape', 'Yape / Plin'], ['titular', 'A nombre de'], ['bcp', 'Cuenta BCP'], ['cci', 'CCI'],
   ['talla', 'Talla que guardó el bot'], ['colores', 'Colores elegidos'], ['cantidad', 'Cantidad'], ['destino', 'Destino'], ['distrito', 'Distrito'],
   ['nombre', 'Nombre para el pedido'], ['celular', 'Celular para el pedido'], ['dni', 'DNI'], ['direccion', 'Dirección'], ['sede_shalom', 'Sede Shalom'],
+  ['precio_base', 'Control Total: plan base al mes'], ['precio_numero', 'Control Total: número extra'], ['precio_trabajadora', 'Control Total: trabajadora extra'],
+  ['dias_prueba', 'Control Total: días de prueba gratis'], ['enlace_demo', 'Enlace para agendar demo'], ['enlace_registro', 'Enlace para crear cuenta'], ['enlace_web', 'Página de Control Total'],
 ];
 const DATA_KEYS = ['talla', 'colores', 'cantidad', 'destino', 'distrito', 'nombre', 'celular', 'dni', 'direccion', 'sede_shalom'];
 
@@ -547,6 +549,15 @@ function fillPrompt(text, settings, labels, vars) {
     bcp: settings.pay_bcp || '[FALTA BCP]',
     cci: settings.pay_cci || '[FALTA CCI]',
   };
+  const pl = settings.__plan;
+  if (pl) {
+    const cur = pl.currency === 'PEN' ? 'S/' : 'US$';
+    const web = settings.__url || '';
+    Object.assign(map, {
+      precio_base: `${cur}${pl.base}`, precio_numero: `${cur}${pl.per_number}`, precio_trabajadora: `${cur}${pl.per_user}`,
+      dias_prueba: String(pl.trial_days), enlace_demo: `${web}/inicio#demo`, enlace_registro: `${web}/registro`, enlace_web: `${web}/inicio`,
+    });
+  }
   for (const k of DATA_KEYS) map[k] = vars[k] ? String(vars[k]) : '(todavía no lo dijo)';
   return String(text).replace(/\{(\w+)\}/g, (m, k) => (k in map ? map[k] : m));
 }
@@ -558,6 +569,12 @@ function nowText(tz = DEFAULT_TZ, hour12 = true) {
   const mm = String(p.m).padStart(2, '0');
   const h24 = `${String(p.h).padStart(2, '0')}:${mm}`;
   return `${dias[p.dow]} ${String(p.d).padStart(2, '0')}/${String(p.mo).padStart(2, '0')}/${p.y}, ${hour12 ? `${hh}:${mm} ${p.h < 12 ? 'a. m.' : 'p. m.'} (${h24})` : h24}`;
+}
+
+// Datos del plan de Control Total para {precio_base}, {enlace_demo}…
+async function withPlan(env, settings) {
+  const plan = await loadPlan(env).catch(() => null);
+  return { ...settings, __plan: plan, __url: String(env.PUBLIC_URL || 'https://suyon-crm.storesuyo.workers.dev').replace(/\/+$/, '') };
 }
 
 export function buildSystem(settings, node, labels, vars, assets) {
@@ -716,7 +733,7 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   if (!hist.length) return { ok: false };
   const labels = await chatLabels(env, chat.id);
   const { results: arows } = await env.DB.prepare('SELECT key FROM bot_assets WHERE store_id = ?').bind(store.id).all();
-  const system = buildSystem(settings, node, labels, vars, arows.map((a) => a.key));
+  const system = buildSystem(await withPlan(env, settings), node, labels, vars, arows.map((a) => a.key));
   const caseIds = (node.cases || []).map((c) => c.id);
   let reply = null;
   let lastErr = null;
@@ -775,7 +792,7 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
 export async function testIA(env, store, flow, node, text) {
   const settings = await loadSettings(env, store.id);
   const { results: arows } = await env.DB.prepare('SELECT key FROM bot_assets WHERE store_id = ?').bind(store.id).all();
-  const system = buildSystem(settings, node, [], {}, arows.map((a) => a.key));
+  const system = buildSystem(await withPlan(env, settings), node, [], {}, arows.map((a) => a.key));
   const out = await callModel(env, settings, system, [{ role: 'user', text }]);
   const r = parseReply(out.text, (node.cases || []).map((c) => c.id));
   return r.valid ? r : { mensajes: [], caso: null, datos: {}, error: 'La IA no respondió en el formato pedido (en un chat real se reintenta y, si falla, pasa a asesora).' };

@@ -375,3 +375,99 @@ export function flowPantalon() {
     ],
   };
 }
+
+/* =================== Plantilla «Ventas Control Total» (asistente de Jordan) =================== */
+// Responde dudas del plan y lleva a la demo o a la prueba gratis. Los precios salen del Panel ({precio_base}…).
+
+export const PROMPT_VENTAS_CT = `AHORA: {ahora}
+
+Eres el asistente de ventas de Control Total por WhatsApp. Atiendes a dueños de tiendas (sobre todo de ropa) que quieren vender por WhatsApp de forma automática. Detrás está Jordan, que creó el sistema para su marca Porte Perú.
+
+TU OBJETIVO
+1. Entender qué vende la persona y cómo vende hoy (anuncios, cuántos chats al día, si tiene asesoras).
+2. Resolver sus dudas con la información de CONOCIMIENTO.
+3. Llevarla a UNA de dos cosas: agendar una demo de 30 minutos ({enlace_demo}) o crear su cuenta gratis ({enlace_registro}).
+
+CÓMO ESCRIBES
+- Español de Perú, tuteo, cercano y claro. Sin jerga técnica.
+- Mensajes cortos: máximo 2 o 3 por respuesta, de 1 a 3 líneas cada uno. Pocos emojis.
+- Termina casi siempre con una pregunta o con el siguiente paso.
+- Si te preguntan por algo que no está en CONOCIMIENTO, NO lo inventes: di que lo confirmas con Jordan y usa el caso "persona".
+- Nunca prometas resultados de ventas ni des cifras de otras tiendas.
+- Nunca pidas datos de tarjeta ni contraseñas.
+
+PRECIOS (no los cambies ni hagas descuentos)
+- Prueba gratis de {dias_prueba} días, sin tarjeta.
+- Plan base: {precio_base} al mes. Incluye 1 número de WhatsApp, la cuenta del dueño y 1 trabajadora.
+- Cada número de WhatsApp extra: {precio_numero} al mes. Cada trabajadora extra: {precio_trabajadora} al mes.
+- Aparte, directo a cada proveedor: lo que Meta cobra por los mensajes y el consumo de la IA.
+- Si pide descuento o precio especial: usa el caso "persona".
+
+CUÁNDO MANDAR CADA ENLACE
+- Quiere verlo funcionando, tiene dudas de su caso o vende mucho → demo: {enlace_demo}
+- Quiere probar ya por su cuenta → cuenta gratis: {enlace_registro}
+- Quiere leer todo con calma → {enlace_web}`;
+
+export const KNOWLEDGE_VENTAS_CT = `CONTROL TOTAL · LO QUE HACE
+- Bandeja de WhatsApp para todo el equipo: cada persona con su usuario y su rol (dueño, asesora, despacho Lima, despacho provincia). La asesora no ve utilidades ni configuración.
+- Bot sin IA: manda foto y precios al instante, reconoce tallas (también números de jean) y colores con sus sinónimos, pone etiquetas y manda los colores de cada talla. Botones y listas para tocar.
+- IA con las reglas de la tienda: conversa, responde dudas de envío y producto, arma el pedido y pasa a la asesora cuando hay que cobrar o hay un caso especial. Si la IA duda, pasa a la asesora; no manda mensajes raros.
+- Seguimientos automáticos si la clienta no responde (texto, audio, video), que se cancelan solos cuando responde y respetan horario.
+- Notas de voz pasadas a texto.
+- Franja «personas para llamar» (Yape pendiente, Lima por confirmar) con resultado de cada llamada.
+- Pedidos: Lima contra entrega y provincia por agencia (Shalom) con sus estados, botón «Copiar orden» para el grupo de reparto, vista por día, avisos automáticos a la clienta.
+- Clientes: tabla con lo que compró cada una, grupos (nuevas, frecuentes, VIP, para reactivar), Excel.
+- Reportes: mensajes, conversaciones, pedidos, tasa de cierre, tallas, colores, distritos y ventas por anuncio.
+- Compras a Meta: cada pedido avisa a Meta de qué anuncio vino, para que las campañas aprendan de ventas reales.
+- Shopify: para tiendas que venden en su web (confirmar pedidos por WhatsApp, carritos abandonados).
+- Editor de flujo con bloques, con números por bloque, y simulador para probar antes de encenderlo.
+- Varias tiendas y números en una sola cuenta. Funciona en PC y celular (se instala desde el navegador).
+
+PREGUNTAS FRECUENTES
+- ¿Es la API oficial? Sí, la API oficial de WhatsApp de Meta. Nada de programas piratas.
+- ¿Puedo seguir usando WhatsApp Business en el celular? Sí, se puede conectar en modo coexistencia y seguir usando la app con el mismo número.
+- ¿Mi número está en otra herramienta (otro CRM o bot)? Hay que desconectarlo de esa herramienta antes de pasarlo. Lo vemos juntos en la demo.
+- ¿Cómo conecto mi número? Lo hacemos juntos en la demo o al empezar: toma unos minutos.
+- ¿Cuánto cobra Meta? Meta cobra aparte, directo a tu tarjeta, según el tipo de mensaje. Si la clienta llega por un anuncio de clic a WhatsApp y respondes dentro de las primeras 24 h, los mensajes de los siguientes 3 días son gratis. El sistema muestra cuándo un chat está en esa ventana.
+- ¿Necesito saber de IA o programar? No. Hay una plantilla para vender ropa y solo cambias precios, tallas, colores y fotos.
+- ¿Me pueden bloquear el número? Las reglas son las mismas que para cualquier herramienta oficial. Lo que causa bloqueos es que te reporten o mandar mensajes masivos a quien no te escribió.
+- ¿Puedo cancelar? Sí, es mes a mes, sin contrato.
+- ¿Sirve para otros productos? Está pensado para ropa, calzado y accesorios (tallas y colores), pero sirve para cualquier tienda que venda por WhatsApp. Si es otro rubro, recomiéndale la demo.
+- ¿Quién ve mis chats? Solo su equipo, cada uno con su usuario.
+- La demo es una videollamada de 30 minutos con Jordan: elige día y hora en {enlace_demo}.`;
+
+export function flowVentasCT(web = 'https://suyon-crm.storesuyo.workers.dev') {
+  const demo = `${web}/inicio#demo`;
+  return {
+    v: 1,
+    start: 'inicio',
+    nodes: [
+      { id: 'inicio', type: 'start', x: 360, y: 40, title: 'Persona nueva',
+        trigger: { new_chat: true, ads: 'all', ad_ids: [], keywords: ['control total', 'quiero información', 'demo'] }, labels: ['INTERESADO'], next: 'hola' },
+      { id: 'hola', type: 'send', x: 360, y: 190, title: 'Bienvenida',
+        items: [{ ...t('¡Hola! 👋 Soy el asistente de Control Total, el sistema para vender por WhatsApp en automático: bot, IA, pedidos y reportes en un solo lugar.\n\n¿Qué te gustaría saber?'),
+          opciones: ['¿Qué hace? · Bot, IA, pedidos y reportes', 'Precios · Plan y prueba gratis', 'Agendar demo · 30 min por videollamada', 'Probar gratis · Crear mi cuenta', 'Hablar con Jordan'], boton: 'Ver opciones' }],
+        next: 'seg' },
+      { id: 'seg', type: 'action', x: 360, y: 340, title: 'Inicia seguimiento', ops: [{ op: 'start_seq', seq: 'seg_demo' }], next: 'espera' },
+      { id: 'espera', type: 'send', x: 360, y: 470, title: 'Espera su respuesta', items: [], wait: true, save_to: 'respuesta', next: 'ia' },
+      { id: 'ia', type: 'ia', x: 360, y: 620, title: 'IA · Ventas Control Total',
+        cases: [
+          { id: 'persona', label: 'Quiere hablar con Jordan', send_reply: true, next: 'asesora',
+            when: 'La persona pide hablar con Jordan o con una persona, pide descuento o precio especial, tiene un problema con su cuenta, o pregunta algo que no está en la información.' },
+          { id: 'contratar', label: 'Quiere contratar', send_reply: true, next: 'contratar',
+            when: 'La persona ya decidió contratar o pagar el plan, o pregunta cómo pagar.' },
+        ],
+        next: 'bucle', next_error: 'error_ia' },
+      { id: 'bucle', type: 'send', x: 40, y: 800, title: 'Bucle IA (espera respuesta)', items: [], wait: true, save_to: 'respuesta', next: 'ia' },
+      { id: 'asesora', type: 'handoff', x: 780, y: 560, title: 'Pasa a Jordan', labels: ['ASESOR'], reason: 'Quiere hablar con Jordan' },
+      { id: 'contratar', type: 'handoff', x: 780, y: 720, title: 'Quiere contratar', labels: ['ASESOR', 'QUIERE PLAN'], reason: 'Quiere contratar el plan' },
+      { id: 'error_ia', type: 'send', x: 360, y: 860, title: 'Si la IA falla', items: [t('Dame un momento, te respondo enseguida 😊')], next: 'asesora' },
+    ],
+    sequences: [
+      { id: 'seg_demo', name: 'Seguimiento demo', cancel_on: 'reply', steps: [
+        { after_min: 30, items: [t(`¿Te quedó alguna duda? 😊 Si quieres, te lo muestro funcionando en una videollamada de 30 minutos. Elige el día y la hora aquí 👉 ${demo}`)] },
+        { after_min: 1200, from_h: 9, to_h: 21, items: [t(`Hola 👋 Por si te sirve: puedes probar Control Total gratis, sin tarjeta 👉 ${web}/registro\n\nO si prefieres que te lo muestre, agenda tu demo 👉 ${demo}`)] },
+      ] },
+    ],
+  };
+}

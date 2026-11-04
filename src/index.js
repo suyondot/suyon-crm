@@ -6,6 +6,7 @@ import api from './api.js';
 import { verifySignature, processWebhook, logWebhook } from './webhook.js';
 import { privacyPage, deletionPage, termsPage, plansPage } from './pages.js';
 import { landingPage } from './landing.js';
+import { loadLanding, serveLandingMedia } from './landing-data.js';
 import { loadPlan } from './billing.js';
 import { currentUser } from './auth.js';
 import { runJobs } from './bot.js';
@@ -91,8 +92,9 @@ app.get('/terminos', (c) => c.html(termsPage(c.env)));
 app.get('/planes', async (c) => c.html(plansPage(c.env, await loadPlan(c.env))));
 app.get('/inicio', async (c) => {
   const logged = !!(await currentUser(c).catch(() => null));
-  return c.html(landingPage(c.env, await loadPlan(c.env), { logged }));
+  return c.html(landingPage(c.env, await loadPlan(c.env), { logged, extra: await loadLanding(c.env) }));
 });
+app.get('/inicio/media/:name', (c) => serveLandingMedia(c));
 
 app.onError((err, c) => {
   if (err instanceof HttpError) return c.json({ error: err.message, ...(err.extra || {}) }, err.status);
