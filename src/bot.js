@@ -4,7 +4,7 @@ import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay } fro
 import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON } from './bot-template.js';
 import { draftFromChat, insertOrder, cfgOf } from './orders.js';
-import { agenciesNear, agencyOptions } from './shalom.js';
+import { agenciesNear, agenciesIn, agencyOptions } from './shalom.js';
 import { onOrderCreated } from './automations.js';
 import { storeBlocked, loadPlan, priceText } from './billing.js';
 
@@ -750,9 +750,14 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   }
   let near = null;
   if (!vars.sede_shalom && settings.agencias_on !== 0) {
-    near = await agenciesNear(env, [...ins.slice(-3), vars.destino, vars.distrito].filter(Boolean).join(' . '), cfgOf(store).sin_cobertura).catch(() => null);
-    if (near) {
+    // ¿Tocó una provincia/distrito de la lista anterior? Se usa esa zona tal cual
+    const zona = (ag.zonas || []).find((z) => z.t.toLowerCase() === lastIn);
+    if (zona) near = await agenciesIn(env, ag.nivel, zona.n, ag.dep).catch(() => null);
+    if (!near) near = await agenciesNear(env, [...ins.slice(-3), vars.destino, vars.distrito].filter(Boolean).join(' . '), cfgOf(store).sin_cobertura).catch(() => null);
+    if (near?.kind === 'agencias') {
       system += `\n\n## AGENCIAS SHALOM EN ${near.lugar} (lista real del sistema${near.total > near.agencias.length ? `, las ${near.agencias.length} primeras de ${near.total}` : ''})\n${near.agencias.map((a, i) => `${i + 1}. ${a.name} — ${a.address || ''}${a.horario ? ` · ${a.horario}` : ''}`).join('\n')}\nSi la clienta envía por agencia, ofrece SOLO estas, no inventes otras. El sistema le manda la lista para tocar justo después de tu mensaje: no la copies entera, solo pregúntale cuál le queda mejor. Cuando elija, pon en "datos" sede_shalom con el nombre exacto.`;
+    } else if (near?.kind === 'zonas') {
+      system += `\n\n## AGENCIAS SHALOM EN ${near.lugar}\nHay ${near.total} agencias Shalom en ${near.lugar}: son demasiadas para ofrecerlas todas. Si va por agencia, primero pregúntale en qué ${near.nivel} o ciudad está (por ejemplo: ${near.zonas.slice(0, 4).map((z) => z.name).join(', ')}). El sistema le manda la lista para tocar después de tu mensaje. No ofrezcas ninguna agencia todavía ni inventes direcciones.`;
     }
   }
   const caseIds = (node.cases || []).map((c) => c.id);
@@ -801,17 +806,31 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
       if (String(m.texto || '').trim()) await botSend(env, store, chat, { kind: 'text', text: String(m.texto) }, meta);
     }
     // Si la IA habló de agencia o sede, el bot manda la lista para tocar (una vez por lugar)
-    const talks = reply.mensajes.some((m) => /agencia|sede|shalom|recog/i.test(m.texto || ''));
-    if (near && !vars.sede_shalom && talks && ag.lugar !== near.lugar) {
-      const opts = agencyOptions(near.agencias);
+    const talks = reply.mensajes.some((m) => /agencia|sede|shalom|recog|provincia|distrito|ciudad|zona/i.test(m.texto || ''));
+    const key = near ? `${near.kind}:${near.lugar}` : null;
+    if (near && !vars.sede_shalom && talks && ag.lugar !== key) {
       await sleep(chat.sim ? 0 : 900);
-      await botSend(env, store, chat, {
-        kind: 'text',
-        text: `📍 Agencias Shalom en ${near.lugar}${near.total > opts.length ? ` (${opts.length} de ${near.total})` : ''}. Toca la que te queda mejor 👇`,
-        opciones: opts.map((o) => (o.desc ? `${o.title} · ${o.desc}` : o.title)),
-        boton: 'Ver agencias',
-      }, { flowId: flow.id, node: node.id, sender: 'bot', vars: {} });
-      ag = { lugar: near.lugar, opts: opts.map((o) => ({ t: o.title, f: o.full })) };
+      const meta2 = { flowId: flow.id, node: node.id, sender: 'bot', vars: {} };
+      if (near.kind === 'agencias') {
+        const opts = agencyOptions(near.agencias);
+        await botSend(env, store, chat, {
+          kind: 'text',
+          text: `📍 Agencias Shalom en ${near.lugar}${near.total > opts.length ? ` (${opts.length} de ${near.total})` : ''}. Toca la que te queda mejor 👇`,
+          opciones: opts.map((o) => (o.desc ? `${o.title} · ${o.desc}` : o.title)),
+          boton: 'Ver agencias',
+        }, meta2);
+        ag = { lugar: key, opts: opts.map((o) => ({ t: o.title, f: o.full })) };
+      } else {
+        const max = near.zonas.length <= 3 ? 20 : 24;
+        const zt = near.zonas.map((z) => ({ t: z.name.length > max ? `${z.name.slice(0, max - 1)}…` : z.name, n: z.name, c: z.count }));
+        await botSend(env, store, chat, {
+          kind: 'text',
+          text: `📍 En ${near.lugar} tenemos ${near.total} agencias Shalom. ¿En qué ${near.nivel} estás? 👇${near.mas ? ' Si no está en la lista, escríbela.' : ''}`,
+          opciones: zt.map((z) => `${z.t} · ${z.c} ${z.c === 1 ? 'agencia' : 'agencias'}`),
+          boton: near.nivel === 'provincia' ? 'Elegir provincia' : 'Elegir distrito',
+        }, meta2);
+        ag = { lugar: key, nivel: near.nivel, dep: near.dep, zonas: zt.map(({ t, n }) => ({ t, n })) };
+      }
     }
   }
   if (JSON.stringify(ag) !== (chat.bot_ag || '{}')) await env.DB.prepare('UPDATE chats SET bot_ag = ? WHERE id = ?').bind(JSON.stringify(ag), chat.id).run();

@@ -42,7 +42,7 @@ const meta = http.createServer(async (req, res) => {
     if (/siempre raro/i.test(all)) return json(200, { content: [{ type: 'text', text: 'Claro amiga, te paso: {"mensajes": [roto' }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/rarito/i.test(txt)) return json(200, { content: [{ type: 'text', text: '¡Hola! Te cuento los precios 😊' }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/cuenta bcp/i.test(txt)) return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: 'Cuenta BCP: [FALTA BCP]' }], caso: null, datos: {} }) }], usage: { input_tokens: 10, output_tokens: 10 } });
-    if (/juliaca|miraflores|ancón|ancon|terminal/i.test(txt)) {
+    if (/juliaca|miraflores|ancón|ancon|terminal|libertad|trujillo/i.test(txt)) {
       const sede = /terminal/i.test(txt) ? { sede_shalom: 'Juliaca Terminal' } : {};
       return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: /terminal/i.test(txt) ? '¡Listo! Anotado 💕' : '¡Sí enviamos! 📦 Va por Shalom, ¿qué agencia te queda mejor?' }], caso: null, datos: sede }) }], usage: { input_tokens: 10, output_tokens: 10 } });
     }
@@ -66,6 +66,11 @@ const meta = http.createServer(async (req, res) => {
         { id: 3, nombre: 'AREQUIPA / AREQUIPA / CAYMA / AREQUIPA CAYMA', lugar_over: 'AREQUIPA CAYMA', departamento: 'AREQUIPA', provincia: 'AREQUIPA', direccion: 'Av. Ejército 900', habilitado: false },
         { id: 4, nombre: 'LIMA / LIMA / MIRAFLORES / AV LARCO', lugar_over: 'AV LARCO', departamento: 'LIMA', provincia: 'LIMA', direccion: 'Av. Larco 100', habilitado: true },
         { id: 5, nombre: 'LIMA / LIMA / ANCON / ANCON CENTRO', lugar_over: 'ANCON CENTRO', departamento: 'LIMA', provincia: 'LIMA', direccion: 'Jr. Ancón 5', habilitado: true },
+        // La Libertad: 12 agencias en 3 provincias (más de 10 → primero se pregunta la provincia)
+        ...Array.from({ length: 12 }, (_, i) => {
+          const [prov, dist] = i < 8 ? ['TRUJILLO', i < 5 ? 'TRUJILLO' : 'VICTOR LARCO'] : i < 11 ? ['PACASMAYO', 'PACASMAYO'] : ['CHEPEN', 'CHEPEN'];
+          return { id: 100 + i, nombre: `LA LIBERTAD / ${prov} / ${dist} / AGENCIA ${i}`, lugar_over: `AGENCIA ${i}`, departamento: 'LA LIBERTAD', provincia: prov, direccion: `Calle ${i}`, habilitado: true };
+        }),
       ];
       const page = Number(url.searchParams.get('page') || 1);
       return json(200, { items: page === 1 ? all.slice(0, 2) : page === 2 ? all.slice(2) : [] });
@@ -1330,7 +1335,7 @@ try {
     assert.equal(pr.shape.items, 'lista de 2');
     assert.equal((await call('POST', '/api/admin/shalom/probar', { path: 'http://otro.com/x' })).status, 400, 'solo rutas del servicio');
     const sy = await call('POST', '/api/admin/shalom/agencias');
-    assert.equal(sy.total, 5);
+    assert.equal(sy.total, 17);
     let f = await call('GET', '/api/shalom/agencias?q=juliaca');
     assert.equal(f.agencias.length, 1);
     assert.equal(f.agencias[0].prov, 'SAN ROMÁN');
@@ -1375,6 +1380,19 @@ try {
     await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' });
     sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'es para Ancón' });
     assert.ok(sm.messages.some((m) => /Agencias Shalom en ANCON/.test(m.body || '')), 'Ancón no tiene motorizado: ofrece agencia');
+    // Solo dijo el departamento y hay muchas agencias: primero pregunta la provincia
+    await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
+    await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' });
+    n = iaCalls.length;
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'soy de La Libertad' });
+    assert.match(iaCalls.slice(n).pop().system, /Hay 12 agencias Shalom en LA LIBERTAD[\s\S]*primero pregúntale en qué provincia/);
+    const zl = sm.messages.filter((m) => m.sender === 'bot').pop();
+    assert.match(zl.body, /¿En qué provincia estás\?/);
+    assert.ok(/TRUJILLO · 8 agencias/.test(JSON.stringify(zl.extra || '')), 'provincias para tocar con cuántas agencias tiene');
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'TRUJILLO' });
+    const al = sm.messages.filter((m) => m.sender === 'bot').pop();
+    assert.match(al.body, /Agencias Shalom en TRUJILLO \(LA LIBERTAD\) \(8 de 8\)|Agencias Shalom en TRUJILLO \(LA LIBERTAD\)\./);
+    assert.ok(/VICTOR LARCO/.test(JSON.stringify(al.extra || '')), 'tocó la provincia: salen todas las de la provincia, no solo el distrito');
   });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos', '/planes']) assert.equal((await fetch(BASE + p)).status, 200);

@@ -216,12 +216,34 @@ export async function agenciesNear(env, text, sinCobertura = '') {
         if (lima.length !== rows.length) return null;
         if (!sin.some((z) => lima.some((r) => r.n.dist.includes(z) || z.includes(r.n.dist)))) return null;
       }
+      const title = (r, k) => r[k];
+      // Muchas agencias (dijo solo «Piura» o «La Libertad»): primero se pregunta la provincia o el distrito
+      if (rows.length > 10 && lv !== 'dist') {
+        const next = lv === 'dep' ? 'prov' : 'dist';
+        const groups = new Map();
+        for (const r of rows) groups.set(title(r, next), (groups.get(title(r, next)) || 0) + 1);
+        const zonas = [...groups.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }));
+        const lugar = lv === 'dep' ? rows[0].dep : `${rows[0].prov} (${rows[0].dep})`;
+        return { kind: 'zonas', nivel: next === 'prov' ? 'provincia' : 'distrito', lugar, dep: rows[0].dep, total: rows.length, zonas: zonas.slice(0, 10), mas: zonas.length > 10 };
+      }
       const pick = rows.slice(0, 10);
       const lugar = lv === 'dep' ? pick[0].dep : lv === 'prov' ? `${pick[0].prov} (${pick[0].dep})` : `${pick[0].dist} (${pick[0].dep})`;
-      return { lugar, total: rows.length, agencias: pick.map(({ n, ...r }) => r) };
+      return { kind: 'agencias', lugar, total: rows.length, agencias: pick.map(({ n, ...r }) => r) };
     }
   }
   return null;
+}
+
+// Agencias de una zona que la clienta tocó de la lista (provincia o distrito de un departamento)
+export async function agenciesIn(env, nivel, name, dep) {
+  const ix = await index(env);
+  if (!ix) return null;
+  const lv = nivel === 'provincia' ? 'prov' : 'dist';
+  const rows = ix.rows.filter((r) => r.ok && r.n[lv] === norm(name) && (!dep || r.n.dep === norm(dep)));
+  if (!rows.length) return null;
+  const pick = rows.slice(0, 10);
+  const lugar = lv === 'prov' ? `${pick[0].prov} (${pick[0].dep})` : `${pick[0].dist} (${pick[0].dep})`;
+  return { kind: 'agencias', lugar, total: rows.length, agencias: pick.map(({ n, ...r }) => r) };
 }
 
 // Opciones para tocar en WhatsApp: título ≤ 24 y descripción ≤ 72, títulos sin repetir
