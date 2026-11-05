@@ -86,7 +86,7 @@ r.get('/stores/:id/reporte', async (c) => {
   const ads = new Map();
   const ad = (id, head) => {
     const k = id || 'directo';
-    if (!ads.has(k)) ads.set(k, { id: id || null, name: id ? head || `Anuncio ${id}` : 'Escribieron directo (sin anuncio)', chats: 0, ventas: 0 });
+    if (!ads.has(k)) ads.set(k, { id: id || null, name: id ? head || `Anuncio ${id}` : 'Escribieron directo (sin anuncio)', chats: 0, ventas: 0, entregadas: 0, monto: 0 });
     return ads.get(k);
   };
   for (const ch of chats.results) ad(ch.ad_id, ch.ad_headline).chats++;
@@ -97,7 +97,10 @@ r.get('/stores/:id/reporte', async (c) => {
   if (usaPedidos) for (const o of sales.results) {
     const b = series.get(bucketOf(o.sold_at));
     if (b) b.ventas++;
-    ad(o.ad_id, o.ad_headline).ventas++;
+    const A = ad(o.ad_id, o.ad_headline);
+    A.ventas++;
+    A.monto += Number(o.total) || 0;
+    if (['entregado', 'recogido'].includes(o.status)) A.entregadas++;
     const dest = o.modo === 'lima' ? 'Lima' : 'Provincia';
     destino[dest]++;
     monto += Number(o.total) || 0;

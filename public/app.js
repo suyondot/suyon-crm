@@ -1325,9 +1325,6 @@ function renderFicha() {
       <dt>Primer mensaje</dt><dd>${esc(new Date(c.created_at).toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short' }))}</dd>
     </dl></div>
     <div class="sec"><h3>Ventana de WhatsApp</h3><p class="note" style="margin:0"><b style="color:${w.canSend ? 'var(--ok)' : 'var(--muted)'}">${esc(w.label)}</b> · ${esc(w.title)}</p></div>
-    <div class="sec"><h3>Etiquetas</h3><div class="tagbox">${S.labels.map((l) => `<button data-tag="${l.id}" class="${c.labels.includes(l.id) ? '' : 'off'}" aria-pressed="${c.labels.includes(l.id)}">${tagHTML(l)}</button>`).join('')}</div>
-      <p class="note" style="margin:8px 0 0">Toca para poner o quitar. Borde punteado: las pondrá el bot solo.</p></div>
-    <div class="sec"><h3>De dónde vino</h3>${c.ad_id ? `<dl class="kv"><dt>Anuncio</dt><dd>${esc(c.ad_headline || '—')}</dd><dt>ID anuncio</dt><dd class="mono">${esc(c.ad_id)}</dd><dt>Llegó</dt><dd>${esc(listTime(c.referral_at))}</dd></dl>` : '<p class="note" style="margin:0">Escribió directo, no desde un anuncio.</p>'}</div>
     ${botFicha(c)}
     <div class="sec"><h3>Pedidos</h3><div id="fpeds"><span class="note">Cargando…</span></div></div>
     <div class="sec"><h3>Notas</h3><textarea class="notesbox" id="cnotes" placeholder="Solo las ve tu equipo">${esc(c.notes || '')}</textarea></div>

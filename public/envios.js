@@ -13,7 +13,7 @@ const REG = ['por_pagar', 'validado'];
 const ST = {
   por_pagar: ['Yape por validar', 'var(--warn)'],
   validado: ['Agendado (sin guía)', 'var(--t-grey)'],
-  enviado: ['Pendiente', '#8a8a85'],
+  enviado: ['Recién enviado', '#8a8a85'],
   en_camino: ['En camino', '#2f6fd0'],
   en_agencia: ['En agencia', '#c78a0a'],
   falta_abonar: ['Recogido · falta abonar', '#7b4fc9'],
@@ -225,7 +225,7 @@ function drawList() {
   const g = base.filter((x) => EV.cu === 'all' || courier(x) === EV.cu);
   const q = EV.q.toLowerCase().trim();
   const qm = (x) => !q || [x.nombre, x.guia, x.guia_codigo, x.sede, x.ciudad, x.dni, x.celular, `#${x.number}`].join(' ').toLowerCase().includes(q);
-  if (!['all', 'en_agencia', 'rr', 'dv'].includes(EV.f)) EV.f = 'all';
+  if (!['all', 'enviado', 'en_camino', 'en_agencia', 'rr', 'dv'].includes(EV.f)) EV.f = 'all';
   const stF = (x) => EV.tab !== 'cobrar' || EV.f === 'all' || (EV.f === 'rr' ? isRR(x) : EV.f === 'dv' ? isDV(x) : x.status === EV.f && !isRR(x) && !isDV(x));
   const cfF = (x) => EV.tab !== 'cobrar' || EV.cf === 'all' || (EV.cf === 'inc') === !!miss(x).length;
   const l = g.filter((x) => stF(x) && cfF(x) && qm(x));
@@ -238,7 +238,7 @@ function drawList() {
   H.$('#envtop').innerHTML = `
     <input type="search" id="envq" class="gsq" placeholder="Buscar nombre, orden, código o destino" value="${e(EV.q)}" autocomplete="off" aria-label="Buscar">
     ${EV.tab === 'cobrar' ? `<div class="gchips">${cuh}<button class="gchip${EV.cf === 'all' ? ' on' : ''}" data-ecf="all">Todas</button><button class="gchip${EV.cf === 'inc' ? ' on' : ''}" data-ecf="inc">🟡 Por completar · ${ni}</button><button class="gchip${EV.cf === 'ok' ? ' on' : ''}" data-ecf="ok">🟢 Completadas · ${g.length - ni}</button></div>
-    <div class="gchips"><button class="gchip${EV.f === 'all' ? ' on' : ''}" data-ef="all">Todas · ${g.length}</button><button class="gchip${EV.f === 'en_agencia' ? ' on' : ''}" data-ef="en_agencia">${ST.en_agencia[0]} · ${cnt('en_agencia')}</button>
+    <div class="gchips"><button class="gchip${EV.f === 'all' ? ' on' : ''}" data-ef="all">Todas · ${g.length}</button>${['enviado', 'en_camino', 'en_agencia'].map((k) => `<button class="gchip${EV.f === k ? ' on' : ''}" data-ef="${k}">${ST[k][0]} · ${cnt(k)}</button>`).join('')}
       <button class="gchip rch${EV.f === 'rr' ? ' on' : ''}" data-ef="rr">🔴 Posible devolución (${cfg().dias_aviso}–${cfg().dias_devolver - 1} días) · ${g.filter(isRR).length}</button>
       <button class="gchip dch${EV.f === 'dv' ? ' on' : ''}" data-ef="dv">🚨 Devolución (${cfg().dias_devolver}+ días) · ${g.filter(isDV).length}</button></div>`
       : cuh ? `<div class="gchips">${cuh}</div>` : ''}`;

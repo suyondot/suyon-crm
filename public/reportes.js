@@ -130,9 +130,9 @@ function draw() {
       <section class="rcard"><h3>Promociones</h3><p class="rsub">Cuántos pantalones llevó cada clienta</p>${hbars(d.promos, { unit: ' ventas' })}</section>
       <section class="rcard"><h3>Distritos y ciudades</h3><p class="rsub">Dónde se vendió más</p>${hbars(d.lugares, { unit: ' ventas' })}</section>
     </div>
-    <section class="rcard rwide"><h3>Anuncios</h3><p class="rsub">Qué anuncio trajo conversaciones y cuáles cerraron ventas</p>
-      ${d.anuncios.length ? `<div class="rtable"><table><thead><tr><th>Anuncio</th><th class="r">Conversaciones</th><th class="r">Ventas</th><th>Tasa de cierre</th></tr></thead><tbody>
-        ${d.anuncios.map((a) => `<tr><td><b>${e(a.name)}</b>${a.id ? `<small class="mono">ID ${e(a.id)}</small>` : ''}</td><td class="r mono">${fmt(a.chats)}</td><td class="r mono"><b>${fmt(a.ventas)}</b></td>
+    <section class="rcard rwide"><h3>Anuncios</h3><p class="rsub">Qué anuncio trajo conversaciones, cuántas ventas se confirmaron y cuántas se entregaron</p>
+      ${d.anuncios.length ? `<div class="rtable"><table><thead><tr><th>Anuncio</th><th class="r">Conversaciones</th><th class="r">Ventas confirmadas</th>${d.fuente === 'pedidos' ? '<th class="r">Entregadas</th><th class="r">Monto</th>' : ''}<th>Tasa de cierre</th></tr></thead><tbody>
+        ${d.anuncios.map((a) => `<tr><td><b>${e(a.name)}</b>${a.id ? `<small class="mono">ID ${e(a.id)}</small>` : ''}</td><td class="r mono">${fmt(a.chats)}</td><td class="r mono"><b>${fmt(a.ventas)}</b></td>${d.fuente === 'pedidos' ? `<td class="r mono">${fmt(a.entregadas)}</td><td class="r mono">S/${fmt(Math.round(a.monto))}</td>` : ''}
           <td><span class="rrate"><i style="width:${a.tasa == null ? 0 : Math.min(100, a.tasa * 100)}%"></i></span><span class="mono">${pct(a.tasa)}</span></td></tr>`).join('')}</tbody></table></div>` : '<p class="note rempty">Todavía no hay conversaciones en este periodo.</p>'}
     </section>
     <section class="rcard rwide"><h3>Llamadas</h3><div class="rtiles sm">
