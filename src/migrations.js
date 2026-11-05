@@ -516,6 +516,19 @@ export const MIGRATIONS = [
     name: 'agencias que el bot le ofreció a la clienta (para reconocer cuál tocó)',
     sql: [`ALTER TABLE chats ADD COLUMN bot_ag TEXT`],
   },
+  {
+    id: 17,
+    name: 'envíos a provincia: courier, QR, fecha de la guía, seguimientos, no quiere recoger, remitente',
+    sql: [
+      `ALTER TABLE orders ADD COLUMN courier TEXT`,
+      `ALTER TABLE orders ADD COLUMN guia_qr TEXT`,
+      `ALTER TABLE orders ADD COLUMN enviado_at INTEGER`,
+      `ALTER TABLE orders ADD COLUMN seg TEXT`,
+      `ALTER TABLE orders ADD COLUMN no_quiere INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE orders ADD COLUMN rem TEXT`,
+      `CREATE INDEX orders_store_modo ON orders (store_id, modo, status)`,
+    ],
+  },
 ];
 
 let ready = null;

@@ -7,13 +7,13 @@ const e = (s) => H.esc(s);
 const money = (n) => `S/${Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 const MODOS = { lima: 'Contraentrega Lima', ce_prov: 'Contraentrega provincia', agencia: 'Agencia (Shalom)' };
 const MODO_CORTO = { lima: 'Lima', ce_prov: 'CE provincia', agencia: 'Agencia' };
-const ESTADOS = { nuevo: 'Nuevo', confirmado: 'Confirmado', en_ruta: 'En ruta', reprogramado: 'Reprogramado', entregado: 'Entregado', rechazado: 'Rechazado', por_pagar: 'Yape por validar', validado: 'Validado', enviado: 'Enviado', en_agencia: 'En agencia', recogido: 'Recogido', no_recogido: 'No recogido', cancelado: 'Cancelado' };
+const ESTADOS = { nuevo: 'Nuevo', confirmado: 'Confirmado', en_ruta: 'En ruta', reprogramado: 'Reprogramado', entregado: 'Entregado', rechazado: 'Rechazado', por_pagar: 'Yape por validar', validado: 'Validado', enviado: 'Enviado', en_camino: 'En camino', en_agencia: 'En agencia', falta_abonar: 'Recogido · falta abonar', recogido: 'Recogido', no_recogido: 'No recogido', cancelado: 'Cancelado' };
 const FLUJO = {
   lima: ['nuevo', 'confirmado', 'en_ruta', 'reprogramado', 'entregado', 'rechazado', 'cancelado'],
   ce_prov: ['nuevo', 'confirmado', 'en_ruta', 'reprogramado', 'entregado', 'rechazado', 'cancelado'],
-  agencia: ['por_pagar', 'validado', 'enviado', 'en_agencia', 'recogido', 'no_recogido', 'cancelado'],
+  agencia: ['por_pagar', 'validado', 'enviado', 'en_camino', 'en_agencia', 'falta_abonar', 'recogido', 'no_recogido', 'cancelado'],
 };
-const TONO = { nuevo: 'info', por_pagar: 'warn', confirmado: 'acc', validado: 'acc', en_ruta: 'run', enviado: 'run', en_agencia: 'run', reprogramado: 'warn', entregado: 'ok', recogido: 'ok', rechazado: 'bad', no_recogido: 'bad', cancelado: 'mute' };
+const TONO = { nuevo: 'info', por_pagar: 'warn', confirmado: 'acc', validado: 'acc', en_ruta: 'run', enviado: 'run', en_camino: 'run', en_agencia: 'run', falta_abonar: 'warn', reprogramado: 'warn', entregado: 'ok', recogido: 'ok', rechazado: 'bad', no_recogido: 'bad', cancelado: 'mute' };
 const FUENTE = { ia: 'IA', shopify: 'Shopify', whatsapp: 'WhatsApp', manual: 'Manual' };
 const TALLAS = ['XS', 'S', 'M', 'L', 'XL'];
 const COLORES = ['Negro', 'Gris claro', 'Gris oscuro', 'Perla', 'Vino', 'Azul noche', 'Beige'];

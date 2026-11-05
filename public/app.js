@@ -7,6 +7,7 @@ import { initReportes, renderReportes, resetReportes } from './reportes.js';
 // Marca: C y T (la T en rosado). Sin fondo: el fondo lo pone el contenedor.
 const LOGO = '<svg viewBox="38 90 400 332" aria-hidden="true" fill="none" stroke-linecap="round"><path d="M304 168A128 128 0 1 0 304 344" stroke="#fff" stroke-width="60"/><path d="M248 206H396M322 206V350" stroke="#F2B6C4" stroke-width="54"/></svg>';
 import { initPedidos, renderPedidos, resetPedidos, fichaPedidos, renderPedidosConfig } from './pedidos.js';
+import { initEnvios, renderEnvios, resetEnvios } from './envios.js';
 import { initPanel, renderMiPlan, renderPaywall, renderPanel } from './panel.js';
 
 /* =================== Utilidades =================== */
@@ -17,6 +18,7 @@ const H = 3600e3;
 const isTouch = matchMedia('(pointer:coarse)').matches;
 
 const ICON = {
+  truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h11v10H2z"/><path d="M13 9h4l4 4v3h-8"/><circle cx="6" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg>',
   chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>',
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg>',
@@ -476,6 +478,7 @@ function enterStore() {
   resetClientes();
   resetReportes();
   resetPedidos();
+  resetEnvios();
   if (S.storeId) pref.set('store', S.storeId);
   if (S.view === 'chats' && store() && !canChats()) S.view = 'pedidos';
   render();
@@ -518,6 +521,7 @@ function navItems() {
   if (canChats() || !store()) items.push(['chats', 'Chats', ICON.chat, S.unread[S.storeId] || 0]);
   if (store() && canChats()) items.push(['clientes', 'Clientes', ICON.users, 0]);
   if (store()) items.push(['pedidos', 'Pedidos', ICON.box, 0]);
+  if (store()) items.push(['envios', 'Envíos', ICON.truck, 0]);
   if (store() && canChats()) items.push(['avisos', 'Avisos', ICON.bell, S.avisos[S.storeId] || 0]);
   if (owner() || (!S.me.stores.length && S.me.companies.some((c) => c.role === 'dueno'))) items.push(['config', 'Configuración', ICON.gear, 0]);
   else items.push(['config', 'Mi cuenta', ICON.user, 0]);
@@ -534,7 +538,7 @@ function render() {
     S.view = 'config';
     S.cfgTab = co.role === 'dueno' ? 'miplan' : 'cuenta';
   }
-  const titles = { chats: 'Chats', clientes: 'Clientes', reportes: 'Reportes', avisos: 'Avisos', pedidos: 'Pedidos', panel: 'Panel Suyon', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
+  const titles = { chats: 'Chats', clientes: 'Clientes', reportes: 'Reportes', avisos: 'Avisos', pedidos: 'Pedidos', envios: 'Envíos provincia', panel: 'Panel Suyon', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
   const roleName = st ? S.me.roles[st.role] : '';
   root().innerHTML = `
   <nav class="side" aria-label="Principal">
@@ -557,6 +561,7 @@ function render() {
   else if (S.view === 'clientes') renderClientes(content);
   else if (S.view === 'reportes') renderReportes(content);
   else if (S.view === 'pedidos') renderPedidos(content);
+  else if (S.view === 'envios') renderEnvios(content);
   else if (S.view === 'panel' && S.me.user.is_admin) renderPanel(content);
   else if (co?.plan?.blocked && co.role !== 'dueno' && S.cfgTab !== 'cuenta') renderPaywall(content, co);
   else renderConfig();
@@ -2284,7 +2289,7 @@ document.addEventListener('click', async (e) => {
   if (d.store) {
     S.storeMenu = false;
     S.storeId = Number(d.store);
-    if (S.view === 'pedidos' && canChats()) S.view = 'chats';
+    if (['pedidos', 'envios'].includes(S.view) && canChats()) S.view = 'chats';
     enterStore();
     return;
   }
@@ -2550,6 +2555,7 @@ initClientes({
 
 initReportes({ api, esc, $, S, store });
 initPedidos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, listTime, canChats });
+initEnvios({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, canChats });
 initPanel({ api, esc, toast });
 
 function applyTheme(t) {

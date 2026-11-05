@@ -19,7 +19,9 @@ export const ESTADOS = {
   por_pagar: 'Yape por validar',
   validado: 'Validado',
   enviado: 'Enviado',
+  en_camino: 'En camino',
   en_agencia: 'En agencia',
+  falta_abonar: 'Recogido · falta abonar',
   recogido: 'Recogido',
   no_recogido: 'No recogido',
   cancelado: 'Cancelado',
@@ -28,7 +30,7 @@ export const ESTADOS = {
 export const FLUJO = {
   lima: ['nuevo', 'confirmado', 'en_ruta', 'reprogramado', 'entregado', 'rechazado', 'cancelado'],
   ce_prov: ['nuevo', 'confirmado', 'en_ruta', 'reprogramado', 'entregado', 'rechazado', 'cancelado'],
-  agencia: ['por_pagar', 'validado', 'enviado', 'en_agencia', 'recogido', 'no_recogido', 'cancelado'],
+  agencia: ['por_pagar', 'validado', 'enviado', 'en_camino', 'en_agencia', 'falta_abonar', 'recogido', 'no_recogido', 'cancelado'],
 };
 
 export const VENDIDO = ['entregado', 'recogido'];
@@ -140,7 +142,7 @@ export function orderText(o, { horario = 'entre 2 y 8 p.m.' } = {}) {
     `⏰ Entrega: ${x.entrega ? x.entrega.split('-').reverse().join('/') : ''} ${horario}`.trim(), x.notas ? `📝 ${x.notas}` : ''].filter(Boolean).join('\n');
 }
 
-const FIELDS = { nombre: 80, celular: 20, dni: 12, distrito: 60, direccion: 200, referencia: 200, ciudad: 60, sede: 160, notas: 1000, ad_id: 40, guia: 20, guia_codigo: 12 };
+const FIELDS = { nombre: 80, celular: 20, dni: 12, distrito: 60, direccion: 200, referencia: 200, ciudad: 60, sede: 160, notas: 1000, ad_id: 40, guia: 20, guia_codigo: 12, guia_qr: 200, courier: 10, rem: 20 };
 
 export function cleanOrder(b, cfg, cur = null) {
   const out = {};
@@ -148,6 +150,8 @@ export function cleanOrder(b, cfg, cur = null) {
   if ('celular' in out && out.celular) out.celular = normPhone(out.celular) || out.celular;
   if (out.guia) out.guia = out.guia.replace(/\s+/g, '');
   if (out.guia_codigo) out.guia_codigo = out.guia_codigo.replace(/\s+/g, '').toUpperCase();
+  if ('courier' in out) out.courier = out.courier === 'olva' ? 'olva' : 'shalom';
+  if ('enviado_at' in b) out.enviado_at = Number(b.enviado_at) > 0 ? Math.round(Number(b.enviado_at)) : null;
   if ('modo' in b) {
     if (!MODOS[b.modo]) fail(400, 'Elige el tipo de envío: Lima, provincia o agencia.');
     out.modo = b.modo;

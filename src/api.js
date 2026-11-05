@@ -11,6 +11,7 @@ import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
 import reportesApi from './api-reportes.js';
 import pedidosApi from './api-pedidos.js';
 import billingApi from './api-billing.js';
+import enviosApi from './api-envios.js';
 import { loadPlan } from './billing.js';
 import { signupInfo, connectSignup } from './signup.js';
 
@@ -1204,5 +1205,6 @@ api.route('/', botApi);
 api.route('/', reportesApi);
 api.route('/', pedidosApi);
 api.route('/', billingApi);
+api.route('/', enviosApi);
 
 export default api;

@@ -38,6 +38,7 @@ const meta = http.createServer(async (req, res) => {
     const last = body.messages[body.messages.length - 1];
     const txt = typeof last.content === 'string' ? last.content : last.content.map((x) => x.text || '').join(' ');
     if (/falla/i.test(txt)) return json(500, { error: { message: 'overloaded' } });
+    if (/guías de envío peruanas/.test(txt)) return json(200, { content: [{ type: 'text', text: 'Aquí está: ' + JSON.stringify([{ foto: 1, tipo: 'shalom', orden: '30000002', codigo: 'qwer', dni: '70000002', nombre: 'LUZ PEREZ', destino: 'Piura', fecha: '2026-11-04T18:00:00' }]) }], usage: { input_tokens: 1500, output_tokens: 80 } });
     const all = body.messages.map((m) => (typeof m.content === 'string' ? m.content : m.content.map((x) => x.text || '').join(' '))).join('\n');
     if (/siempre raro/i.test(all)) return json(200, { content: [{ type: 'text', text: 'Claro amiga, te paso: {"mensajes": [roto' }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/rarito/i.test(txt)) return json(200, { content: [{ type: 'text', text: '¡Hola! Te cuento los precios 😊' }], usage: { input_tokens: 10, output_tokens: 10 } });
@@ -1414,6 +1415,85 @@ try {
     const al = sm.messages.filter((m) => m.sender === 'bot').pop();
     assert.match(al.body, /Agencias Shalom en TRUJILLO \(LA LIBERTAD\) \(8 de 8\)|Agencias Shalom en TRUJILLO \(LA LIBERTAD\)\./);
     assert.ok(/VICTOR LARCO/.test(JSON.stringify(al.extra || '')), 'tocó la provincia: salen todas las de la provincia, no solo el distrito');
+  });
+  await step('Envíos a provincia: formularios, cruzar guía, fotos, ya recogió e importar del artifact', async () => {
+    const me = await call('GET', '/api/me');
+    const sid = (await call('POST', `/api/companies/${me.companies[0].id}/stores`, { name: 'Prueba envíos' })).store_id;
+    let aj = await call('PATCH', `/api/stores/${sid}/envios-config`, {
+      productos: [{ nombre: 'Pantalón formal', precios: { 1: 89, 2: 139, 3: 175 }, colores: 'Negro, Plomo claro, Guinda', tallas: 'XS, S, M, L, XL' }, { nombre: 'Leggings cargo', precios: { 1: 109 }, colores: ['Negro', 'Celeste bebé'] }],
+      extras: [{ nombre: 'Polo', precio: 25 }], remitentes: [{ nombre: 'REMITENTE UNO', dni: '11112222', cel: '999888777' }], origen: 'Lima / Comas', dias_aviso: 20, dias_devolver: 25,
+    });
+    assert.equal(aj.cfg.productos[0].colores[1], 'Plomo claro');
+    const form = `🚚 Envío Shalom: Arequipa (Av. Ejército)\nNombre: maria lopez\nDNI: 70000001\nCel: 987 000 001\nPedido: pantalones formales\nCantidad: 3\nTalla: 2 M y 1 L\nColores: guinda, gris claro y negro\nAdelanto: 30\n\nShalom: Piura\nNombre: Luz Perez\nDNI: 70000002\nCel: 987000002\nPedido: leggings cargo\nTalla: S\nColor: celeste`;
+    let fr = await call('POST', `/api/stores/${sid}/envios/formularios`, { text: form });
+    assert.equal(fr.resultados.length, 2);
+    assert.ok(fr.resultados.every((x) => x.ok), JSON.stringify(fr.resultados));
+    let L = (await call('GET', `/api/stores/${sid}/envios`)).envios;
+    const maria = L.find((x) => x.nombre === 'Maria Lopez');
+    assert.equal(maria.status, 'validado');
+    assert.equal(maria.total, 175, 'precio por 3');
+    assert.deepEqual(maria.items.map((i) => `${i.talla} ${i.color}`), ['M Guinda', 'M Plomo claro', 'L Negro'], 'colores con el nombre del producto');
+    assert.equal(L.find((x) => x.nombre === 'Luz Perez').items[0].color, 'Celeste bebé');
+    fr = await call('POST', `/api/stores/${sid}/envios/formularios`, { text: form.split('\n\n')[0] });
+    assert.equal(fr.resultados[0].dup, true, 'no duplica a la misma clienta');
+    // Cruzar a mano (código + DNI + orden)
+    let cg = await call('POST', `/api/stores/${sid}/envios/cruzar`, { codigo: 'npjk', dni: '70000001', orden: '2000 0001' });
+    assert.equal(cg.ok, true, cg.text);
+    cg = await call('POST', `/api/stores/${sid}/envios/cruzar`, { codigo: 'npjk', dni: '70000001', orden: '20000001' });
+    assert.equal(cg.ok, false, 'la misma guía no se registra dos veces');
+    assert.equal((await call('POST', `/api/stores/${sid}/envios/cruzar`, { codigo: 'zzzz', dni: '11112222', orden: '1' })).ok, false, 'el DNI del remitente no cruza');
+    // Fotos: la IA lee la guía y se cruza sola
+    const fd = new FormData();
+    fd.append('fotos', new Blob([IMG], { type: 'image/jpeg' }), 'guia1.jpg');
+    const ft = await call('POST', `/api/stores/${sid}/envios/fotos`, undefined, { form: fd });
+    assert.equal(ft.resultados[0].ok, true, JSON.stringify(ft));
+    await wait(400);
+    L = (await call('GET', `/api/stores/${sid}/envios`)).envios;
+    const m2 = L.find((x) => x.nombre === 'Maria Lopez');
+    assert.equal(m2.guia, '20000001');
+    assert.ok(['enviado', 'en_camino', 'en_agencia'].includes(m2.status), m2.status);
+    const luz = L.find((x) => x.nombre === 'Luz Perez');
+    assert.equal(luz.guia_codigo, 'QWER');
+    assert.equal(luz.enviado_at, Date.parse('2026-11-04T18:00:00-05:00'));
+    // Seguimiento y no quiere recoger
+    let ac = await call('POST', `/api/pedidos/${luz.id}/envio`, { accion: 'seg_add' });
+    assert.equal(ac.envio.seg.length, 1);
+    ac = await call('POST', `/api/pedidos/${luz.id}/envio`, { accion: 'no_quiere' });
+    assert.equal(ac.envio.no_quiere, true);
+    ac = await call('POST', `/api/pedidos/${luz.id}/envio-estado`, { status: 'falta_abonar' });
+    assert.equal(ac.envio.status, 'falta_abonar');
+    // Ya recogió: pegar código y DNI
+    const bs = await call('POST', `/api/stores/${sid}/envios/buscar`, { text: 'QWER\n70000001\nXXXX' });
+    assert.equal(bs.resultados[0].items[0].id, luz.id);
+    assert.equal(bs.resultados[1].how, 'DNI');
+    assert.equal(bs.resultados[2].items.length, 0);
+    const ids = bs.resultados.flatMap((r) => r.items.filter((i) => i.ck).map((i) => i.id));
+    assert.equal((await call('POST', `/api/stores/${sid}/envios/recogido`, { ids })).marcados, 2);
+    // Importar del artifact (repetible, sin duplicar)
+    const art = { pr: { 'Pantalón formal': { 1: 89 } }, remitentes: [{ id: 'x', nombre: 'OTRO', dni: '1', cel: '2' }],
+      g: [{ o: '96000001', c: 'ab12', n: 'Rocio Diaz', d: 'Chiclayo (J. L. Ortiz)', e: '2026-09-01T10:00:00-05:00', s: 'age', q: '965/document/1/', p: 'Pantalón formal', pr: 2, cl: ['Negro', 'Guinda'], tl: ['M', 'M'], t: 139, a: 30, dni: '70000009', wf: '987000009', sg: ['2026-09-20T10:00:00-05:00'], po: [{ k: 'Polo', c: 'Lila', t: 'M', v: 25 }] },
+        { o: '96000002', c: 'cd34', n: 'Ana Ruiz', d: 'Piura', e: '2026-08-01T10:00:00-05:00', s: 'rec', p: 'Pantalón formal', pr: 1, cl: ['Negro'], tl: ['S'], t: 89, a: 30 }],
+      r: [{ id: 'r50', n: 'Eva Sol', d: 'Tacna', dni: '70000010', cel: '987000010', p: 'Pantalón formal', pr: 1, cl: ['Perla'], tl: ['L'], t: 89, a: 30, f: '2026-11-03T19:00:00-05:00' }] };
+    let im = await call('POST', `/api/stores/${sid}/envios/importar`, art);
+    assert.equal(im.guias, 2);
+    assert.equal(im.registro, 1);
+    im = await call('POST', `/api/stores/${sid}/envios/importar`, { ...art, g: [{ ...art.g[0], s: 'rec' }, art.g[1]], r: [] });
+    assert.equal(im.nuevos, 0, 'no duplica');
+    assert.equal(im.actualizados, 1);
+    assert.equal(im.quitados, 1, 'el del registro que ya tiene guía en el artifact se quita');
+    const E = await call('GET', `/api/stores/${sid}/envios`);
+    const roc = E.envios.find((x) => x.nombre === 'Rocio Diaz');
+    assert.equal(roc.status, 'recogido');
+    assert.equal(roc.guia_codigo, 'AB12');
+    assert.equal(roc.items.find((i) => i.producto === 'Polo').color, 'Lila');
+    assert.equal(roc.seg.length, 1);
+    assert.equal(E.cfg.remitentes[0].nombre, 'REMITENTE UNO', 'no pisa los ajustes que ya había');
+    // El rastreo que llega a destino deja un aviso
+    const p3 = (await call('POST', `/api/stores/${sid}/pedidos`, { modo: 'agencia', nombre: 'Aviso Test', items: [{ talla: 'M', cantidad: 1 }] })).pedido;
+    await call('PATCH', `/api/pedidos/${p3.id}`, { status: 'validado', guia: '20000001', guia_codigo: 'ZZZZ' });
+    await call('POST', `/api/pedidos/${p3.id}/rastrear`);
+    const av = await call('GET', `/api/stores/${sid}/avisos`);
+    assert.ok(JSON.stringify(av).includes('Llegó a la agencia: Aviso Test'), 'aviso de llegada');
   });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos', '/planes']) assert.equal((await fetch(BASE + p)).status, 200);
