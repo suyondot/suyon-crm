@@ -12,6 +12,7 @@ import reportesApi from './api-reportes.js';
 import pedidosApi from './api-pedidos.js';
 import billingApi from './api-billing.js';
 import enviosApi from './api-envios.js';
+import { fixSpelling } from './ortografia.js';
 import { loadPlan } from './billing.js';
 import { signupInfo, connectSignup } from './signup.js';
 
@@ -38,7 +39,7 @@ function publicStore(s) {
   const out = {
     id: s.id, company_id: s.company_id, name: s.name, color: s.color, phone_display: s.phone_display,
     status: s.status, verified_name: s.verified_name, role: s.role, rev: s.rev,
-    timezone: s.timezone, country: s.country, currency: s.currency, language: s.language, hour12: s.hour12, canal: s.canal || 'mensajes', connected_via: s.connected_via || null,
+    timezone: s.timezone, country: s.country, currency: s.currency, language: s.language, hour12: s.hour12, autocorrect: s.autocorrect ?? 1, canal: s.canal || 'mensajes', connected_via: s.connected_via || null,
   };
   if (s.role === 'dueno') {
     Object.assign(out, {
@@ -406,6 +407,7 @@ function storeInput(b, partial) {
     out.language = b.language;
   }
   if ('hour12' in b) out.hour12 = b.hour12 ? 1 : 0;
+  if ('autocorrect' in b) out.autocorrect = b.autocorrect && b.autocorrect !== '0' ? 1 : 0;
   // Cómo vende: por mensajes de WhatsApp (bot + IA) o por su web (Shopify)
   if ('canal' in b) {
     if (!CANALES.includes(b.canal)) fail(400, 'Elige cómo vende la tienda: por mensajes o por Shopify.');
@@ -1080,7 +1082,7 @@ async function deliver(env, store, chat, msg) {
       const obj = await env.MEDIA.get(msg.media_key);
       if (!obj) throw new HttpError(500, 'No se encontró el archivo para enviar.');
       const mediaId = await uploadMedia(env, store, await obj.arrayBuffer(), msg.media_mime, msg.media_name);
-      wamid = await sendMediaById(env, store, chat.wa_id, msg.type, mediaId, { caption: msg.body, filename: msg.media_name, replyTo: msg.context_wamid });
+      wamid = await sendMediaById(env, store, chat.wa_id, msg.type, mediaId, { caption: msg.body, filename: msg.media_name, replyTo: msg.context_wamid, mime: msg.media_mime });
     }
     await env.DB.prepare("UPDATE messages SET wamid = ?, status = 'sent', error = NULL, updated_at = ? WHERE id = ?").bind(wamid, now(), msg.id).run();
   } catch (e) {
@@ -1100,12 +1102,13 @@ api.post('/chats/:id/messages', async (c) => {
   const { chat, store } = await chatFor(c, c.req.param('id'));
   const u = await requireUser(c);
   const b = await body(c);
-  const text = String(b.text || '').trim();
+  let text = String(b.text || '').trim();
   if (!text) fail(400, 'Escribe un mensaje.');
   if (text.length > 4096) fail(400, 'El mensaje es muy largo (máximo 4,096 letras).');
   checkCanSend(store, chat);
   await pauseForHuman(c.env, chat);
   const reply = b.reply_to ? await c.env.DB.prepare('SELECT wamid FROM messages WHERE id = ? AND chat_id = ?').bind(Number(b.reply_to), chat.id).first() : null;
+  if (store.autocorrect !== 0 && !b.raw) text = await fixSpelling(c.env, store, text);
   const t = now();
   const r = await c.env.DB.prepare(
     `INSERT INTO messages (chat_id, store_id, direction, sender, user_id, type, body, status, context_wamid, created_at, updated_at)

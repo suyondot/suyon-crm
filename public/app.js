@@ -1,5 +1,5 @@
 // Control Total — app web (bandeja de WhatsApp, etiquetas, configuración)
-import { webmOpusToOgg } from './ogg.js';
+import { webmOpusToOgg, toOggOpus } from './ogg.js';
 import { initBot, renderBotTab, renderAvisos, botFicha, botDirty, resetBot } from './bot.js';
 import { initClientes, renderClientes, resetClientes, openCliente } from './clientes.js';
 import { initReportes, renderReportes, resetReportes } from './reportes.js';
@@ -1268,12 +1268,12 @@ async function startRec() {
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return toast('Este navegador no permite grabar audio.');
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
   } catch {
     return toast('Sin permiso para usar el micrófono. Actívalo en el candado de la barra de direcciones.', 5000);
   }
   const mimeType = pickRecMime();
-  const rec = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 32000 } : undefined);
+  const rec = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 24000 } : undefined);
   const chunks = [];
   rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
   const chatId = S.openId;
@@ -1309,7 +1309,11 @@ async function finishRec(r) {
       const ogg = webmOpusToOgg(await new Blob(r.chunks).arrayBuffer());
       file = new File([ogg], 'nota-de-voz.ogg', { type: 'audio/ogg' });
     } else if (type.includes('ogg')) file = new File(r.chunks, 'nota-de-voz.ogg', { type: 'audio/ogg' });
-    else file = new File(r.chunks, 'nota-de-voz.m4a', { type: 'audio/mp4' });
+    else {
+      const blob = new Blob(r.chunks, { type: type || 'audio/mp4' });
+      const ogg = await toOggOpus(blob).catch(() => null);
+      file = ogg ? new File([ogg], 'nota-de-voz.ogg', { type: 'audio/ogg' }) : new File(r.chunks, 'nota-de-voz.m4a', { type: 'audio/mp4' });
+    }
   } catch (e) {
     return toast('No se pudo preparar el audio: ' + e.message, 5000);
   }
@@ -1730,6 +1734,10 @@ function cfgGeneral() {
       </div>
       <p class="note" style="margin:6px 0 0">La zona horaria decide los horarios del bot (por ejemplo, seguimientos solo de 8 a. m. a 10 p. m.), la hora que ve la IA para el corte HOY/MAÑANA y el gasto de IA por día. La app se ve en español.</p>
     </div>
+    <div class="card"><h3>Mensajes de tu equipo</h3>
+      <div class="field" style="max-width:420px"><label for="g-ac">Corregir ortografía al enviar</label><select id="g-ac" name="autocorrect"><option value="1" ${st.autocorrect !== 0 ? 'selected' : ''}>Sí: mayúsculas, tildes y comas</option><option value="0" ${st.autocorrect === 0 ? 'selected' : ''}>No: se manda tal cual</option></select></div>
+      <p class="note" style="margin:6px 0 0">Tu asesora puede escribir rápido en minúsculas: antes de salir, el mensaje se arregla (Hola, ¿qué color te gustó?). Nunca cambia palabras, montos ni enlaces; si algo no cuadra, se manda tal cual. Solo para lo que escribe tu equipo: el bot ya escribe bien.</p>
+    </div>
     <div class="card"><h3>Cómo vende esta tienda</h3>
       <p class="sub">Decide qué ves en Configuración: con mensajes, la pestaña <b>Pedidos</b>; con Shopify, la pestaña <b>Shopify</b> para conectar tu web. Los pedidos siempre caen en la sección <b>Pedidos</b>, con precios en ${esc(cur.symbol)} y la hora de ${esc(tzName(st.timezone))}.</p>
       ${canalPicker(st.canal || 'mensajes')}
@@ -1755,7 +1763,7 @@ function cfgGeneral() {
     tick();
   };
   formHandler($('#gf'), async (d) => {
-    const r = await api('PATCH', `/stores/${st.id}`, { ...d, hour12: d.hour12 === '1' });
+    const r = await api('PATCH', `/stores/${st.id}`, { ...d, hour12: d.hour12 === '1', autocorrect: d.autocorrect !== '0' });
     setMe(r);
     toast('Guardado');
     render();

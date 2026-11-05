@@ -193,3 +193,50 @@ function buildOgg(head, packets) {
   }
   return out;
 }
+
+// iPhone/Safari graba en M4A: si el navegador sabe codificar Opus (WebCodecs), se pasa a OGG/Opus mono
+// para que llegue como nota de voz. Si no puede, devuelve null y se manda como archivo de audio.
+export async function toOggOpus(blob) {
+  if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') return null;
+  const cfg = { codec: 'opus', sampleRate: 48000, numberOfChannels: 1, bitrate: 24000 };
+  try {
+    if (!(await AudioEncoder.isConfigSupported(cfg)).supported) return null;
+  } catch {
+    return null;
+  }
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  const ctx = new Ctx();
+  let decoded;
+  try {
+    decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+  } finally {
+    ctx.close?.();
+  }
+  const len = Math.ceil(decoded.duration * 48000);
+  const off = new OfflineAudioContext(1, len, 48000);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  src.start();
+  const pcm = (await off.startRendering()).getChannelData(0);
+  const packets = [];
+  let err = null;
+  const enc = new AudioEncoder({ output: (chunk) => {
+    const b = new Uint8Array(chunk.byteLength);
+    chunk.copyTo(b);
+    packets.push(b);
+  }, error: (e) => (err = e) });
+  enc.configure(cfg);
+  const F = 960; // 20 ms a 48 kHz
+  for (let i = 0; i < pcm.length; i += F) {
+    const frame = new Float32Array(F);
+    frame.set(pcm.subarray(i, Math.min(i + F, pcm.length)));
+    const ad = new AudioData({ format: 'f32-planar', sampleRate: 48000, numberOfFrames: F, numberOfChannels: 1, timestamp: Math.round((i / 48000) * 1e6), data: frame });
+    enc.encode(ad);
+    ad.close();
+  }
+  await enc.flush();
+  enc.close();
+  if (err || !packets.length) return null;
+  return buildOgg(opusHead(1), packets);
+}

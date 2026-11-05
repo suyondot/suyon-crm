@@ -253,7 +253,7 @@ export async function botSend(env, store, chat, item, { flowId, node, sender = '
         mediaId = await uploadMedia(env, store, await obj.arrayBuffer(), asset.mime, asset.name);
         await env.DB.prepare('UPDATE bot_assets SET wa_media_id = ?, wa_media_at = ? WHERE id = ?').bind(mediaId, t, asset.id).run();
       }
-      wamid = await sendMediaById(env, store, chat.wa_id, type, mediaId, { caption: body, filename: asset.name });
+      wamid = await sendMediaById(env, store, chat.wa_id, type, mediaId, { caption: body, filename: asset.name, mime: asset.mime });
     }
     await env.DB.prepare("UPDATE messages SET wamid = ?, status = 'sent', updated_at = ? WHERE id = ?").bind(wamid, now(), msgId).run();
   } catch (e) {

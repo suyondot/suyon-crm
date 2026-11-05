@@ -192,8 +192,10 @@ export async function uploadMedia(env, store, bytes, mime, filename) {
   return data.id;
 }
 
-export function sendMediaById(env, store, to, kind, mediaId, { caption, filename, replyTo } = {}) {
+export function sendMediaById(env, store, to, kind, mediaId, { caption, filename, replyTo, mime } = {}) {
   const obj = { id: mediaId };
+  // OGG con Opus = nota de voz (micrófono, foto de perfil y se reproduce al toque). Sin esto llega como «archivo de audio».
+  if (kind === 'audio' && /^audio\/ogg/i.test(String(mime || ''))) obj.voice = true;
   if (caption && kind !== 'audio') obj.caption = caption;
   if (kind === 'document' && filename) obj.filename = filename;
   const p = { type: kind, [kind]: obj };

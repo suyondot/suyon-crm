@@ -529,6 +529,11 @@ export const MIGRATIONS = [
       `CREATE INDEX orders_store_modo ON orders (store_id, modo, status)`,
     ],
   },
+  {
+    id: 18,
+    name: 'corregir ortografía de los mensajes del equipo (por tienda, encendido)',
+    sql: [`ALTER TABLE stores ADD COLUMN autocorrect INTEGER NOT NULL DEFAULT 1`],
+  },
 ];
 
 let ready = null;

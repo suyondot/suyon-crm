@@ -33,6 +33,11 @@ const meta = http.createServer(async (req, res) => {
   calls.push({ method: req.method, path: p, body, ctype: req.headers['content-type'], size: raw.length });
   if (p === 'v1/messages') {
     // IA falsa (Anthropic): responde según lo que escribió la clienta
+    if (/Corrige la ortografía/.test(body.system || '')) {
+      const raw = String(body.messages[0].content).replace(/<\/?mensaje>/g, '').trim();
+      const fixed = /cambia palabra/.test(raw) ? 'Otra cosa distinta' : raw.charAt(0).toUpperCase() + raw.slice(1).replace(/\besta listo\b/, 'está listo').replace(/\bque color\b/, '¿qué color') + (/que color/.test(raw) ? '?' : '');
+      return json(200, { content: [{ type: 'text', text: fixed }], usage: { input_tokens: 80, output_tokens: 20 } });
+    }
     iaCalls.push(body);
     if (req.headers['x-api-key'] !== 'ia-test-key') return json(401, { error: { message: 'bad key' } });
     const last = body.messages[body.messages.length - 1];
@@ -1510,6 +1515,30 @@ try {
     L = (await call('GET', `/api/stores/${st.id}/chats?filter=confirmar`)).chats;
     assert.ok(!L.some((x) => x.id === ch.id && x.por_confirmar > 0) || before > 0, 'al confirmar sale de la lista');
     await call('DELETE', `/api/pedidos/${o.id}`);
+  });
+  await step('ortografía: lo que escribe el equipo sale con mayúscula y tildes, sin cambiar palabras', async () => {
+    const me = await call('GET', '/api/me');
+    const st = me.stores[0];
+    const ch = (await call('GET', `/api/stores/${st.id}/chats`)).chats[0];
+    await hook(md({ contacts: [{ wa_id: ch.wa_id, profile: { name: 'x' } }], messages: [{ from: ch.wa_id, id: 'wamid.orto' + Date.now(), timestamp: ts(), type: 'text', text: { body: 'hola' } }] }));
+    let r = await call('POST', `/api/chats/${ch.id}/messages`, { text: 'hola amiga, esta listo tu pedido' });
+    assert.equal(r.message.body, 'Hola amiga, está listo tu pedido');
+    r = await call('POST', `/api/chats/${ch.id}/messages`, { text: 'esto cambia palabra' });
+    assert.equal(r.message.body, 'esto cambia palabra', 'si la IA cambia palabras se manda tal cual');
+    r = await call('POST', `/api/chats/${ch.id}/messages`, { text: 'mira https://porte.pe/x' });
+    assert.equal(r.message.body, 'mira https://porte.pe/x', 'los enlaces no se tocan');
+    await call('PATCH', `/api/stores/${st.id}`, { autocorrect: false });
+    r = await call('POST', `/api/chats/${ch.id}/messages`, { text: 'hola amiga, esta listo' });
+    assert.equal(r.message.body, 'hola amiga, esta listo', 'apagado: tal cual');
+    await call('PATCH', `/api/stores/${st.id}`, { autocorrect: true });
+    // Nota de voz grabada en la app: sale como nota de voz (voice: true), no como archivo
+    const fd = new FormData();
+    fd.append('file', new Blob([Buffer.from('OggS fake')], { type: 'audio/ogg' }), 'nota-de-voz.ogg');
+    const n0 = calls.length;
+    const au = await call('POST', `/api/chats/${ch.id}/media`, undefined, { form: fd });
+    assert.equal(au.message.type, 'audio');
+    const sent = calls.slice(n0).find((x) => x.body?.type === 'audio');
+    assert.equal(sent?.body?.audio?.voice, true, 'voice: true');
   });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos', '/planes']) assert.equal((await fetch(BASE + p)).status, 200);
