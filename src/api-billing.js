@@ -240,7 +240,11 @@ r.delete('/admin/landing/testimonios/:id', async (c) => {
 /* ---------- Shalom (servicio externo «Shalom API Peru») ---------- */
 const clip = (r) => {
   const out = r.data != null ? JSON.stringify(r.data, null, 2) : r.text || '';
-  return { ok: r.ok, status: r.status, ms: r.ms, body: out.length > 30000 ? `${out.slice(0, 30000)}\n… (cortado)` : out };
+  // Resumen de la forma de la respuesta (sirve aunque el texto se corte)
+  const shape = r.data && typeof r.data === 'object' && !Array.isArray(r.data)
+    ? Object.fromEntries(Object.entries(r.data).map(([k, v]) => [k, Array.isArray(v) ? `lista de ${v.length}` : v && typeof v === 'object' ? 'objeto' : v]))
+    : Array.isArray(r.data) ? { lista: r.data.length } : null;
+  return { ok: r.ok, status: r.status, ms: r.ms, shape, body: out.length > 30000 ? `${out.slice(0, 30000)}\n… (cortado)` : out };
 };
 r.get('/admin/shalom', async (c) => {
   await requireAdmin(c);

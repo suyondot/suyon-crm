@@ -54,11 +54,16 @@ const meta = http.createServer(async (req, res) => {
   if (p.startsWith('shalom/')) {
     // «Shalom API Peru» falso
     if (req.headers['x-api-key'] !== 'sh-test-key') return json(401, { error: 'API key inválida' });
-    if (p === 'shalom/v1/agencies') return json(200, { data: [
-      { id: 1, departamento: 'PUNO', provincia: 'PUNO', distrito: 'PUNO', nombre: 'Puno Centro', direccion: 'Jr. Lima 123' },
-      { id: 2, departamento: 'PUNO', provincia: 'SAN ROMÁN', distrito: 'JULIACA', nombre: 'Juliaca Terminal', direccion: 'Av. Circunvalación 45' },
-      { id: 3, departamento: 'AREQUIPA', provincia: 'AREQUIPA', distrito: 'CAYMA', nombre: 'Arequipa Cayma', direccion: 'Av. Ejército 900' },
-    ] });
+    if (p === 'shalom/v1/agencies') {
+      // Formato real: { items: [...] } y ?page=N (100 por página)
+      const all = [
+        { id: 1, nombre: 'PUNO / PUNO / PUNO / PUNO CENTRO', lugar_over: 'PUNO CENTRO', departamento: 'PUNO', provincia: 'PUNO', direccion: 'Jr. Lima 123', habilitado: true, horario: { hora_atencion: 'LUNES A SÁBADO 8 AM A 8 PM' } },
+        { id: 2, nombre: 'PUNO / SAN ROMÁN / JULIACA / JULIACA TERMINAL', lugar_over: 'JULIACA TERMINAL', departamento: 'PUNO', provincia: 'SAN ROMÁN', direccion: 'Av. Circunvalación 45', habilitado: true },
+        { id: 3, nombre: 'AREQUIPA / AREQUIPA / CAYMA / AREQUIPA CAYMA', lugar_over: 'AREQUIPA CAYMA', departamento: 'AREQUIPA', provincia: 'AREQUIPA', direccion: 'Av. Ejército 900', habilitado: false },
+      ];
+      const page = Number(url.searchParams.get('page') || 1);
+      return json(200, { items: page === 1 ? all.slice(0, 2) : page === 2 ? all.slice(2) : [] });
+    }
     const m = p.match(/^shalom\/v1\/tracking\/(\w+)$/);
     if (m) return json(200, { data: { guia: m[1], estado: 'En tránsito', origen: 'Lima', destino: 'Juliaca' } });
     return json(404, { error: 'ruta no existe' });
@@ -1315,13 +1320,18 @@ try {
     assert.ok(!JSON.stringify(st).includes('sh-test-key'), 'nunca devuelve la clave');
     const pr = await call('POST', '/api/admin/shalom/probar', { path: '/v1/agencies' });
     assert.equal(pr.status, 200);
-    assert.match(pr.body, /Juliaca Terminal/);
+    assert.match(pr.body, /JULIACA TERMINAL/);
+    assert.equal(pr.shape.items, 'lista de 2');
     assert.equal((await call('POST', '/api/admin/shalom/probar', { path: 'http://otro.com/x' })).status, 400, 'solo rutas del servicio');
     const sy = await call('POST', '/api/admin/shalom/agencias');
     assert.equal(sy.total, 3);
     let f = await call('GET', '/api/shalom/agencias?q=juliaca');
     assert.equal(f.agencias.length, 1);
     assert.equal(f.agencias[0].prov, 'SAN ROMÁN');
+    assert.equal(f.agencias[0].dist, 'JULIACA');
+    assert.equal(f.agencias[0].name, 'JULIACA TERMINAL');
+    assert.equal((await call('GET', '/api/shalom/agencias?q=cayma')).agencias[0].habilitado, false);
+    assert.match((await call('GET', '/api/shalom/agencias?q=puno centro')).agencias[0].horario, /LUNES/);
     f = await call('GET', '/api/shalom/agencias?q=puno');
     assert.equal(f.agencias.length, 2, 'por departamento');
     f = await call('GET', '/api/shalom/agencias?q=san roman');

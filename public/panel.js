@@ -477,7 +477,7 @@ async function drawShalom(content) {
   const root = content.querySelector('.pnl');
   const show = (el, r) => {
     el.hidden = false;
-    el.textContent = `${r.ok ? '✓' : '✗'} ${r.status || 'sin conexión'} · ${r.ms} ms\n\n${r.body || ''}`;
+    el.textContent = `${r.ok ? '✓' : '✗'} ${r.status || 'sin conexión'} · ${r.ms} ms${r.shape ? `\nResumen: ${JSON.stringify(r.shape)}` : ''}\n\n${r.body || ''}`;
   };
   root.onclick = async (ev) => {
     if (tabClick(ev, content)) return;
@@ -537,7 +537,7 @@ async function drawShalom(content) {
       if (q.value.trim().length < 2) return (box.innerHTML = '');
       try {
         const { agencias } = await H.api('GET', `/shalom/agencias?q=${encodeURIComponent(q.value)}`);
-        box.innerHTML = agencias.length ? agencias.map((a) => `<div class="shag"><b>${e(a.name)}</b><small>${e([a.dist, a.prov, a.dep].filter(Boolean).join(' · '))}${a.address ? ` — ${e(a.address)}` : ''}</small></div>`).join('') : '<p class="note">No hay agencias con esas palabras.</p>';
+        box.innerHTML = agencias.length ? agencias.map((a) => `<div class="shag"><b>${e(a.name)}</b><small>${e([a.dist, a.prov, a.dep].filter(Boolean).join(' · '))}${a.address ? ` — ${e(a.address)}` : ''}</small>${a.horario ? `<small>🕘 ${e(a.horario)}</small>` : ''}${a.habilitado ? '' : '<small style="color:var(--bad)">No habilitada</small>'}</div>`).join('') : '<p class="note">No hay agencias con esas palabras.</p>';
       } catch (er) {
         box.innerHTML = `<div class="err">${e(er.message)}</div>`;
       }

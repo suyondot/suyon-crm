@@ -74,20 +74,49 @@ export function listOf(data) {
 }
 
 export function toAgency(a) {
-  const dep = pick(a, ['department', 'departamento', 'departament', 'dep', 'region', 'location.department', 'ubigeo.departamento']);
-  const prov = pick(a, ['province', 'provincia', 'prov', 'location.province', 'ubigeo.provincia']);
-  const dist = pick(a, ['district', 'distrito', 'dist', 'location.district', 'ubigeo.distrito', 'city', 'ciudad']);
-  const name = pick(a, ['name', 'nombre', 'agency', 'agencia', 'title', 'sede', 'label']) || [dist, prov].filter(Boolean).join(' · ');
-  const address = pick(a, ['address', 'direccion', 'dirección', 'addr', 'location.address']);
-  const ext = pick(a, ['id', 'code', 'codigo', 'agency_id', 'ter_id']);
-  return { ext_id: ext || null, dep, prov, dist, name, address, search: norm([dep, prov, dist, name, address].join(' ')) };
+  // Shalom API Peru: nombre = «DEPARTAMENTO / PROVINCIA / DISTRITO / LUGAR», lugar_over = nombre corto de la agencia
+  const parts = String(a.nombre || '').split('/').map((x) => x.trim()).filter(Boolean);
+  const dep = pick(a, ['departamento', 'department', 'dep', 'region']) || parts[0] || '';
+  const prov = pick(a, ['provincia', 'province', 'prov']) || parts[1] || '';
+  const dist = pick(a, ['distrito', 'district', 'dist']) || (parts.length >= 4 ? parts[2] : '') || pick(a, ['zona']);
+  const name = pick(a, ['lugar_over', 'agencia', 'agency', 'name']) || parts[parts.length - 1] || pick(a, ['nombre']);
+  const address = pick(a, ['direccion', 'address']);
+  const ext = pick(a, ['id', 'code', 'codigo', 'abrebiatura']);
+  const extra = [pick(a, ['abrebiatura']), pick(a, ['zona']), pick(a, ['nombre'])].join(' ');
+  return { ext_id: ext || null, dep, prov, dist, name, address, search: norm([dep, prov, dist, name, address, extra].join(' ')) };
+}
+
+// Trae todas las páginas (?page=1, 2, …) hasta que no lleguen más
+async function fetchAllAgencies(env, base) {
+  const all = [];
+  const seen = new Set();
+  for (let page = 1; page <= 40; page++) {
+    const r = await shalomGet(env, `${base}${base.includes('?') ? '&' : '?'}page=${page}`);
+    if (!r.ok) {
+      if (page === 1) fail(502, `El servicio respondió ${r.status || 'sin conexión'}: ${(r.data && (r.data.error || r.data.message)) || r.text || ''}`.slice(0, 300));
+      break;
+    }
+    const list = listOf(r.data);
+    const fresh = list.filter((a) => {
+      const k = String(a.id ?? JSON.stringify(a));
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    if (!fresh.length) break;
+    all.push(...fresh);
+    const d = r.data || {};
+    const pages = Number(d.total_pages ?? d.totalPages ?? d.pages ?? d.last_page ?? d.meta?.total_pages ?? 0);
+    if (pages && page >= pages) break;
+    if (d.has_more === false || d.hasMore === false || d.next === null) break;
+  }
+  return all;
 }
 
 export async function syncAgencies(env) {
   const cfg = await loadShalom(env);
-  const r = await shalomGet(env, cfg.agencies_path);
-  if (!r.ok) fail(502, `El servicio respondió ${r.status || 'sin conexión'}: ${(r.data && (r.data.error || r.data.message)) || r.text || ''}`.slice(0, 300));
-  const list = listOf(r.data).map((a) => ({ ...toAgency(a), raw: JSON.stringify(a).slice(0, 2000) })).filter((a) => a.name);
+  const items = await fetchAllAgencies(env, cfg.agencies_path);
+  const list = items.map((a) => ({ ...toAgency(a), raw: JSON.stringify(a).slice(0, 3000) })).filter((a) => a.name);
   if (!list.length) fail(502, 'El servicio respondió, pero no encontré la lista de agencias. Revisa «Probar» para ver qué devuelve.');
   const t = now();
   const db = env.DB;
@@ -102,9 +131,15 @@ export async function findAgencies(env, q, limit = 10) {
   const words = norm(q).split(' ').filter((w) => w.length > 1).slice(0, 5);
   if (!words.length) return [];
   const where = words.map(() => 'search LIKE ?').join(' AND ');
-  const { results } = await env.DB.prepare(`SELECT id, ext_id, dep, prov, dist, name, address FROM shalom_agencies WHERE ${where} ORDER BY dep, prov, dist, name LIMIT ?`)
+  const { results } = await env.DB.prepare(`SELECT id, ext_id, dep, prov, dist, name, address, raw FROM shalom_agencies WHERE ${where} ORDER BY dep, prov, dist, name LIMIT ?`)
     .bind(...words.map((w) => `%${w}%`), limit).all();
-  return results;
+  return results.map(({ raw, ...a }) => {
+    let x = {};
+    try {
+      x = JSON.parse(raw || '{}');
+    } catch {}
+    return { ...a, horario: x.horario?.hora_atencion || null, telefono: x.telefono || null, habilitado: x.habilitado !== false };
+  });
 }
 
 export async function agencyStats(env) {
