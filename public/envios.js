@@ -13,15 +13,15 @@ const REG = ['por_pagar', 'validado'];
 const ST = {
   por_pagar: ['Yape por validar', 'var(--warn)'],
   validado: ['Agendado (sin guía)', 'var(--t-grey)'],
-  enviado: ['Enviado', 'var(--t-grey)'],
-  en_camino: ['En camino', 'var(--info)'],
-  en_agencia: ['En agencia', 'var(--warn)'],
-  falta_abonar: ['Recogido · falta abonar', 'var(--t-purple)'],
-  recogido: ['Recogido', 'var(--ok)'],
-  no_recogido: ['Devuelto / no recogió', 'var(--bad)'],
+  enviado: ['Pendiente', '#8a8a85'],
+  en_camino: ['En camino', '#2f6fd0'],
+  en_agencia: ['En agencia', '#c78a0a'],
+  falta_abonar: ['Recogido · falta abonar', '#7b4fc9'],
+  recogido: ['Recogido', '#2e8b57'],
+  no_recogido: ['Devuelto / problema', '#c0392b'],
   cancelado: ['Cancelado', 'var(--t-grey)'],
 };
-const TABS = [['cobrar', 'Por cobrar'], ['reg', 'Registro'], ['pag', 'Recogidos'], ['dev', 'Devueltos'], ['rep', 'Reporte']];
+const TABS = [['cobrar', 'Por cobrar'], ['reg', 'Registro'], ['pag', 'Pagados'], ['dev', 'Devueltos'], ['prod', 'Productos'], ['pre', 'Precios', 1], ['rep', 'Reporte'], ['aju', 'Ajustes', 1]];
 const EV = { storeId: null, data: null, tab: 'cobrar', f: 'all', cf: 'all', cu: 'all', q: '', rp: 'sem', rd1: '', rd2: '', pf: 'all', shown: 60, regOut: [], dupForms: [], cruceOut: '', fotos: [], fotoOut: '', busy: false, timer: null };
 
 try {
@@ -83,15 +83,12 @@ const courier = (x) => (x.courier === 'olva' ? 'olva' : 'shalom');
 export async function renderEnvios(content) {
   if (EV.storeId !== H.S.storeId) Object.assign(EV, { storeId: H.S.storeId, data: null, shown: 60, regOut: [], cruceOut: '', fotos: [], fotoOut: '' });
   DF = null;
-  content.innerHTML = `<div class="env">
-    <div class="envhead">
-      <div class="seg" role="tablist" aria-label="Envíos" id="envtabs"></div>
-      <span class="grow"></span>
-      <button class="iconbtn" data-ea="registrar">📝 Registrar</button>
-      <button class="send" data-ea="recogio">✅ Ya recogió</button>
-    </div>
+  content.innerHTML = `<div class="env gs">
+    <h2 class="gsh">📦 Guías Shalom · Olva<span class="grow-sp"></span><button class="gbtn blue" data-ea="registrar">📝 Registro manual</button><button class="gbtn green" data-ea="recogio">✅ Ya recogió</button></h2>
+    <div class="gsub"><span id="gstot"></span><span id="gssv"></span></div>
+    <div class="gtabs" role="tablist" aria-label="Envíos" id="envtabs"></div>
     <div id="envtop"></div>
-    <div id="envbody"><div class="empty" style="padding:50px"><span class="spin"></span></div></div>
+    <div id="envbody"><div class="gemp"><span class="spin"></span></div></div>
   </div>`;
   const root = content.querySelector('.env');
   root.addEventListener('click', onClick);
@@ -129,13 +126,50 @@ function draw() {
   if (!EV.data || !H.$('#envbody')) return;
   keepUI();
   const c = counts();
-  const tabs = H.owner() ? [...TABS, ['aju', 'Ajustes']] : TABS;
+  const tabs = TABS.filter((t) => !t[2] || H.owner());
   if (!tabs.some(([k]) => k === EV.tab)) EV.tab = 'cobrar';
-  H.$('#envtabs').innerHTML = tabs.map(([k, l]) => `<button data-et="${k}" aria-pressed="${EV.tab === k}">${l}${c[k] !== undefined ? ` · ${c[k]}` : ''}</button>`).join('');
+  H.$('#envtabs').innerHTML = tabs.map(([k, l]) => `<button class="gchip${EV.tab === k ? ' on' : ''}" data-et="${k}" aria-pressed="${EV.tab === k}">${l}${c[k] !== undefined ? ` · ${c[k]}` : ''}</button>`).join('');
+  H.$('#gssv').textContent = EV.saving || '';
   if (EV.tab === 'reg') drawReg();
   else if (EV.tab === 'rep') drawRep();
+  else if (EV.tab === 'prod') drawProd();
+  else if (EV.tab === 'pre') drawPre();
   else if (EV.tab === 'aju') drawAju();
   else drawList();
+  if (!EV.gav) gav();
+}
+
+// Al entrar: si hay pedidos sin guía, aviso grande (máx. 1 vez cada 4 horas), como en el artifact
+function gav() {
+  EV.gav = true;
+  const r = EV.data.envios.filter((x) => REG.includes(x.status));
+  if (!r.length) return;
+  try {
+    const lt = Number(localStorage.getItem('scrm:gav') || 0);
+    if (Date.now() - lt < 4 * 3600e3) return;
+    localStorage.setItem('scrm:gav', String(Date.now()));
+  } catch {}
+  const fd = (t) => (t ? `${DN[new Date(t).getDay()]} ${fD(dk(t))}` : '');
+  const old = r.reduce((a, x) => (x.created_at < a.created_at ? x : a));
+  const last = EV.data.envios.reduce((a, x) => (x.enviado_at && x.enviado_at > a ? x.enviado_at : a), 0);
+  const viejos = r.filter((x) => days(x.created_at) >= 2).length;
+  const el = document.createElement('div');
+  el.className = 'gav';
+  el.setAttribute('role', 'dialog');
+  el.innerHTML = `<div class="gi" aria-hidden="true">📦</div><h2>Faltan enviar ${r.length} guía${r.length > 1 ? 's' : ''}</h2>
+    <p>Toma foto a las guías de Shalom de estos pedidos y súbelas en Registro → «Subir fotos de guías».</p>
+    <div class="gn"><div><b>${r.length}</b><span>pedidos sin guía</span></div><div><b>${fd(old.created_at)}</b><span>el más antiguo${viejos ? ` · ${viejos} con 2+ días` : ''}</span></div>${last ? `<div><b>${fd(last)}</b><span>última guía subida</span></div>` : ''}</div>
+    <div class="gb"><button type="button" class="g1" data-gav="reg">Ver cuáles faltan</button><button type="button" class="g2b">Cerrar</button></div><div class="gbar" aria-hidden="true"></div>`;
+  document.body.appendChild(el);
+  const tm = setTimeout(() => el.remove(), 6000);
+  el.addEventListener('click', (ev) => {
+    clearTimeout(tm);
+    if (ev.target.closest('[data-gav]')) {
+      EV.tab = 'reg';
+      draw();
+    }
+    el.remove();
+  });
 }
 
 /* ---------- QR (para mostrar en agencia) ---------- */
@@ -167,12 +201,27 @@ function qsvg(t) {
   }
 }
 
-/* ---------- Por cobrar / Recogidos / Devueltos ---------- */
+/* ---------- Por cobrar / Pagados / Devueltos (igual que el artifact) ---------- */
+const prodOf = (x) => cfg().productos.find((p) => p.nombre === mainItems(x)[0]?.producto) || null;
+const unitsOf = (x) => mainItems(x).flatMap((it) => Array.from({ length: Math.min(it.cantidad, 60) }, () => ({ color: it.color || '', talla: it.talla || '' })));
+const extrasOf = (x) => x.items.filter(isExtra);
+const extrasTotal = (list) => list.reduce((s, it) => s + (Number(it.precio) || 0) * (it.cantidad || 1), 0);
+function buildItems(producto, units, extras) {
+  const map = new Map();
+  for (const u of units) {
+    const k = `${u.talla}|${u.color}`;
+    if (map.has(k)) map.get(k).cantidad++;
+    else map.set(k, { producto, talla: u.talla, color: u.color, cantidad: 1 });
+  }
+  return [...map.values(), ...extras];
+}
+
 function drawList() {
   const all = EV.data.envios;
-  const base = all.filter((x) => (EV.tab === 'cobrar' ? isOpen(x) : EV.tab === 'pag' ? x.status === 'recogido' : x.status === 'no_recogido'));
-  const hasOlva = base.some((x) => courier(x) === 'olva');
-  const g = base.filter((x) => EV.cu === 'all' || !hasOlva || courier(x) === EV.cu);
+  const inTab = (x) => (EV.tab === 'cobrar' ? isOpen(x) : EV.tab === 'pag' ? x.status === 'recogido' : x.status === 'no_recogido');
+  const base = all.filter(inTab);
+  const hasOlva = all.some((x) => courier(x) === 'olva');
+  const g = base.filter((x) => EV.cu === 'all' || courier(x) === EV.cu);
   const q = EV.q.toLowerCase().trim();
   const qm = (x) => !q || [x.nombre, x.guia, x.guia_codigo, x.sede, x.ciudad, x.dni, x.celular, `#${x.number}`].join(' ').toLowerCase().includes(q);
   const stF = (x) => EV.tab !== 'cobrar' || EV.f === 'all' || (EV.f === 'rr' ? isRR(x) : EV.f === 'dv' ? isDV(x) : x.status === EV.f && !isRR(x) && !isDV(x));
@@ -180,36 +229,25 @@ function drawList() {
   const l = g.filter((x) => stF(x) && cfF(x) && qm(x));
   if (EV.tab === 'cobrar') l.sort((a, b) => sent(a) - sent(b));
   else l.sort((a, b) => (b.status_at || 0) - (a.status_at || 0));
-  const pc = g.reduce((s, x) => s + saldo(x), 0);
+  H.$('#gstot').textContent = `${g.length} guías${EV.tab === 'cobrar' ? ` · por cobrar ${m2(g.reduce((s, x) => s + saldo(x), 0))}` : ''}`;
   const cnt = (k) => g.filter((x) => x.status === k && !isRR(x) && !isDV(x)).length;
   const ni = g.filter((x) => miss(x).length).length;
+  const cuh = hasOlva ? [['all', 'Todos'], ['shalom', 'Shalom'], ['olva', 'Olva']].map(([k, t]) => `<button class="gchip${EV.cu === k ? ' on' : ''}" data-ecu="${k}">${t} · ${k === 'all' ? base.length : base.filter((x) => courier(x) === k).length}</button>`).join('') : '';
   H.$('#envtop').innerHTML = `
-    <div class="envtot"><b>${g.length}</b> guías${EV.tab === 'cobrar' ? ` · por cobrar <b>${m2(pc)}</b>` : EV.tab === 'pag' ? ` · cobrado <b>${m2(g.reduce((s, x) => s + saldo(x), 0))}</b>` : ''}</div>
-    <div class="search"><input id="envq" type="search" placeholder="Buscar nombre, orden, código, DNI o destino" value="${e(EV.q)}" autocomplete="off" aria-label="Buscar envíos"></div>
-    ${hasOlva ? `<div class="pchips">${[['all', 'Todos'], ['shalom', 'Shalom'], ['olva', 'Olva']].map(([k, t]) => `<button data-ecu="${k}" class="${EV.cu === k ? 'on' : ''}">${t} <b>${k === 'all' ? base.length : base.filter((x) => courier(x) === k).length}</b></button>`).join('')}</div>` : ''}
-    ${EV.tab === 'cobrar' ? `<div class="pchips">
-      <button data-ef="all" class="${EV.f === 'all' ? 'on' : ''}">Todas <b>${g.length}</b></button>
-      ${['enviado', 'en_camino', 'en_agencia', 'falta_abonar'].map((k) => `<button data-ef="${k}" class="${EV.f === k ? 'on' : ''}"><i class="dot" style="background:${ST[k][1]}"></i>${ST[k][0]} <b>${cnt(k)}</b></button>`).join('')}
-      <button data-ef="rr" class="rr ${EV.f === 'rr' ? 'on' : ''}">🔴 Posible devolución (${cfg().dias_aviso}–${cfg().dias_devolver - 1} días) <b>${g.filter(isRR).length}</b></button>
-      <button data-ef="dv" class="dv ${EV.f === 'dv' ? 'on' : ''}">🚨 Devolver (${cfg().dias_devolver}+ días) <b>${g.filter(isDV).length}</b></button>
-    </div>
-    <div class="pchips"><button data-ecf="all" class="${EV.cf === 'all' ? 'on' : ''}">Todas</button><button data-ecf="inc" class="${EV.cf === 'inc' ? 'on' : ''}">🟡 Por completar <b>${ni}</b></button><button data-ecf="ok" class="${EV.cf === 'ok' ? 'on' : ''}">🟢 Completas <b>${g.length - ni}</b></button></div>` : ''}`;
+    <input type="search" id="envq" class="gsq" placeholder="Buscar nombre, orden, código o destino" value="${e(EV.q)}" autocomplete="off" aria-label="Buscar">
+    ${EV.tab === 'cobrar' ? `<div class="gchips">${cuh}<button class="gchip${EV.cf === 'all' ? ' on' : ''}" data-ecf="all">Todas</button><button class="gchip${EV.cf === 'inc' ? ' on' : ''}" data-ecf="inc">🟡 Por completar · ${ni}</button><button class="gchip${EV.cf === 'ok' ? ' on' : ''}" data-ecf="ok">🟢 Completadas · ${g.length - ni}</button></div>
+    <div class="gchips"><button class="gchip${EV.f === 'all' ? ' on' : ''}" data-ef="all">Todas · ${g.length}</button><button class="gchip${EV.f === 'falta_abonar' ? ' on' : ''}" data-ef="falta_abonar">💜 Recogido · falta abonar · ${cnt('falta_abonar')}</button>
+      ${['enviado', 'en_camino', 'en_agencia'].map((k) => `<button class="gchip${EV.f === k ? ' on' : ''}" data-ef="${k}">${ST[k][0]} · ${cnt(k)}</button>`).join('')}
+      <button class="gchip rch${EV.f === 'rr' ? ' on' : ''}" data-ef="rr">🔴 Posible devolución (${cfg().dias_aviso}–${cfg().dias_devolver - 1} días) · ${g.filter(isRR).length}</button>
+      <button class="gchip dch${EV.f === 'dv' ? ' on' : ''}" data-ef="dv">🚨 Devolución (${cfg().dias_devolver}+ días) · ${g.filter(isDV).length}</button></div>`
+      : cuh ? `<div class="gchips">${cuh}</div>` : ''}`;
   const body = H.$('#envbody');
   if (!l.length) {
-    body.innerHTML = `<div class="empty" style="padding:50px 16px"><b>${q ? 'Nada con esa búsqueda' : EV.tab === 'cobrar' ? 'No hay guías por cobrar' : 'Todavía no hay nada aquí'}</b>${EV.tab === 'cobrar' && !q ? '<span>Registra los pedidos en «Registro» y cruza su guía: pasan aquí solos.</span>' : ''}</div>`;
+    body.innerHTML = `<div class="gemp">${q ? 'Sin resultados' : EV.tab === 'cobrar' ? 'No hay guías por cobrar. Registra los pedidos en «Registro» y cruza su guía: pasan aquí solos.' : 'Todavía no hay nada aquí'}</div>`;
     return;
   }
-  body.innerHTML = `<div class="ecards">${l.slice(0, EV.shown).map(card).join('')}</div>${l.length > EV.shown ? `<div style="text-align:center;padding:14px"><button class="iconbtn" data-emore>Ver ${Math.min(60, l.length - EV.shown)} más (quedan ${l.length - EV.shown})</button></div>` : ''}`;
+  body.innerHTML = l.slice(0, EV.shown).map(card).join('') + (l.length > EV.shown ? `<div style="text-align:center;padding:10px"><button class="gchip" data-emore>Ver ${Math.min(60, l.length - EV.shown)} más (quedan ${l.length - EV.shown})</button></div>` : '');
 }
-
-const itemsLine = (x) => {
-  const mi = mainItems(x);
-  const ex = x.items.filter(isExtra);
-  const u = mi.reduce((a, it) => a + it.cantidad, 0);
-  const prod = [...new Set(mi.map((it) => it.producto))].join(' + ');
-  const det = mi.map((it) => `${it.cantidad > 1 ? it.cantidad + '× ' : ''}${[it.talla, it.color].filter(Boolean).join(' ') || '—'}`).join(' · ');
-  return `<b>${e(prod || 'Sin producto')}${u ? ` · por ${u}` : ''}</b>${det ? `<br>${e(det)}` : ''}${ex.map((it) => `<br>+ ${e(it.producto)} ${e([it.color, it.talla].filter(Boolean).join(' '))}`).join('')}`;
-};
 
 function segHTML(x) {
   const sg = x.seg || [];
@@ -222,7 +260,7 @@ function segHTML(x) {
     b += `<button class="sgb${on ? ' on' : nx ? ' nx' : ''}" data-eseg="${x.id}|${on ? 'pop' : 'add'}" ${ok ? '' : 'disabled'} title="${on ? (i === sg.length - 1 ? 'Toca para quitar' : '') : nx ? 'Marcar el seguimiento de hoy' : ''}">${on ? '✓ ' : ''}Día ${i + 1}${on ? `<small>${fD(dk(sg[i]))}</small>` : ''}</button>`;
   }
   const last = sg.length ? days(sg[sg.length - 1]) : null;
-  return `<div class="sgw"><div class="sgt"><span>Seguimientos: <b>${sg.length}</b>${last !== null ? ` · último ${last === 0 ? 'hoy' : last === 1 ? 'ayer' : `hace ${last} días`}` : ''}</span><button class="nqb${x.no_quiere ? ' on' : ''}" data-enq="${x.id}">🚫 No quiere recoger</button></div><div class="sgr">${b}</div>${x.no_quiere ? '<div class="nql">🚫 La clienta no quiere recoger</div>' : ''}</div>`;
+  return `<div class="sgw"><div class="sgt"><span>Seguimientos: <b>${sg.length}</b>${last !== null ? ` · último ${last === 0 ? 'hoy' : last === 1 ? 'ayer' : `hace ${last} días`}` : ''}</span><button class="nqb${x.no_quiere ? ' on' : ''}" data-enq="${x.id}">🚫 No quiere recoger</button></div><div class="sgr">${b}</div>${x.no_quiere ? '<div class="nql">🚫 Cliente no quiere recoger · seguimiento en vano</div>' : ''}</div>`;
 }
 
 function devHTML(x) {
@@ -233,9 +271,36 @@ function devHTML(x) {
   const inp = (lb, k, v, ph) => (v ? row(lb, v) : `<div class="dvr"><span>${lb}</span><input data-edato="${x.id}|${k}" inputmode="numeric" placeholder="${ph}"></div>`);
   const all = [`REMITENTE: ${r.nombre}`, `DNI: ${r.dni}`, `Cel: ${r.cel}`, `Origen: ${c.origen || ''}`, `Destino: ${x.sede || x.ciudad || ''}`, `DESTINATARIO: ${x.nombre || ''}`, `DNI: ${x.dni || '—'}`, `Cel: ${cel9(x) || '—'}`, `Guía: ${x.guia || ''}${x.guia_codigo ? ` · Código ${x.guia_codigo}` : ''}`].join('\n');
   return `<div class="dvd"><div class="dvt">📋 Datos para devolver a ${courier(x) === 'olva' ? 'Olva' : 'Shalom'}<button class="cpb" data-cp="${e(all)}">Copiar todo</button></div>
-    ${rems.length ? `<div class="dvs">Remitente</div>${rems.length > 1 ? `<div class="dvr"><span>Quién envió</span><select data-erem="${x.id}">${rems.map((y) => `<option value="${e(y.id)}" ${y.id === r.id ? 'selected' : ''}>${e(y.nombre)}</option>`).join('')}</select></div>` : ''}${row('Nombre', r.nombre)}${row('DNI', r.dni)}${row('Celular', r.cel)}` : '<p class="note">Pon tus remitentes en Envíos → Ajustes para tenerlos listos aquí.</p>'}
+    ${rems.length ? `<div class="dvs">Remitente</div>${rems.length > 1 ? `<div class="dvr"><span>Quién envió</span><select data-erem="${x.id}">${rems.map((y) => `<option value="${e(y.id)}" ${y.id === r.id ? 'selected' : ''}>${e(y.nombre)}</option>`).join('')}</select></div>` : ''}${row('Nombre', r.nombre)}${row('DNI', r.dni)}${row('Celular', r.cel)}` : '<p class="note">Pon tus remitentes en Ajustes para tenerlos listos aquí.</p>'}
     <div class="dvs">Envío</div>${row('Origen', c.origen)}${row('Destino', x.sede || x.ciudad)}${row('N° de orden', x.guia)}${x.guia_codigo ? row('Código', x.guia_codigo) : ''}
     <div class="dvs">Destinatario</div>${row('Nombre', x.nombre)}${inp('DNI', 'dni', x.dni, 'Escribe el DNI')}${inp('Celular', 'celular', cel9(x), 'Escribe el celular')}</div>`;
+}
+
+const sel = (attrs, opts, cur) => `<select ${attrs}><option value="">—</option>${opts.map((o) => `<option ${o === cur ? 'selected' : ''}>${e(o)}</option>`).join('')}${cur && !opts.includes(cur) ? `<option selected>${e(cur)}</option>` : ''}</select>`;
+
+function detHTML(x) {
+  const id = x.id;
+  const prods = cfg().productos.map((p) => p.nombre);
+  const units = unitsOf(x);
+  const n = units.length;
+  const my = n >= 5;
+  const producto = mainItems(x)[0]?.producto || '';
+  const p = prodOf(x);
+  let h = `<div class="gmny"><label>Producto${sel(`data-k="p" data-id="${id}"`, [...prods, 'Otro'], producto)}</label>
+    <label>Promo<select data-k="pr" data-id="${id}"><option value="">—</option>${[1, 2, 3, 4].map((k) => `<option value="${k}" ${!my && n === k ? 'selected' : ''}>Por ${k}</option>`).join('')}<option value="M" ${my ? 'selected' : ''}>Mayorista</option></select></label>
+    ${my ? `<label>Cantidad<input type="number" inputmode="numeric" min="5" max="50" data-k="mq" data-id="${id}" value="${n}"></label>` : ''}</div>`;
+  if (!producto || !n) h += '<div class="gmny"><span>Elige producto y promo para escoger los colores</span></div>';
+  else if (!p || !p.colores?.length) {
+    h += `<div class="gmny"><label class="wide">Colores (separa con coma)<input type="text" data-k="clt" data-id="${id}" value="${e(units.map((u) => u.color).filter(Boolean).join(', '))}"></label></div>
+      <div class="gmny"><label class="wide">Tallas (separa con coma)<input type="text" data-k="tlt" data-id="${id}" value="${e(units.map((u) => u.talla).filter(Boolean).join(', '))}"></label></div>`;
+  } else {
+    const tallas = p.tallas?.length ? p.tallas : ['XS', 'S', 'M', 'L', 'XL'];
+    h += units.map((u, i) => `<div class="gmny"><label>Color ${i + 1}${sel(`data-k="cl" data-id="${id}" data-i="${i}"`, p.colores, u.color)}</label><label>Talla ${i + 1}${sel(`data-k="tl" data-id="${id}" data-i="${i}"`, tallas, u.talla)}</label></div>`).join('');
+  }
+  const ex = extrasOf(x);
+  h += ex.map((it, i) => `<div class="gpol"><b>${e(it.producto)}</b><label>Color<input type="text" data-k="xc" data-id="${id}" data-i="${i}" value="${e(it.color || '')}"></label><label>Talla<input type="text" data-k="xt" data-id="${id}" data-i="${i}" value="${e(it.talla || '')}"></label><label>Precio S/<input type="number" inputmode="decimal" min="0" data-k="xv" data-id="${id}" data-i="${i}" value="${it.precio ?? ''}"></label><button class="gpdl" data-xdel="${id}|${i}" aria-label="Quitar">✕</button></div>`).join('');
+  h += cfg().extras.length ? `<div class="gpbs">${cfg().extras.map((xx) => `<button class="gpbt" data-xadd="${id}|${e(xx.nombre)}">+ ${e(xx.nombre)}</button>`).join('')}</div>` : '';
+  return h;
 }
 
 function card(x) {
@@ -244,29 +309,78 @@ function card(x) {
   const open = isOpen(x);
   const n9 = cel9(x);
   const olva = courier(x) === 'olva';
-  const shown = { ...ST };
   const opts = ['enviado', 'en_camino', 'en_agencia', 'falta_abonar', 'recogido', 'no_recogido'];
-  return `<article class="ecard${isDV(x) ? ' dv' : isRR(x) ? ' rr' : ''}" style="--sc:${ST[x.status]?.[1] || 'var(--line)'}" data-eid="${x.id}">
-    <div class="ecmain">
-      <div class="ectop"><b class="ecname">${e(x.nombre || '—')}</b>${x.notas && /Recuperado/.test(x.notas) ? '<span class="rvb">♻ Recuperado</span>' : ''}<span class="ecdays">${d} ${d === 1 ? 'día' : 'días'}</span></div>
-      <div class="ecsub">${e(x.sede || x.ciudad || 'Sin destino')} · ${fD(dk(sent(x)))} ${hm(sent(x))} · <span class="mono">#${x.number}</span></div>
-      <div class="ecrow">
-        ${olva ? '<span class="olv">Olva</span>' : ''}
-        ${x.guia_codigo ? `<button class="ecod" data-cp="${e(x.guia_codigo)}" title="Copiar código">${e(x.guia_codigo)}</button>` : ''}
-        ${x.guia ? `<button class="eord" data-cp="${e(x.guia)}" title="Copiar nro. de orden">${e(x.guia)}</button>` : ''}
-        <select data-est="${x.id}" aria-label="Estado">${opts.map((s) => `<option value="${s}" ${s === x.status ? 'selected' : ''}>${shown[s][0]}</option>`).join('')}</select>
-      </div>
-      ${x.guia_estado ? `<div class="ecsh">🚚 Shalom: <b>${e(x.guia_estado)}</b>${x.guia_at ? ` <span class="note">· revisado ${fD(dk(x.guia_at))} ${hm(x.guia_at)}</span>` : ''}</div>` : ''}
-      <div class="ecmoney"><span>Ticket <b>${x.total ? m2(x.total) : '—'}</b></span><span>Adelanto <b>${m2(x.adelanto)}</b></span><span class="sal">${x.status === 'recogido' ? `Pagado ✓` : `Saldo ${m2(saldo(x))}`}</span></div>
-      <div class="ecitems">${itemsLine(x)}</div>
-      ${open ? `<div class="wab">📱 ${n9 ? `<b class="mono">${n9.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3')}</b><a href="https://wa.me/51${n9}" target="_blank" rel="noopener">WhatsApp</a><button class="cpb" data-cp="${n9}">Copiar</button>` : `<small>Sin celular:</small><input data-edato="${x.id}|celular" inputmode="numeric" placeholder="9xx xxx xxx">`}${x.chat_id && H.canChats() ? `<button class="cpb" data-echat="${x.chat_id}">Abrir chat</button>` : ''}</div>` : ''}
-      ${open && x.status !== 'falta_abonar' ? segHTML(x) : ''}
-      ${isDV(x) ? `<div class="dvl">🚨 Más de ${cfg().dias_devolver} días en agencia · DEVOLVER</div>${devHTML(x)}` : isRR(x) ? `<div class="rrl">⚠ Posible devolución · ${d} días sin recoger</div>` : ''}
-      ${open ? (ms.length ? `<div class="fal">Falta: ${ms.join(', ')}</div>` : '<div class="okc">✓ Completo</div>') : ''}
-      <div class="ecact"><button class="iconbtn sm" data-eedit="${x.id}">Editar pedido</button>${!olva && x.guia && x.guia_codigo && EV.data.shalom && open ? `<button class="iconbtn sm" data-etrack="${x.id}">Rastrear ahora</button>` : ''}</div>
-    </div>
-    ${x.guia_qr && window.qrcode ? `<button class="ecqr" data-eqr="${e(x.guia_qr)}" aria-label="Ver QR en grande">${qsvg(x.guia_qr)}</button>` : ''}
+  const fc = !open ? 'var(--line)' : ms.length ? '#d4a20a' : '#2e8b57';
+  const dt = new Date(sent(x));
+  const fecha = `${dk(sent(x))} ${hm(sent(x))}`;
+  return `<article class="gcard${isDV(x) ? ' dv' : isRR(x) ? ' rr' : ''}" style="--sc:${ST[x.status]?.[1] || 'var(--line)'};--fc:${fc}" data-eid="${x.id}" data-t="${dt.getTime()}">
+   <div class="gcb"><div class="gcl">
+    <div class="gtop"><span class="gnm">${e(x.nombre || '—')}${x.notas && /Recuperado/.test(x.notas) ? '<span class="rvb">♻ Recuperado</span>' : ''}</span><span class="gdy">${d} días</span></div>
+    <div class="gds">${e(x.sede || x.ciudad || 'Sin destino')} · ${fecha}</div>
+    <div class="grow">${olva ? `<span class="olv">Olva</span>${x.guia ? `<button class="gcod" data-cp="${e(x.guia)}" title="Clic para copiar">${e(x.guia)}</button>` : ''}`
+      : `${x.guia_codigo ? `<button class="gcod" data-cp="${e(x.guia_codigo)}" title="Clic para copiar">${e(x.guia_codigo)}</button>` : ''}${x.guia ? `<button class="gord" data-cp="${e(x.guia)}" title="Clic para copiar">${e(x.guia)}</button>` : ''}`}
+      <select data-est="${x.id}" aria-label="Estado">${opts.map((s) => `<option value="${s}" ${s === x.status ? 'selected' : ''}>${ST[s][0]}</option>`).join('')}</select></div>
+    <div class="gmny"><label>Ticket S/<input type="number" inputmode="decimal" min="0" data-k="t" data-id="${x.id}" value="${x.total || ''}"></label><label>Adelanto S/<input type="number" inputmode="decimal" min="0" data-k="a" data-id="${x.id}" value="${x.adelanto ?? ''}"></label><span class="gsal">${x.status === 'recogido' ? `Pagado ✓${x.total ? ' ' + m2(x.total) : ''}` : x.total ? `Saldo: ${m2(saldo(x))}` : 'Saldo: —'}</span></div>
+    ${open ? `<div class="wab">📱 ${n9 ? `<b>${n9.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3')}</b><a href="https://wa.me/51${n9}" target="_blank" rel="noopener">WhatsApp</a><button class="cpb" data-cp="${n9}">Copiar</button>` : '<small>WhatsApp del formulario:</small>'}${n9 ? '' : `<input type="text" inputmode="numeric" placeholder="9xx xxx xxx" data-edato="${x.id}|celular">`}${x.chat_id && H.canChats() ? `<button class="cpb" data-echat="${x.chat_id}">Abrir chat</button>` : ''}</div>` : ''}
+    ${detHTML(x)}
+    ${open && x.status !== 'falta_abonar' ? segHTML(x) : ''}
+    ${isDV(x) ? `<div class="dvl">🚨 Más de ${cfg().dias_devolver} días en agencia · DEVOLVER</div>${devHTML(x)}` : isRR(x) ? `<div class="rrl">⚠ Posible devolución · ${d} días sin recoger</div>` : ''}
+    ${x.guia_estado ? `<div class="gshl">🚚 Shalom: <b>${e(x.guia_estado)}</b>${x.guia_at ? ` · revisado ${fD(dk(x.guia_at))} ${hm(x.guia_at)}` : ''}</div>` : ''}
+    ${open ? (ms.length ? `<div class="fal">Falta: ${ms.join(', ')}</div>` : '<div class="okc">✓ Completo</div>') : ''}
+    <div class="gact"><button class="gmini" data-eedit="${x.id}">Más datos · pedido #${x.number}</button>${!olva && x.guia && x.guia_codigo && EV.data.shalom && open ? `<button class="gmini" data-etrack="${x.id}">Rastrear ahora</button>` : ''}</div>
+   </div>${x.guia_qr && window.qrcode ? `<button class="gqr" data-eqr="${e(x.guia_qr)}" aria-label="Ver QR en grande">${qsvg(x.guia_qr)}</button>` : ''}</div>
   </article>`;
+}
+
+// Cambios en la tarjeta (ticket, adelanto, producto, promo, colores, tallas, adicionales) → se guardan al toque
+async function editCard(x, k, v, i) {
+  const c = { producto: mainItems(x)[0]?.producto || '', units: unitsOf(x), extras: extrasOf(x).map((it) => ({ ...it })) };
+  let total = x.total || 0;
+  const body = {};
+  const priceOf = (prod, n) => cfg().productos.find((p) => p.nombre === prod)?.precios?.[n];
+  if (k === 't') body.total = Math.max(0, Number(v) || 0);
+  else if (k === 'a') body.adelanto = Math.max(0, Number(v) || 0);
+  else {
+    if (k === 'p') {
+      c.producto = v || '';
+      c.units = c.units.map(() => ({ color: '', talla: '' }));
+      if (!c.units.length && v) c.units = [{ color: '', talla: '' }];
+    } else if (k === 'pr' || k === 'mq') {
+      const nn = k === 'mq' ? Math.max(5, Math.min(50, Math.round(Number(v)) || 5)) : v === 'M' ? Math.max(5, c.units.length) : Number(v) || 0;
+      c.units = Array.from({ length: nn }, (_, j) => c.units[j] || { color: '', talla: '' });
+    } else if (k === 'cl' || k === 'tl') c.units[i] = { ...c.units[i], [k === 'cl' ? 'color' : 'talla']: v };
+    else if (k === 'clt' || k === 'tlt') {
+      const vals = String(v).split(',').map((s) => s.trim());
+      c.units = c.units.map((u, j) => ({ ...u, [k === 'clt' ? 'color' : 'talla']: vals[j] || '' }));
+    } else if (k === 'xc' || k === 'xt') c.extras[i] = { ...c.extras[i], [k === 'xc' ? 'color' : 'talla']: v };
+    else if (k === 'xv') {
+      const nv = Math.max(0, Number(v) || 0);
+      total = Math.max(0, total - (Number(c.extras[i].precio) || 0) + nv);
+      c.extras[i] = { ...c.extras[i], precio: nv };
+      body.total = total;
+    } else if (k === 'xadd') {
+      const ex = cfg().extras.find((xx) => xx.nombre === v);
+      c.extras.push({ producto: v, color: '', talla: '', cantidad: 1, precio: ex?.precio || 0 });
+      body.total = total + (ex?.precio || 0);
+    } else if (k === 'xdel') {
+      const it = c.extras[i];
+      c.extras.splice(i, 1);
+      body.total = Math.max(0, total - (Number(it?.precio) || 0));
+    }
+    if (['p', 'pr', 'mq'].includes(k)) {
+      const z = c.units.length < 5 ? priceOf(c.producto, c.units.length) : undefined;
+      if (z !== undefined) body.total = Number(z) + extrasTotal(c.extras);
+    }
+    if (!c.units.length && !c.extras.length) c.units = [{ color: '', talla: '' }];
+    body.items = buildItems(c.producto || 'Producto', c.units, c.extras);
+    if (!('total' in body)) body.total = total;
+  }
+  const r = await act(() => H.api('PATCH', `/pedidos/${x.id}`, body));
+  if (r?.pedido) Object.assign(x, { items: r.pedido.items, total: r.pedido.total, adelanto: r.pedido.adelanto });
+  const sc = H.$('.content');
+  const y = sc?.scrollTop || 0;
+  draw();
+  if (sc) sc.scrollTop = y;
 }
 
 /* ---------- Registro ---------- */
@@ -276,33 +390,37 @@ function drawReg() {
   const old = r.filter((x) => days(x.created_at) >= 2).length;
   const q = EV.q.toLowerCase().trim();
   const l = r.filter((x) => !q || [x.nombre, x.sede, x.ciudad, x.dni, x.celular, `#${x.number}`].join(' ').toLowerCase().includes(q));
-  H.$('#envtop').innerHTML = `<div class="envtot"><b>${r.length}</b> agendados sin guía · <b>${m2(ad)}</b> en adelantos${old ? ` · <span style="color:var(--bad)">${old} con 2+ días</span>` : ''}</div>
-    <div class="search"><input id="envq" type="search" placeholder="Buscar nombre, DNI, celular o destino" value="${e(EV.q)}" autocomplete="off" aria-label="Buscar"></div>`;
+  H.$('#gstot').textContent = `${r.length} agendados sin guía · ${m2(ad)} en adelantos${old ? ` · ${old} con 2+ días` : ''}`;
+  H.$('#envtop').innerHTML = `<input type="search" id="envq" class="gsq" placeholder="Buscar nombre, DNI, celular o destino" value="${e(EV.q)}" autocomplete="off" aria-label="Buscar">`;
   const today = EV.data.hoy;
-  H.$('#envbody').innerHTML = `<div class="regpanels">
-    <section class="rcard"><h3>📋 Pegar formularios</h3>
-      <textarea id="regIn" rows="3" placeholder="Pega aquí el formulario (uno o varios). Se agrega solo y el cuadro queda listo para el siguiente."></textarea>
-      <div class="regrow"><label class="note">Fecha <input type="date" id="regD" value="${e(EV.regD || today)}"></label><button class="iconbtn" data-ea="regadd">Agregar</button></div>
-      ${EV.regOut.length ? `<ul class="regout">${EV.regOut.map((x, i) => `<li class="${x.ok ? 'ok' : 'bad'}">${x.ok ? '✅' : '⚠️'} ${e(x.text)}${x.dup ? ` <button class="cpb" data-eforce="${i}">Agregar igual</button>` : ''}</li>`).join('')}</ul>` : ''}
-    </section>
-    <section class="rcard"><h3>🎫 Cruzar guía con su pedido</h3>
-      <div class="regrow"><input id="cgC" placeholder="Código" maxlength="8" style="width:120px;text-transform:uppercase"><input id="cgD" inputmode="numeric" placeholder="DNI de la guía" style="width:130px"><input id="cgO" inputmode="numeric" placeholder="Nro. de orden" style="width:140px">
-        <select id="cgK" aria-label="Courier"><option value="shalom">Shalom</option><option value="olva">Olva</option></select><button class="iconbtn" data-ea="cruzar">Cruzar</button></div>
-      <div class="regrow"><label class="iconbtn">📷 Fotos de guías<input type="file" id="cgF" accept="image/*" multiple hidden></label>
-        ${EV.fotos.length ? `<b>${EV.fotos.length} foto(s)</b><button class="send" data-ea="leer">Leer y cruzar</button>` : `<span class="note">${EV.data.ia ? 'La IA lee orden, código, DNI y fecha (hasta 10 por vez).' : 'Falta la clave de la IA para leer fotos.'}</span>`}</div>
-      ${EV.cruceOut ? `<div class="regmsg">${EV.cruceOut}</div>` : ''}${EV.fotoOut ? `<div class="regmsg">${EV.fotoOut}</div>` : ''}
-    </section></div>
-    <p class="note" style="margin:6px 2px 10px">Pedidos agendados que todavía no tienen guía. Cuando cruzas su guía, pasan a «Por cobrar» con todos sus datos.</p>
-    ${l.length ? `<div class="ecards">${l.map((x) => {
+  const it = (x) => {
+    const u = unitsOf(x);
+    return u.map((k) => [k.color, k.talla].filter(Boolean).join(' ')).filter(Boolean).join(' · ');
+  };
+  H.$('#envbody').innerHTML = `
+    <div class="gcard" style="--sc:#2f6fd0;margin-bottom:10px"><div class="gnm" style="margin-bottom:6px">📋 Pegar formularios</div>
+      <textarea id="regIn" rows="3" class="gta" placeholder="Pega aquí el formulario (Ctrl+V). Se agrega solo y el cuadro queda listo para el siguiente."></textarea>
+      <div class="gline"><label class="gsmall">Fecha <input type="date" id="regD" value="${e(EV.regD || today)}"></label><button class="gchip" data-ea="regadd">Agregar</button></div>
+      ${EV.regOut.length ? `<div class="gmsg">${EV.regOut.map((x, i) => `${x.ok ? '✅' : '⚠️'} ${e(x.text)}${x.dup ? ` <button class="gchip" data-eforce="${i}">Agregar igual</button>` : ''}`).join('<br>')}</div>` : ''}
+    </div>
+    <div class="gcard" style="--sc:#2e8b57;margin-bottom:10px"><div class="gnm" style="margin-bottom:6px">🎫 Cruzar guía con su pedido</div>
+      <div class="gline"><input id="cgC" placeholder="Código (ej. 7KJ9)" maxlength="8" style="width:120px;text-transform:uppercase"><input id="cgD" inputmode="numeric" placeholder="DNI de la guía" style="width:130px"><input id="cgO" inputmode="numeric" placeholder="Nro. orden (opcional)" style="width:160px"><select id="cgK" aria-label="Courier"><option value="shalom">Shalom</option><option value="olva">Olva</option></select><button class="gchip" data-ea="cruzar">Cruzar</button></div>
+      <div class="gline"><label class="gchip" style="cursor:pointer">📷 Subir fotos de guías<input type="file" id="cgF" accept="image/*" multiple hidden></label> <small class="gsmall">Shalom u Olva · hasta 10 por vez${EV.data.ia ? '' : ' · falta la clave de la IA'}</small></div>
+      ${EV.fotos.length ? `<div class="gline"><b>${EV.fotos.length} foto(s) listas</b> <button class="gchip on" data-ea="leer">▶️ Leer y cruzar</button></div>` : ''}
+      ${EV.cruceOut ? `<div class="gmsg">${EV.cruceOut}</div>` : ''}${EV.fotoOut ? `<div class="gmsg">${EV.fotoOut}</div>` : ''}
+    </div>
+    <div class="gemp" style="padding:0 0 10px;text-align:left">Pedidos ya agendados que todavía no tienen guía. Cuando llega su guía, el pedido pasa a Por cobrar con todos sus datos.</div>
+    ${l.length ? l.map((x) => {
       const d = days(x.created_at);
-      return `<article class="ecard rg${d >= 2 ? ' old' : ''}" style="--sc:${ST[x.status][1]}">
-        <div class="ecmain"><div class="ectop"><b class="ecname">${e(x.nombre || '—')}</b><span class="ecdays">${d <= 0 ? 'hoy' : d === 1 ? 'hace 1 día' : `hace ${d} días`}</span></div>
-        <div class="ecsub">${e(x.sede || x.ciudad || 'Sin destino')} · agendado ${fD(dk(x.created_at))} · <span class="mono">#${x.number}</span>${x.status === 'por_pagar' ? ' · <b style="color:var(--warn)">Yape por validar</b>' : ''}</div>
-        <div class="ecrow">${x.dni ? `<button class="eord" data-cp="${e(x.dni)}">DNI ${e(x.dni)}</button>` : ''}${cel9(x) ? `<button class="eord" data-cp="${cel9(x)}">Cel ${cel9(x)}</button>` : ''}${courier(x) === 'olva' ? '<span class="olv">Olva</span>' : ''}</div>
-        <div class="ecitems">${itemsLine(x)}</div>
-        <div class="ecmoney"><span>Ticket <b>${x.total ? m2(x.total) : '—'}</b></span><span>Adelanto <b>${m2(x.adelanto)}</b></span><span class="sal">Saldo ${m2(saldo(x))}</span></div>
-        <div class="ecact">${x.status === 'por_pagar' ? `<button class="iconbtn sm" data-evalid="${x.id}">✅ Yape validado</button>` : ''}<button class="iconbtn sm" data-eedit="${x.id}">Editar pedido</button>${H.owner() ? `<button class="iconbtn sm bad" data-edel="${x.id}">Eliminar</button>` : ''}</div></div></article>`;
-    }).join('')}</div>` : `<div class="empty" style="padding:30px 16px"><b>${r.length ? 'Nada con esa búsqueda' : 'No hay pedidos agendados sin guía'}</b></div>`}`;
+      const ex = extrasOf(x);
+      return `<div class="gcard rg${d >= 2 ? ' old' : ''}" style="--sc:#8a8a85">
+        <div class="gtop"><span class="gnm">${e(x.nombre || '—')}</span><span class="gdy">${d <= 0 ? 'hoy' : d === 1 ? 'hace 1 día' : `hace ${d} días`}</span></div>
+        <div class="gds">${e(x.sede || x.ciudad || '')} · agendado ${dk(x.created_at)}${x.status === 'por_pagar' ? ' · <b style="color:var(--warn)">Yape por validar</b>' : ''}</div>
+        <div class="grow">${x.dni ? `<button class="gord2" data-cp="${e(x.dni)}">DNI ${e(x.dni)}</button>` : ''}${cel9(x) ? `<button class="gord2" data-cp="${cel9(x)}">Cel ${cel9(x)}</button>` : ''}${courier(x) === 'olva' ? '<span class="olv">Olva</span>' : ''}
+          <span class="grow-sp"></span>${x.status === 'por_pagar' ? `<button class="gmini" data-evalid="${x.id}">✅ Yape validado</button>` : ''}<button class="gmini" data-eedit="${x.id}">Editar</button>${H.owner() ? `<button class="grdl" data-edel="${x.id}">Eliminar</button>` : ''}</div>
+        <div class="grgl"><b>${e(mainItems(x)[0]?.producto || 'Sin producto')}${unitsOf(x).length ? ` · por ${unitsOf(x).length}` : ''}</b>${it(x) ? `<br>${e(it(x))}` : ''}${ex.map((q) => `<br>+ ${e(q.producto)} ${e(q.color || '')} ${e(q.talla || '')} (S/ ${Number(q.precio) || 0})`).join('')}</div>
+        <div class="gmny"><span>Ticket <b>${x.total ? m2(x.total) : '—'}</b></span><span>Adelanto <b>${m2(x.adelanto)}</b></span><span class="gsal">Saldo: ${x.total ? m2(saldo(x)) : '—'}</span></div></div>`;
+    }).join('') : `<div class="gemp">${r.length ? 'Sin resultados' : 'No hay pedidos agendados sin guía'}</div>`}`;
 }
 
 /* ---------- Reporte ---------- */
@@ -343,6 +461,7 @@ function stat(l) {
 }
 function drawRep() {
   H.$('#envtop').innerHTML = '';
+  H.$('#gstot').textContent = `Reporte · ${EV.data.envios.filter((x) => !REG.includes(x.status)).length} guías`;
   const all = EV.data.envios;
   const g = all.filter((x) => !REG.includes(x.status));
   const [a, b, lab] = rng();
@@ -389,7 +508,6 @@ function drawRep() {
     <div><span>Devueltos / no recogió</span><b>${pct(pro.length, N)}</b><small>${pro.length} de ${N}</small></div></div>
     <div class="lst"><div><span>Facturación (tickets, sin devueltos)</span><b>${m2(su(g.filter((x) => x.status !== 'no_recogido'), (x) => x.total || 0))}</b></div><div><span>Adelantos recibidos</span><b>${m2(su(g.filter((x) => x.status !== 'no_recogido'), (x) => x.adelanto || 0))}</b></div><div><span>Cobrado al recoger</span><b>${m2(su(rec, saldo))}</b></div><div><span>Adelanto en devueltos</span><b>${m2(su(pro, (x) => x.adelanto || 0))}</b></div></div>
     <div class="lst">${['enviado', 'en_camino', 'en_agencia', 'falta_abonar', 'recogido', 'no_recogido'].map((k) => `<div><span>${ST[k][0]}</span><b>${g.filter((x) => x.status === k).length}</b></div>`).join('')}</div></section>`;
-  h += prodRep(g);
   H.$('#envbody').innerHTML = h;
 }
 
@@ -430,9 +548,25 @@ function prodRep(g) {
   return h + '</div></section>';
 }
 
+function drawProd() {
+  H.$('#envtop').innerHTML = '';
+  const g = EV.data.envios.filter((x) => !REG.includes(x.status));
+  H.$('#gstot').textContent = `Provincia · ${g.filter((x) => mainItems(x).length).length} guías clasificadas`;
+  H.$('#envbody').innerHTML = prodRep(g);
+}
+
+function drawPre() {
+  H.$('#envtop').innerHTML = '';
+  H.$('#gstot').textContent = 'Precios por promoción';
+  H.$('#envbody').innerHTML = `<div class="gemp" style="padding:4px 0 0;text-align:left">Al elegir producto y promo en una guía, el ticket se llena solo con estos precios. El adelanto lo pones a mano.</div>
+    ${cfg().productos.map((p, i) => `<div class="h3">${e(p.nombre)} (S/)</div><div class="lst gpre">${[1, 2, 3, 4].map((k) => `<div><span>Por ${k}</span><input type="number" inputmode="decimal" min="0" data-pp2="${i}|${k}" value="${p.precios?.[k] ?? ''}"></div>`).join('')}</div>`).join('')}
+    <p class="note">Para agregar productos, colores o tallas: pestaña Ajustes.</p>`;
+}
+
 /* ---------- Ajustes (solo dueño) ---------- */
 function drawAju() {
   H.$('#envtop').innerHTML = '';
+  H.$('#gstot').textContent = 'Ajustes de envíos';
   const c = cfg();
   const prods = c.productos.length ? c.productos : [{ nombre: '', precios: {}, colores: [], tallas: [] }];
   H.$('#envbody').innerHTML = `<div class="ajgrid">
@@ -614,6 +748,14 @@ async function readQRs(files) {
 
 async function onClick(ev) {
   const t = ev.target;
+  const xa = t.closest('[data-xadd]') || t.closest('[data-xdel]');
+  if (xa) {
+    const add = !!xa.dataset.xadd;
+    const [id, v] = (xa.dataset.xadd || xa.dataset.xdel).split('|');
+    const x = EV.data.envios.find((y) => y.id === Number(id));
+    if (x) return editCard(x, add ? 'xadd' : 'xdel', add ? v : '', add ? 0 : Number(v));
+    return;
+  }
   const cp = t.closest('[data-cp]');
   if (cp) {
     try {
@@ -746,6 +888,20 @@ async function onClick(ev) {
 
 async function onChange(ev) {
   const t = ev.target;
+  if (t.dataset.k && t.dataset.id) {
+    const x = EV.data.envios.find((y) => y.id === Number(t.dataset.id));
+    if (x) return editCard(x, t.dataset.k, t.value, Number(t.dataset.i));
+    return;
+  }
+  if (t.dataset.pp2) {
+    const [i, k] = t.dataset.pp2.split('|');
+    const prods = cfg().productos.map((p) => ({ ...p, precios: { ...(p.precios || {}) } }));
+    if (t.value === '') delete prods[i].precios[k];
+    else prods[i].precios[k] = Math.max(0, Number(t.value));
+    const r = await act(() => H.api('PATCH', `/stores/${H.S.storeId}/envios-config`, { productos: prods }), 'Precio guardado');
+    if (r) EV.data.cfg = { ...cfg(), ...r.cfg };
+    return;
+  }
   if (t.dataset.est) {
     const r = await act(() => H.api('POST', `/pedidos/${t.dataset.est}/envio-estado`, { status: t.value }), 'Estado guardado');
     return r ? patchLocal(r.envio) : draw();

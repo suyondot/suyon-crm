@@ -1222,3 +1222,78 @@ a.iconbtn{text-decoration:none;color:inherit}
   .side::-webkit-scrollbar{display:none}
   .side .navbtn{flex:1 0 58px}
 }
+
+/* ===== Envíos con la misma cara del artifact «Guías Shalom» ===== */
+.env.gs{max-width:660px;margin:0 auto;padding:16px 14px 60px;font-size:15px;line-height:1.4}
+.gsh{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:20px;margin:0 0 2px;font-family:var(--f-body);font-weight:700}
+.grow-sp{flex:1}
+.gbtn{font:600 13px var(--f-body);padding:7px 12px;border-radius:999px;border:0;color:#fff;cursor:pointer}
+.gbtn.blue{background:#2f6fd0}.gbtn.green{background:#2e8b57}
+.gsub{color:var(--muted);font-size:13px;margin-bottom:12px;display:flex;justify-content:space-between;gap:8px}
+.gtabs{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;scrollbar-width:none}.gtabs::-webkit-scrollbar{display:none}
+.gtabs .gchip{flex:1 0 auto;text-align:center;padding:9px 12px}
+.gs #envtop{gap:0;margin:0}
+.gsq{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);font-size:15px;margin-bottom:10px}
+.gchips{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:8px;scrollbar-width:none}.gchips::-webkit-scrollbar{display:none}
+.gchip{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:99px;padding:6px 11px;font-size:13px;cursor:pointer;white-space:nowrap}
+.gchip.on{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.gchip.rch{border-color:#c0392b;color:#c0392b}.gchip.rch.on{background:#c0392b;color:#fff}
+.gchip.dch{border-color:#8e1b12;color:#8e1b12;font-weight:700}.gchip.dch.on{background:#8e1b12;color:#fff}
+.gcard{background:var(--surface);border:2px solid var(--fc,var(--line));border-left:5px solid var(--sc);border-radius:12px;padding:11px 12px;margin-bottom:9px}
+.gcard.rr{border:3px solid #c0392b!important;box-shadow:0 0 0 1px #c0392b33}
+.gcard.dv{border:3px solid #8e1b12!important;background:linear-gradient(0deg,rgba(192,57,43,.10),rgba(192,57,43,.10)),var(--surface)}
+.gcard.rg{--fc:#d4a20a}.gcard.rg.old{--fc:#c0392b}.gcard.rg.old .gdy{color:#c0392b;font-weight:600}
+.gcb{display:flex;gap:10px;align-items:flex-start}.gcl{flex:1;min-width:0}
+.gtop{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.gnm{font-weight:600}
+.gdy{font-size:12px;color:var(--muted);white-space:nowrap}
+.gds{color:var(--muted);font-size:13px;margin:1px 0 8px}
+.grow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow select{margin-left:auto;padding:7px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font-size:14px}
+.gcod{font:600 15px var(--f-mono);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:3px 8px;color:var(--fg);cursor:pointer}
+.gcod:hover{border-color:var(--accent)}
+.gord{font:13px var(--f-mono);background:none;border:0;padding:2px 0;cursor:pointer;color:var(--muted);text-decoration:underline dotted}.gord:hover{color:var(--accent)}
+.gord2{font:13px var(--f-mono);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:3px 8px;cursor:pointer;color:var(--fg)}
+.gmny{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:9px;font-size:12px;color:var(--muted)}
+.gmny label{display:flex;flex-direction:column;gap:2px}.gmny label.wide{flex:1}
+.gmny input{width:88px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);font-size:14px}
+.gmny input[type=text]{width:100%}
+.gmny select{padding:7px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font-size:14px;max-width:100%}
+.gmny b{color:var(--fg)}
+.gsal{margin-left:auto;font-weight:600;font-size:14px;color:var(--fg);padding-bottom:6px}
+.gs .wab{margin-top:8px}.gs .wab b{font:600 14px var(--f-mono)}.gs .wab small{color:var(--muted)}
+.gpol{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:6px;font-size:12px;color:var(--muted)}
+.gpol label{display:flex;flex-direction:column;gap:2px}.gpol b{color:var(--fg);padding-bottom:7px}
+.gpol input{width:84px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);font-size:14px}
+.gpbs{display:flex;gap:6px;flex-wrap:wrap}
+.gpbt{border:1px dashed var(--accent);background:none;color:var(--accent);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;margin-top:9px}
+.gpdl{border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer;padding:6px}
+.gs .sgw{margin-top:9px}
+.gs .dvl,.gs .rrl{display:inline-block;margin-top:8px}
+.gs .dvd{margin-top:9px}
+.gs .fal,.gs .okc{margin-top:8px}
+.gshl{font-size:12.5px;background:var(--info-soft);color:var(--info);border-radius:8px;padding:5px 9px;margin-top:8px;font-weight:400;display:block}
+.gact{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.gmini{border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:8px;padding:4px 9px;font-size:12px;cursor:pointer}
+.grdl{border:1px solid var(--line);background:none;color:var(--muted);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer}.grdl:hover{color:#c0392b;border-color:#c0392b}
+.grgl{font-size:13px;margin-top:6px}.grgl b{font-weight:600}
+.gqr{flex:none;width:76px;height:76px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:3px;cursor:zoom-in}.gqr svg{width:100%;height:100%;display:block}
+.gemp{text-align:center;color:var(--muted);padding:30px 0;font-size:14px}
+.gta{width:100%;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.gline{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.gline input,.gline select{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:14px;max-width:100%}
+.gsmall{font-size:12px;color:var(--muted)}
+.gmsg{margin-top:6px;font-size:13px;line-height:1.5}
+.gs .h3{font-size:12px;color:var(--muted);margin:16px 2px 0;text-transform:uppercase;letter-spacing:.04em}
+.gpre input{width:110px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:14px;text-align:right}
+.gs .lst>div{align-items:center}
+.gs .rcard{border-radius:12px}
+.gav{position:fixed;inset:0;z-index:70;background:#7a1f3d;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:12px}
+.gav .gi{font-size:60px;line-height:1}.gav h2{margin:0;font-size:28px;line-height:1.15;max-width:420px}.gav p{margin:0;font-size:16px;opacity:.92;max-width:380px}
+.gav .gn{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:4px}.gav .gn div{background:rgba(255,255,255,.14);border-radius:14px;padding:12px 16px;min-width:130px}
+.gav .gn b{display:block;font-size:32px;line-height:1.05}.gav .gn span{font-size:13px;opacity:.9}
+.gav .gb{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;justify-content:center}.gav button{border:0;border-radius:12px;padding:13px 20px;font-weight:700;font-size:15px;cursor:pointer}
+.gav .g1{background:#fff;color:#7a1f3d}.gav .g2b{background:rgba(255,255,255,.16);color:#fff}
+.gav .gbar{position:absolute;left:0;bottom:0;height:5px;background:#fff;width:100%}
+@media (prefers-reduced-motion:no-preference){.gav .gbar{animation:gbar 6s linear forwards}@keyframes gbar{to{width:0}}}
+@media (max-width:860px){.env.gs{padding:12px 12px 60px}}

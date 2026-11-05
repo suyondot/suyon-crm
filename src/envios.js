@@ -427,7 +427,7 @@ function artItems(x, ecfg) {
   const prod = x.p || ecfg.productos[0]?.nombre || 'Producto';
   const n = Number(x.pr) || (Array.isArray(x.cl) ? x.cl.filter(Boolean).length : 0) || 1;
   const items = unitsToItems(prod, n, (x.cl || []).map((c) => String(c || '')), (x.tl || []).map((t) => String(t || '')));
-  for (const q of Array.isArray(x.po) ? x.po : []) items.push({ producto: clip(q.k || 'Polo', 40), talla: clip(String(q.t || ''), 20), color: clip(String(q.c || ''), 30), cantidad: 1 });
+  for (const q of Array.isArray(x.po) ? x.po : []) items.push({ producto: clip(q.k || 'Polo', 40), talla: clip(String(q.t || ''), 20), color: clip(String(q.c || ''), 30), cantidad: 1, ...(Number.isFinite(Number(q.v)) ? { precio: Number(q.v) } : {}) });
   return items;
 }
 

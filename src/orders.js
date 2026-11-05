@@ -97,6 +97,7 @@ export function cleanItems(items, cfg) {
     talla: clip(String(it?.talla || '').trim(), 20),
     color: clip(String(it?.color || '').trim(), 30),
     cantidad: Math.min(Math.max(Math.round(Number(it?.cantidad) || 1), 1), 999),
+    ...(it?.precio != null && it.precio !== '' && Number.isFinite(Number(it.precio)) ? { precio: Math.max(0, Math.round(Number(it.precio) * 100) / 100) } : {}),
   })).filter((it) => it.producto);
 }
 
