@@ -165,3 +165,74 @@ export async function track(env, guia, codigo = '') {
   const estado = pick(flat, ['status', 'estado', 'state', 'current_status', 'situacion', 'tracking.status', 'last_event.status']);
   return { ...r, path, estado };
 }
+
+/* ---------- Agencias para el bot (sin IA) ---------- */
+let IDX = null; // copia en memoria: { at, rows, places }
+
+async function index(env) {
+  const st = await env.DB.prepare('SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM shalom_agencies').first().catch(() => null);
+  if (!st?.n) return null;
+  if (IDX && IDX.at === st.at && IDX.n === st.n) return IDX;
+  const { results } = await env.DB.prepare('SELECT id, dep, prov, dist, name, address, raw FROM shalom_agencies').all();
+  const rows = results.map((r) => {
+    let x = {};
+    try {
+      x = JSON.parse(r.raw || '{}');
+    } catch {}
+    return { id: r.id, dep: r.dep, prov: r.prov, dist: r.dist, name: r.name, address: r.address, ok: x.habilitado !== false, horario: x.horario?.hora_atencion || null, n: { dep: norm(r.dep), prov: norm(r.prov), dist: norm(r.dist) } };
+  });
+  // Lugares conocidos (distrito, provincia, departamento) para encontrarlos dentro del texto
+  const places = new Map();
+  for (const r of rows) for (const lv of ['dist', 'prov', 'dep']) if (r.n[lv] && r.n[lv].length > 2) places.set(`${lv}:${r.n[lv]}`, { lv, name: r.n[lv] });
+  IDX = { at: st.at, n: st.n, rows, places: [...places.values()].sort((a, b) => b.name.length - a.name.length) };
+  return IDX;
+}
+
+const isLimaDep = (d) => d === 'lima' || d === 'callao';
+const W = (name) => new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`);
+
+// Busca un lugar de provincia en el texto y devuelve sus agencias. Lima con cobertura → null (el bot no se mete).
+export async function agenciesNear(env, text, sinCobertura = '') {
+  const t = norm(text);
+  if (!t) return null;
+  const ix = await index(env);
+  if (!ix) return null;
+  const hits = ix.places.filter((p) => W(p.name).test(t));
+  if (!hits.length) return null;
+  const sin = norm(sinCobertura).split(/\s*,\s*/).filter(Boolean);
+  // Lugares de los que hay agencias según lo encontrado (distrito primero)
+  const matchRows = (p) => ix.rows.filter((r) => r.ok && r.n[p.lv] === p.name);
+  const deps = new Set(hits.filter((h) => h.lv === 'dep').map((h) => h.name));
+  for (const lv of ['dist', 'prov', 'dep']) {
+    for (const p of hits.filter((h) => h.lv === lv)) {
+      let rows = matchRows(p);
+      // Si dijo también un departamento, quedarse con ese (Miraflores de Arequipa ≠ Miraflores de Lima)
+      const nonLimaDeps = [...deps].filter((d) => !isLimaDep(d));
+      if (nonLimaDeps.length) rows = rows.filter((r) => nonLimaDeps.includes(r.n.dep));
+      if (!rows.length) continue;
+      const lima = rows.filter((r) => isLimaDep(r.n.dep));
+      if (lima.length) {
+        // Lima o Callao: solo si es una zona sin cobertura (va por agencia); si hay duda, el bot no ofrece nada
+        if (lima.length !== rows.length) return null;
+        if (!sin.some((z) => lima.some((r) => r.n.dist.includes(z) || z.includes(r.n.dist)))) return null;
+      }
+      const pick = rows.slice(0, 10);
+      const lugar = lv === 'dep' ? pick[0].dep : lv === 'prov' ? `${pick[0].prov} (${pick[0].dep})` : `${pick[0].dist} (${pick[0].dep})`;
+      return { lugar, total: rows.length, agencias: pick.map(({ n, ...r }) => r) };
+    }
+  }
+  return null;
+}
+
+// Opciones para tocar en WhatsApp: título ≤ 24 y descripción ≤ 72, títulos sin repetir
+export function agencyOptions(list) {
+  const used = new Set();
+  const max = list.length <= 3 ? 20 : 24; // botones: 20 letras; lista: 24
+  return list.map((a) => {
+    let title = a.name.length > max ? `${a.name.slice(0, max - 1)}…` : a.name;
+    for (let i = 2; used.has(title.toLowerCase()); i++) title = `${a.name.slice(0, max - 4)} ${i}`;
+    used.add(title.toLowerCase());
+    const desc = [a.address, a.dist].filter(Boolean).join(' · ');
+    return { title, desc: desc.length > 72 ? `${desc.slice(0, 71)}…` : desc, full: `${a.name} — ${a.address || ''} (${[a.dist, a.prov, a.dep].filter(Boolean).join(', ')})` };
+  });
+}

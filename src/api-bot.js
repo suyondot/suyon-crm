@@ -283,7 +283,7 @@ r.post('/chats/:id/bot', async (c) => {
   } else if (b.action === 'clear') {
     // Borra lo que hizo el bot en este chat: datos guardados, paso y seguimientos (no toca la conversación)
     await cancelJobs(c.env, chat.id);
-    await db.prepare('UPDATE chats SET bot_flow_id = NULL, bot_node = NULL, bot_wait = 0, bot_vars = NULL, updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
+    await db.prepare('UPDATE chats SET bot_flow_id = NULL, bot_node = NULL, bot_wait = 0, bot_vars = NULL, bot_ag = NULL, updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
   } else if (b.action === 'resume') {
     await db.prepare("UPDATE chats SET bot_paused = 0, handler = 'bot', updated_at = ? WHERE id = ?").bind(now(), chat.id).run();
   } else if (b.action === 'start') {
@@ -453,7 +453,7 @@ r.post('/stores/:id/sim/reset', async (c) => {
     db.prepare('UPDATE bot_jobs SET canceled_at = ? WHERE chat_id = ? AND done_at IS NULL').bind(now(), chat.id),
     db.prepare('DELETE FROM messages WHERE chat_id = ?').bind(chat.id),
     db.prepare('DELETE FROM chat_labels WHERE chat_id = ?').bind(chat.id),
-    db.prepare(`UPDATE chats SET bot_flow_id = NULL, bot_node = NULL, bot_wait = 0, bot_vars = NULL, bot_paused = 0, handler = 'bot',
+    db.prepare(`UPDATE chats SET bot_flow_id = NULL, bot_node = NULL, bot_wait = 0, bot_vars = NULL, bot_ag = NULL, bot_paused = 0, handler = 'bot',
       ad_id = 'SIMULADOR', referral_at = ?, last_inbound_at = ?, first_reply_at = NULL, updated_at = ? WHERE id = ?`).bind(now(), now(), now(), chat.id),
   ]);
   const f = b.flow_id ? await loadFlow(c.env, Number(b.flow_id)) : null;

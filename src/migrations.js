@@ -511,6 +511,11 @@ export const MIGRATIONS = [
       `ALTER TABLE orders ADD COLUMN guia_at INTEGER`,
     ],
   },
+  {
+    id: 16,
+    name: 'agencias que el bot le ofreció a la clienta (para reconocer cuál tocó)',
+    sql: [`ALTER TABLE chats ADD COLUMN bot_ag TEXT`],
+  },
 ];
 
 let ready = null;

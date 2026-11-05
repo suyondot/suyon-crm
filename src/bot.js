@@ -3,7 +3,8 @@
 import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay } from './util.js';
 import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON } from './bot-template.js';
-import { draftFromChat, insertOrder } from './orders.js';
+import { draftFromChat, insertOrder, cfgOf } from './orders.js';
+import { agenciesNear, agencyOptions } from './shalom.js';
 import { onOrderCreated } from './automations.js';
 import { storeBlocked, loadPlan, priceText } from './billing.js';
 
@@ -120,7 +121,7 @@ const nodeOf = (flow, id) => (id ? flow.graph.nodes.find((n) => n.id === id) : n
 async function saveState(env, chatId, st) {
   const sets = [];
   const vals = [];
-  for (const k of ['bot_flow_id', 'bot_node', 'bot_wait', 'bot_vars', 'bot_paused', 'handler']) {
+  for (const k of ['bot_flow_id', 'bot_node', 'bot_wait', 'bot_vars', 'bot_paused', 'handler', 'bot_ag']) {
     if (k in st) {
       sets.push(`${k} = ?`);
       vals.push(k === 'bot_vars' ? JSON.stringify(st[k] || {}) : st[k]);
@@ -457,7 +458,7 @@ function triggerMatch(trigger, chat, text, isFirst) {
 
 export async function startFlow(env, ctx, store, chatId, flow, triggerMsgId = null) {
   await cancelJobs(env, chatId);
-  await saveState(env, chatId, { bot_flow_id: flow.id, bot_node: null, bot_wait: 0, bot_vars: {}, bot_paused: 0, handler: 'bot' });
+  await saveState(env, chatId, { bot_flow_id: flow.id, bot_node: null, bot_wait: 0, bot_vars: {}, bot_paused: 0, handler: 'bot', bot_ag: null });
   await runFrom(env, ctx, store, chatId, flow, flow.graph.start, {}, triggerMsgId);
 }
 
@@ -733,7 +734,27 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   if (!hist.length) return { ok: false };
   const labels = await chatLabels(env, chat.id);
   const { results: arows } = await env.DB.prepare('SELECT key FROM bot_assets WHERE store_id = ?').bind(store.id).all();
-  const system = buildSystem(await withPlan(env, settings), node, labels, vars, arows.map((a) => a.key));
+  let system = buildSystem(await withPlan(env, settings), node, labels, vars, arows.map((a) => a.key));
+  // Agencias Shalom: solo provincia o Lima sin cobertura. Si tocó una de la lista, queda guardada exacta.
+  let ag = {};
+  try {
+    ag = JSON.parse(chat.bot_ag || '{}') || {};
+  } catch {}
+  const ins = results.filter((m) => m.direction === 'in').map((m) => String(m.transcript || m.body || ''));
+  const lastIn = (ins[ins.length - 1] || '').trim().toLowerCase();
+  const tapped = (ag.opts || []).find((o) => o.t.toLowerCase() === lastIn);
+  if (tapped) {
+    vars.sede_shalom = tapped.f;
+    ag.chosen = tapped.f;
+    system = system.replace('## DATOS YA GUARDADOS DE ESTA CLIENTA\n', `## DATOS YA GUARDADOS DE ESTA CLIENTA\nsede_shalom (la eligió de la lista): ${tapped.f} · `);
+  }
+  let near = null;
+  if (!vars.sede_shalom && settings.agencias_on !== 0) {
+    near = await agenciesNear(env, [...ins.slice(-3), vars.destino, vars.distrito].filter(Boolean).join(' . '), cfgOf(store).sin_cobertura).catch(() => null);
+    if (near) {
+      system += `\n\n## AGENCIAS SHALOM EN ${near.lugar} (lista real del sistema${near.total > near.agencias.length ? `, las ${near.agencias.length} primeras de ${near.total}` : ''})\n${near.agencias.map((a, i) => `${i + 1}. ${a.name} — ${a.address || ''}${a.horario ? ` · ${a.horario}` : ''}`).join('\n')}\nSi la clienta envía por agencia, ofrece SOLO estas, no inventes otras. El sistema le manda la lista para tocar justo después de tu mensaje: no la copies entera, solo pregúntale cuál le queda mejor. Cuando elija, pon en "datos" sede_shalom con el nombre exacto.`;
+    }
+  }
   const caseIds = (node.cases || []).map((c) => c.id);
   let reply = null;
   let lastErr = null;
@@ -767,6 +788,7 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
     return { ok: false };
   }
   for (const [k, v] of Object.entries(reply.datos)) if (v != null && String(v).trim()) vars[k] = clip(String(v), 200);
+  if (ag.chosen) vars.sede_shalom = ag.chosen; // la elegida de la lista manda
   const cs =(node.cases || []).find((c) => c.id === reply.caso);
   const sendIt = !cs || cs.send_reply !== false;
   if (sendIt) {
@@ -778,7 +800,21 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
       if (m.archivo) await botSend(env, store, chat, { kind: 'file', asset: String(m.archivo) }, meta);
       if (String(m.texto || '').trim()) await botSend(env, store, chat, { kind: 'text', text: String(m.texto) }, meta);
     }
+    // Si la IA habló de agencia o sede, el bot manda la lista para tocar (una vez por lugar)
+    const talks = reply.mensajes.some((m) => /agencia|sede|shalom|recog/i.test(m.texto || ''));
+    if (near && !vars.sede_shalom && talks && ag.lugar !== near.lugar) {
+      const opts = agencyOptions(near.agencias);
+      await sleep(chat.sim ? 0 : 900);
+      await botSend(env, store, chat, {
+        kind: 'text',
+        text: `📍 Agencias Shalom en ${near.lugar}${near.total > opts.length ? ` (${opts.length} de ${near.total})` : ''}. Toca la que te queda mejor 👇`,
+        opciones: opts.map((o) => (o.desc ? `${o.title} · ${o.desc}` : o.title)),
+        boton: 'Ver agencias',
+      }, { flowId: flow.id, node: node.id, sender: 'bot', vars: {} });
+      ag = { lugar: near.lugar, opts: opts.map((o) => ({ t: o.title, f: o.full })) };
+    }
   }
+  if (JSON.stringify(ag) !== (chat.bot_ag || '{}')) await env.DB.prepare('UPDATE chats SET bot_ag = ? WHERE id = ?').bind(JSON.stringify(ag), chat.id).run();
   // Si no responde, la IA sigue sola una vez
   if (!cs && Number(settings.ia_follow_min) > 0 && String(settings.ia_follow_text || '').trim()) {
     await env.DB.prepare(

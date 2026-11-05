@@ -42,6 +42,10 @@ const meta = http.createServer(async (req, res) => {
     if (/siempre raro/i.test(all)) return json(200, { content: [{ type: 'text', text: 'Claro amiga, te paso: {"mensajes": [roto' }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/rarito/i.test(txt)) return json(200, { content: [{ type: 'text', text: '¡Hola! Te cuento los precios 😊' }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/cuenta bcp/i.test(txt)) return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: 'Cuenta BCP: [FALTA BCP]' }], caso: null, datos: {} }) }], usage: { input_tokens: 10, output_tokens: 10 } });
+    if (/juliaca|miraflores|ancón|ancon|terminal/i.test(txt)) {
+      const sede = /terminal/i.test(txt) ? { sede_shalom: 'Juliaca Terminal' } : {};
+      return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: /terminal/i.test(txt) ? '¡Listo! Anotado 💕' : '¡Sí enviamos! 📦 Va por Shalom, ¿qué agencia te queda mejor?' }], caso: null, datos: sede }) }], usage: { input_tokens: 10, output_tokens: 10 } });
+    }
     const out = /yape/i.test(txt)
       ? { mensajes: [{ texto: '¡Perfecto! 📦 Sede: Av. Brasil. Mi compañera valida tu pago 💕', archivo: null }], caso: 'yape_sede', datos: { sede_shalom: 'Av. Brasil' } }
       : { mensajes: [{ texto: '¡Lindo! 😍 1 pantalón Negro talla S: S/89', archivo: null }, { texto: '¿A qué ciudad o distrito te lo enviamos? 😊', archivo: 'tabla-tallas' }], caso: null, datos: { colores: 'Negro', cantidad: '1' } };
@@ -60,6 +64,8 @@ const meta = http.createServer(async (req, res) => {
         { id: 1, nombre: 'PUNO / PUNO / PUNO / PUNO CENTRO', lugar_over: 'PUNO CENTRO', departamento: 'PUNO', provincia: 'PUNO', direccion: 'Jr. Lima 123', habilitado: true, horario: { hora_atencion: 'LUNES A SÁBADO 8 AM A 8 PM' } },
         { id: 2, nombre: 'PUNO / SAN ROMÁN / JULIACA / JULIACA TERMINAL', lugar_over: 'JULIACA TERMINAL', departamento: 'PUNO', provincia: 'SAN ROMÁN', direccion: 'Av. Circunvalación 45', habilitado: true },
         { id: 3, nombre: 'AREQUIPA / AREQUIPA / CAYMA / AREQUIPA CAYMA', lugar_over: 'AREQUIPA CAYMA', departamento: 'AREQUIPA', provincia: 'AREQUIPA', direccion: 'Av. Ejército 900', habilitado: false },
+        { id: 4, nombre: 'LIMA / LIMA / MIRAFLORES / AV LARCO', lugar_over: 'AV LARCO', departamento: 'LIMA', provincia: 'LIMA', direccion: 'Av. Larco 100', habilitado: true },
+        { id: 5, nombre: 'LIMA / LIMA / ANCON / ANCON CENTRO', lugar_over: 'ANCON CENTRO', departamento: 'LIMA', provincia: 'LIMA', direccion: 'Jr. Ancón 5', habilitado: true },
       ];
       const page = Number(url.searchParams.get('page') || 1);
       return json(200, { items: page === 1 ? all.slice(0, 2) : page === 2 ? all.slice(2) : [] });
@@ -1324,14 +1330,16 @@ try {
     assert.equal(pr.shape.items, 'lista de 2');
     assert.equal((await call('POST', '/api/admin/shalom/probar', { path: 'http://otro.com/x' })).status, 400, 'solo rutas del servicio');
     const sy = await call('POST', '/api/admin/shalom/agencias');
-    assert.equal(sy.total, 3);
+    assert.equal(sy.total, 5);
     let f = await call('GET', '/api/shalom/agencias?q=juliaca');
     assert.equal(f.agencias.length, 1);
     assert.equal(f.agencias[0].prov, 'SAN ROMÁN');
     assert.equal(f.agencias[0].dist, 'JULIACA');
     assert.equal(f.agencias[0].name, 'JULIACA TERMINAL');
     assert.equal((await call('GET', '/api/shalom/agencias?q=cayma')).agencias[0].habilitado, false);
-    assert.equal((await call('GET', '/api/shalom/agencias?q=lima')).agencias[0].dep, 'PUNO', 'solo en la dirección (Jr. Lima) también sale, pero al final');
+    const lim = (await call('GET', '/api/shalom/agencias?q=lima')).agencias;
+    assert.equal(lim[0].dep, 'LIMA');
+    assert.equal(lim[lim.length - 1].dep, 'PUNO', 'solo en la dirección (Jr. Lima) también sale, pero al final');
     assert.match((await call('GET', '/api/shalom/agencias?q=puno centro')).agencias[0].horario, /LUNES/);
     f = await call('GET', '/api/shalom/agencias?q=puno');
     assert.equal(f.agencias.length, 2, 'por departamento');
@@ -1341,6 +1349,32 @@ try {
     assert.equal(tr.estado, 'En tránsito');
     assert.equal((await call('POST', '/api/admin/shalom/rastrear', { guia: 'a b' })).status, 400);
     assert.equal((await call('GET', '/api/admin/shalom', undefined, { keepCookie: false })).status, 401);
+    // El bot ofrece las agencias de provincia (y nunca en Lima con cobertura)
+    const me = await call('GET', '/api/me');
+    const sid = (await call('POST', `/api/companies/${me.companies[0].id}/stores`, { name: 'Prueba agencias' })).store_id;
+    const fl = await call('POST', `/api/stores/${sid}/bot/flows`, { template: 'ventas_ct' });
+    await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
+    let n = iaCalls.length;
+    let sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' });
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'Vivo en Juliaca, ¿envían?' });
+    assert.match(iaCalls.slice(n).pop().system, /AGENCIAS SHALOM EN JULIACA[\s\S]*JULIACA TERMINAL/);
+    const list = sm.messages.filter((m) => m.sender === 'bot').pop();
+    assert.match(list.body, /Agencias Shalom en JULIACA/);
+    assert.ok(JSON.stringify(list.extra || '').includes('JULIACA TERMINAL'), 'lista para tocar');
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'JULIACA TERMINAL' });
+    assert.match(sm.chat.vars.sede_shalom, /^JULIACA TERMINAL — Av\. Circunvalación 45 \(JULIACA, SAN ROMÁN, PUNO\)$/, 'queda la sede exacta');
+    // Lima con cobertura: no ofrece agencias
+    await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
+    await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' });
+    n = iaCalls.length;
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'soy de Miraflores, Lima' });
+    assert.ok(!/AGENCIAS SHALOM/.test(iaCalls.slice(n).pop().system), 'en Lima no se mete');
+    assert.ok(!sm.messages.some((m) => /Agencias Shalom en/.test(m.body || '')));
+    // Lima sin cobertura (Ancón) sí va por agencia
+    await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
+    await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' });
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'es para Ancón' });
+    assert.ok(sm.messages.some((m) => /Agencias Shalom en ANCON/.test(m.body || '')), 'Ancón no tiene motorizado: ofrece agencia');
   });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos', '/planes']) assert.equal((await fetch(BASE + p)).status, 200);
