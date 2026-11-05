@@ -105,7 +105,7 @@ function draw() {
       <td><b>${e(o.nombre || '—')}</b><small class="mono">${e(o.celular ? H.fmtPhone(o.celular) : '')}</small></td>
       <td><span class="pmodo m-${o.modo}">${e(MODO_CORTO[o.modo])}</span><small>${e(destino(o))}</small></td>
       <td class="pres">${e(resumen(o))}</td>
-      <td class="r mono"><b>${money(o.total)}</b>${o.modo === 'agencia' && o.adelanto ? `<small>adel. ${money(o.adelanto)}</small>` : ''}</td>
+      <td class="r mono"><b>${money(o.total)}</b>${o.adelanto ? `<small>adel. ${money(o.adelanto)}</small>` : ''}</td>
       <td>${pill(o.status)}</td>
       <td class="r"><button class="iconbtn sm" data-pcopy="${o.id}" title="Copiar orden">Copiar</button></td></tr>`).join('')}</tbody></table>`;
 }
@@ -222,7 +222,7 @@ function drawEditor() {
         <datalist id="pcolores">${COLORES.map((c) => `<option>${c}</option>`).join('')}</datalist>
         <div class="pmoney">
           <div class="field"><label>Total (S/)</label><input data-f="total" type="number" min="0" step="0.5" value="${o.total ?? 0}"></div>
-          ${o.modo === 'agencia' ? `<div class="field"><label>Adelanto (S/)</label><input data-f="adelanto" type="number" min="0" step="0.5" value="${o.adelanto ?? 0}"></div><div class="field"><label>Saldo</label><div class="mono pmsaldo">${money(Math.max(0, (o.total || 0) - (o.adelanto || 0)))}</div></div>` : ''}
+          <div class="field"><label>Adelanto (S/)${o.modo === 'agencia' ? '' : ' · si pagó algo antes'}</label><input data-f="adelanto" type="number" min="0" step="0.5" value="${o.adelanto ?? 0}"></div><div class="field"><label>${o.modo === 'agencia' ? 'Saldo' : 'Paga al recibir'}</label><div class="mono pmsaldo">${money(Math.max(0, (o.total || 0) - (o.adelanto || 0)))}</div></div>
         </div>
         <p class="note" style="margin:4px 0 0">Si cambias los productos y no tocas el total, se calcula solo con tus precios por cantidad.</p></section>
       <section><h3>Notas</h3><textarea class="notesbox" data-f="notas" rows="2" placeholder="Horario especial, color de reemplazo…">${e(o.notas || '')}</textarea></section>

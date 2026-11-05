@@ -139,7 +139,7 @@ export function orderText(o, { horario = 'entre 2 y 8 p.m.' } = {}) {
       `💰 Total: ${money(x.total)} · Adelanto: ${money(x.adelanto)} · Saldo: ${money(x.saldo)}`, x.notas ? `📝 ${x.notas}` : ''].filter(Boolean).join('\n');
   }
   return [head, `👤 Nombre: ${x.nombre || ''}`, `📱 Celular: ${x.celular || ''}`, `📍 Distrito: ${x.distrito || ''}${x.modo === 'ce_prov' && x.ciudad ? ` · ${x.ciudad}` : ''}`,
-    `🏠 Dirección: ${x.direccion || ''}${x.referencia ? ` (Ref: ${x.referencia})` : ''}`, prods, `💰 Total: ${money(x.total)} (paga al recibir)`,
+    `🏠 Dirección: ${x.direccion || ''}${x.referencia ? ` (Ref: ${x.referencia})` : ''}`, prods, x.adelanto > 0 ? `💰 Total: ${money(x.total)} · Adelanto: ${money(x.adelanto)} · Paga al recibir: ${money(x.saldo)}` : `💰 Total: ${money(x.total)} (paga al recibir)`,
     `⏰ Entrega: ${x.entrega ? x.entrega.split('-').reverse().join('/') : ''} ${horario}`.trim(), x.notas ? `📝 ${x.notas}` : ''].filter(Boolean).join('\n');
 }
 
