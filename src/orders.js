@@ -13,7 +13,7 @@ export const ESTADOS = {
   nuevo: 'Nuevo',
   confirmado: 'Confirmado',
   en_ruta: 'En ruta',
-  reprogramado: 'Reprogramado',
+  reprogramado: 'Pospuso su compra',
   entregado: 'Entregado',
   rechazado: 'Rechazado',
   por_pagar: 'Yape por validar',

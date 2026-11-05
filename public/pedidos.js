@@ -7,7 +7,7 @@ const e = (s) => H.esc(s);
 const money = (n) => `S/${Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 const MODOS = { lima: 'Contraentrega Lima', ce_prov: 'Contraentrega provincia', agencia: 'Agencia (Shalom)' };
 const MODO_CORTO = { lima: 'Lima', ce_prov: 'CE provincia', agencia: 'Agencia' };
-const ESTADOS = { nuevo: 'Nuevo', confirmado: 'Confirmado', en_ruta: 'En ruta', reprogramado: 'Reprogramado', entregado: 'Entregado', rechazado: 'Rechazado', por_pagar: 'Yape por validar', validado: 'Validado', enviado: 'Enviado', en_camino: 'En camino', en_agencia: 'En agencia', falta_abonar: 'Recogido · falta abonar', recogido: 'Recogido', no_recogido: 'No recogido', cancelado: 'Cancelado' };
+const ESTADOS = { nuevo: 'Nuevo', confirmado: 'Confirmado', en_ruta: 'En ruta', reprogramado: 'Pospuso su compra', entregado: 'Entregado', rechazado: 'Rechazado', por_pagar: 'Yape por validar', validado: 'Validado', enviado: 'Enviado', en_camino: 'En camino', en_agencia: 'En agencia', falta_abonar: 'Recogido · falta abonar', recogido: 'Recogido', no_recogido: 'No recogido', cancelado: 'Cancelado' };
 const FLUJO = {
   lima: ['nuevo', 'confirmado', 'en_ruta', 'reprogramado', 'entregado', 'rechazado', 'cancelado'],
   ce_prov: ['nuevo', 'confirmado', 'en_ruta', 'reprogramado', 'entregado', 'rechazado', 'cancelado'],
@@ -107,7 +107,7 @@ function draw() {
       <td class="pres">${e(resumen(o))}</td>
       <td class="r mono"><b>${money(o.total)}</b>${o.adelanto ? `<small>adel. ${money(o.adelanto)}</small>` : ''}</td>
       <td>${pill(o.status)}</td>
-      <td class="r"><button class="iconbtn sm" data-pcopy="${o.id}" title="Copiar orden">Copiar</button></td></tr>`).join('')}</tbody></table>`;
+      <td class="r pqa">${o.modo !== 'agencia' && !['entregado', 'rechazado', 'cancelado'].includes(o.status) ? `<button class="pq ok" data-pq="${o.id}|entregado" title="Pagó y se le entregó">✅ Entregado</button><button class="pq warn" data-pq="${o.id}|reprogramado" title="Pospuso su compra">📅 Pospuso</button><button class="pq bad" data-pq="${o.id}|cancelado" title="Canceló">❌ Canceló</button>` : ''}<button class="iconbtn sm" data-pcopy="${o.id}" title="Copiar orden">Copiar</button></td></tr>`).join('')}</tbody></table>`;
 }
 
 async function onClick(ev) {
@@ -120,6 +120,20 @@ async function onClick(ev) {
   if (d) return (P.dia = d.dataset.pd, P.estado = '', load());
   const s = t.closest('[data-pe]');
   if (s) return (P.estado = s.dataset.pe, load());
+  const q = t.closest('[data-pq]');
+  if (q) {
+    const [id, st] = q.dataset.pq.split('|');
+    q.disabled = true;
+    try {
+      await H.api('PATCH', `/pedidos/${id}`, { status: st });
+      H.toast(st === 'entregado' ? 'Marcado como entregado ✅' : st === 'reprogramado' ? 'Marcado: pospuso su compra 📅' : 'Marcado: canceló ❌');
+      load();
+    } catch (er) {
+      H.toast(er.message, 5000);
+      q.disabled = false;
+    }
+    return;
+  }
   const c = t.closest('[data-pcopy]');
   if (c) return copyOrder(Number(c.dataset.pcopy));
   if (t.closest('[data-pact="nuevo"]')) return openPedido({ prefill: { modo: P.grupo === 'prov' ? 'agencia' : 'lima' } });
@@ -207,6 +221,7 @@ function drawEditor() {
           <div class="field"><label>DNI</label><input data-f="dni" value="${e(o.dni || '')}" inputmode="numeric"></div>
           <div class="field"><label>Ciudad</label><input data-f="ciudad" value="${e(o.ciudad || '')}"></div>
           <div class="field pwide"><label>Sede de Shalom</label><input data-f="sede" value="${e(o.sede || '')}" placeholder="Ej. Arequipa · Av. Ejército"></div>
+          <div class="field"><label>Courier</label><select data-f="courier"><option value="shalom" ${o.courier !== 'olva' ? 'selected' : ''}>Shalom</option><option value="olva" ${o.courier === 'olva' ? 'selected' : ''}>Olva</option></select></div>
           <div class="field"><label>Nro. de orden (ticket Shalom)</label><input data-f="guia" value="${e(o.guia || '')}" inputmode="numeric" placeholder="Ej. 10183909"></div>
           <div class="field"><label>Código del ticket</label><input data-f="guia_codigo" value="${e(o.guia_codigo || '')}" placeholder="Ej. NPJK" style="text-transform:uppercase"></div>
           ${!isNew ? `<div class="field pwide shtrack">${o.guia_estado ? `<div class="okbox" style="margin:0">🚚 Shalom: <b>${e(o.guia_estado)}</b>${o.guia_at ? ` <span class="note">· revisado ${e(new Date(o.guia_at).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: 'numeric', minute: '2-digit' }))}</span>` : ''}</div>` : '<p class="note" style="margin:0">Pon el nro. de orden y el código del ticket y guarda: el estado se revisa solo cada 2 horas y el pedido avanza solo (enviado → en agencia → recogido).</p>'}
@@ -349,7 +364,7 @@ async function save(btn) {
   const o = collect();
   const err = M.wrap.querySelector('#pmerr');
   err.hidden = true;
-  const data = { modo: o.modo, status: o.status, nombre: o.nombre, celular: o.celular, dni: o.dni, distrito: o.distrito, direccion: o.direccion, referencia: o.referencia, ciudad: o.ciudad, sede: o.sede, guia: o.guia, guia_codigo: o.guia_codigo, entrega: o.entrega, notas: o.notas, items: o.items, adelanto: o.adelanto };
+  const data = { modo: o.modo, status: o.status, nombre: o.nombre, celular: o.celular, dni: o.dni, distrito: o.distrito, direccion: o.direccion, referencia: o.referencia, ciudad: o.ciudad, sede: o.sede, guia: o.guia, guia_codigo: o.guia_codigo, courier: o.courier, entrega: o.entrega, notas: o.notas, items: o.items, adelanto: o.adelanto };
   if (M.dirtyTotal || o.id) data.total = o.total;
   if (!o.id && !M.dirtyTotal) delete data.total;
   btn.disabled = true;

@@ -1303,3 +1303,8 @@ a.iconbtn{text-decoration:none;color:inherit}
 .gscroll button{width:46px;height:46px;border-radius:50%;border:0;background:var(--accent);color:var(--accent-fg);font-size:17px;box-shadow:0 4px 14px rgba(0,0,0,.22);cursor:pointer}
 .gscroll button:active{transform:scale(.94)}
 @media (max-width:860px){.gscroll{right:12px;bottom:calc(78px + env(safe-area-inset-bottom,0px))}.gscroll button{width:42px;height:42px}}
+.pqa{white-space:nowrap}
+.pq{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:4px 8px;font-size:12px;font-weight:600;margin-right:4px;cursor:pointer}
+.pq.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}.pq.ok:hover{background:var(--ok-soft)}
+.pq.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}.pq.warn:hover{background:var(--warn-soft)}
+.pq.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}.pq.bad:hover{background:var(--bad-soft)}
