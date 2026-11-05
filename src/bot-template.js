@@ -70,9 +70,9 @@ Mensaje 3 (única vez que pides datos): "Separas con S/30 y el resto lo pagas al
 Nombre y apellido:
 DNI:
 Celular:"
-b) Con los datos, primero "Revisa que tus datos estén correctos, preciosa 👇" + FORMULARIO SHALOM (termina en Monto restante, no agregues nada más). DESPUÉS, en otro mensaje, el PAGO DEL ADELANTO. Nunca al revés.
-c) NO preguntes la sede antes de la captura. Con la captura: "¡Gracias, preciosa! 💕 Estamos validando tu pago. ¿En qué sede de Shalom te gustaría recoger? 😊". Si solo da la ciudad: "¿En qué distrito o cerca de qué avenida?". Nunca inventes sedes.
-d) Con la sede: "¡Perfecto! 📦 Sede: [sede]. Mi compañera valida tu pago y te envía tu guía de seguimiento 💕" y pasa a asesor. Nunca confirmes el pedido solo por la captura.
+b) Con los datos: "¡Gracias, preciosa! 💕 ¿En qué agencia Shalom te queda mejor recoger? 👇" (el sistema le manda la lista de agencias para tocar; no la escribas tú). Si solo da la ciudad: "¿En qué distrito o cerca de qué avenida?". Nunca inventes sedes. Pide la sede UNA sola vez.
+c) Con la sede elegida: "Revisa que tus datos estén correctos, preciosa 👇" + FORMULARIO SHALOM con su sede (termina en Monto restante, no agregues nada más). DESPUÉS, en otro mensaje, el PAGO DEL ADELANTO. Nunca al revés.
+d) Con la captura del pago: "¡Gracias, preciosa! 💕 Mi compañera valida tu pago y te envía tu guía de seguimiento 📦" y pasa a asesor. Nunca confirmes el pedido solo por la sede: sin captura no pasa a asesor.
 e) Olva: no la ofrezcas; solo si la pide o no hay Shalom cerca ("Olva [distrito]").
 
 ## FORMULARIOS
@@ -97,7 +97,7 @@ Shalom: 🚚📦
 ➡️ Nombre: [nombre y apellido]
 ➡️ DNI: [DNI]
 ➡️ CEL: [celular]
-➡️ Sede: por confirmar
+➡️ Sede: [sede elegida]
 
 Pedido: Pantalón Formal ✨
 
@@ -345,7 +345,7 @@ export function flowPantalon() {
       { id: 'ia', type: 'ia', x: 360, y: 1110, title: 'IA Suyon · Ventas',
         cases: [
           { id: 'yape_sede', label: 'Yape + sede', send_reply: true, next: 'compro',
-            when: 'La clienta ya envió la captura de su pago del adelanto (Yape, Plin o transferencia) y ahora indica la sede de Shalom, ciudad, distrito o referencia donde recogerá su pedido.' },
+            when: 'La clienta ya dio sus datos, ya eligió su sede de Shalom y ACABA DE ENVIAR la captura (foto) de su pago del adelanto (Yape, Plin o transferencia). Sin la foto de la captura NO es este caso.' },
           { id: 'lima_ok', label: 'Lima confirmó', send_reply: true, next: 'compro',
             when: 'La clienta es de Lima CON cobertura (pago contra entrega), ya recibió el formulario de Lima y confirma que sus datos están correctos (sí, correcto, todo bien, ok o similar). NO aplica a clientas de provincia, Shalom o zonas sin cobertura.' },
           { id: 'persona', label: 'Pide persona o reclamo', send_reply: true, next: 'asesora',

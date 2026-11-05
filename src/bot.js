@@ -743,10 +743,14 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   const ins = results.filter((m) => m.direction === 'in').map((m) => String(m.transcript || m.body || ''));
   const lastIn = (ins[ins.length - 1] || '').trim().toLowerCase();
   const tapped = (ag.opts || []).find((o) => o.t.toLowerCase() === lastIn);
+  // ¿Ya mandó la captura del pago? (una foto o un PDF de la clienta)
+  const hasCaptura = results.some((m) => m.direction === 'in' && (m.type === 'image' || m.type === 'document'));
+  const datosOk = () => !!(String(vars.nombre || '').trim() && String(vars.dni || '').trim());
   if (tapped) {
     vars.sede_shalom = tapped.f;
     ag.chosen = tapped.f;
     system = system.replace('## DATOS YA GUARDADOS DE ESTA CLIENTA\n', `## DATOS YA GUARDADOS DE ESTA CLIENTA\nsede_shalom (la eligió de la lista): ${tapped.f} · `);
+    system += `\n\n## LA CLIENTA ACABA DE ELEGIR SU AGENCIA: ${tapped.f}\nConfírmala en una línea y sigue con lo que falta: ${datosOk() ? 'ya tiene sus datos, así que envía el formulario Shalom con los datos de pago y pide la captura del adelanto' : 'primero pide sus datos (nombre y apellido, DNI y celular)'}. ${hasCaptura ? '' : 'Todavía NO envió la captura del pago: NO uses el caso yape_sede ni digas que tu compañera valida el pago.'}`;
   }
   let near = null;
   if (!vars.sede_shalom && settings.agencias_on !== 0) {
@@ -754,10 +758,12 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
     const zona = (ag.zonas || []).find((z) => z.t.toLowerCase() === lastIn);
     if (zona) near = await agenciesIn(env, ag.nivel, zona.n, ag.dep).catch(() => null);
     if (!near) near = await agenciesNear(env, [...ins.slice(-3), vars.destino, vars.distrito].filter(Boolean).join(' . '), cfgOf(store).sin_cobertura).catch(() => null);
-    if (near?.kind === 'agencias') {
-      system += `\n\n## AGENCIAS SHALOM EN ${near.lugar} (lista real del sistema${near.total > near.agencias.length ? `, las ${near.agencias.length} primeras de ${near.total}` : ''})\n${near.agencias.map((a, i) => `${i + 1}. ${a.name} — ${a.address || ''}${a.horario ? ` · ${a.horario}` : ''}`).join('\n')}\nSi la clienta envía por agencia, ofrece SOLO estas, no inventes otras. El sistema le manda la lista para tocar justo después de tu mensaje: no la copies entera, solo pregúntale cuál le queda mejor. Cuando elija, pon en "datos" sede_shalom con el nombre exacto.`;
+    if (near && !datosOk()) {
+      system += `\n\n## AGENCIA SHALOM: TODAVÍA NO\nLa clienta va por agencia (${near.lugar}). Primero pide sus datos (nombre y apellido, DNI y celular) en un solo mensaje. NO le preguntes la agencia ni la sede todavía: apenas dé sus datos, el sistema le manda la lista de agencias para tocar.`;
+    } else if (near?.kind === 'agencias') {
+      system += `\n\n## AGENCIAS SHALOM EN ${near.lugar} (lista real del sistema${near.total > near.agencias.length ? `, las ${near.agencias.length} primeras de ${near.total}` : ''})\n${near.agencias.map((a, i) => `${i + 1}. ${a.name} — ${a.address || ''}${a.horario ? ` · ${a.horario}` : ''}`).join('\n')}\nSi la clienta envía por agencia, ofrece SOLO estas, no inventes otras. Ya dio sus datos: ahora pregúntale en qué agencia recoge (el sistema le manda la lista para tocar justo después de tu mensaje: no la copies entera). NO envíes todavía el formulario ni los datos de pago: eso va cuando elija su agencia. Cuando elija, pon en "datos" sede_shalom con el nombre exacto.`;
     } else if (near?.kind === 'zonas') {
-      system += `\n\n## AGENCIAS SHALOM EN ${near.lugar}\nHay ${near.total} agencias Shalom en ${near.lugar}: son demasiadas para ofrecerlas todas. Si va por agencia, primero pregúntale en qué ${near.nivel} o ciudad está (por ejemplo: ${near.zonas.slice(0, 4).map((z) => z.name).join(', ')}). El sistema le manda la lista para tocar después de tu mensaje. No ofrezcas ninguna agencia todavía ni inventes direcciones.`;
+      system += `\n\n## AGENCIAS SHALOM EN ${near.lugar}\nHay ${near.total} agencias Shalom en ${near.lugar}: son demasiadas para ofrecerlas todas. Ya dio sus datos: ahora pregúntale en qué ${near.nivel} o ciudad está (por ejemplo: ${near.zonas.slice(0, 4).map((z) => z.name).join(', ')}). El sistema le manda la lista para tocar después de tu mensaje. No ofrezcas ninguna agencia todavía ni inventes direcciones.`;
     }
   }
   const caseIds = (node.cases || []).map((c) => c.id);
@@ -794,7 +800,9 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   }
   for (const [k, v] of Object.entries(reply.datos)) if (v != null && String(v).trim()) vars[k] = clip(String(v), 200);
   if (ag.chosen) vars.sede_shalom = ag.chosen; // la elegida de la lista manda
-  const cs =(node.cases || []).find((c) => c.id === reply.caso);
+  // «Yape + sede» solo vale con captura del pago, sede y datos: si falta algo, la IA sigue vendiendo (no pasa a la asesora)
+  if (reply.caso === 'yape_sede' && !(hasCaptura && String(vars.sede_shalom || '').trim() && datosOk())) reply.caso = null;
+  const cs = (node.cases || []).find((c) => c.id === reply.caso);
   const sendIt = !cs || cs.send_reply !== false;
   if (sendIt) {
     let first = true;
@@ -805,10 +813,9 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
       if (m.archivo) await botSend(env, store, chat, { kind: 'file', asset: String(m.archivo) }, meta);
       if (String(m.texto || '').trim()) await botSend(env, store, chat, { kind: 'text', text: String(m.texto) }, meta);
     }
-    // Si la IA habló de agencia o sede, el bot manda la lista para tocar (una vez por lugar)
-    const talks = reply.mensajes.some((m) => /agencia|sede|shalom|recog|provincia|distrito|ciudad|zona/i.test(m.texto || ''));
+    // La lista de agencias sale recién cuando la clienta ya dio sus datos (nombre y DNI), una vez por lugar
     const key = near ? `${near.kind}:${near.lugar}` : null;
-    if (near && !vars.sede_shalom && talks && ag.lugar !== key) {
+    if (near && !cs && !vars.sede_shalom && datosOk() && ag.lugar !== key) {
       await sleep(chat.sim ? 0 : 900);
       const meta2 = { flowId: flow.id, node: node.id, sender: 'bot', vars: {} };
       if (near.kind === 'agencias') {

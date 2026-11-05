@@ -692,6 +692,16 @@ try {
     assert.ok(av.events.some((e) => /tabla-tallas/.test(e.title)), 'avisa que falta un archivo');
   });
   await step('caso especial Yape + sede: pasa a asesora con COMPRÓ y aviso', async () => {
+    // Sin captura del pago ni datos: «Yape + sede» no pasa a la asesora
+    const c0 = await chatOf('51911111111');
+    const nOut = (await call('GET', `/api/chats/${c0.id}/messages`)).messages.length;
+    await inbound('51911111111', 'wamid.B3b', 'ya te yapee, sede Shalom Av Brasil');
+    await until(async () => ((await call('GET', `/api/chats/${c0.id}/messages`)).messages.length > nOut + 1 ? true : null));
+    assert.equal((await chatOf('51911111111')).bot_paused, 0, 'sin captura ni datos sigue el bot');
+    // Con datos y la captura: ahora sí pasa a la asesora con COMPRÓ
+    await call('PUT', `/api/chats/${c0.id}/datos`, { datos: { ...JSON.parse((await chatOf('51911111111')).bot_vars || '{}'), nombre: 'Ana Pérez', dni: '70000003', sede_shalom: 'Av. Brasil' } });
+    await hook(md({ contacts: [{ profile: { name: 'Prueba 111' }, wa_id: '51911111111' }], messages: [{ from: '51911111111', id: 'wamid.B3c', timestamp: ts(), type: 'image', image: { id: 'MEDIA_IMG1', mime_type: 'image/jpeg' } }] }));
+    await wait(1500);
     await inbound('51911111111', 'wamid.B4', 'ya te yapee, sede Shalom Av Brasil');
     const c = await until(async () => { const c = await chatOf('51911111111'); return c?.bot_paused === 1 ? c : null; });
     assert.equal(c.handler, 'asesora');
@@ -1388,6 +1398,13 @@ try {
     await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
     let n = iaCalls.length;
     let sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' });
+    const conDatos = (x) => call('PUT', `/api/chats/${x.chat.id}/datos`, { datos: { nombre: 'Ana Pérez', dni: '70000003' } });
+    // Sin datos todavía: no ofrece agencias (primero nombre, DNI y celular)
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'Vivo en Juliaca, ¿envían?' });
+    assert.match(iaCalls.slice(n).pop().system, /AGENCIA SHALOM: TODAVÍA NO/);
+    assert.ok(!sm.messages.some((m) => /Agencias Shalom en/.test(m.body || '')), 'sin datos no manda la lista');
+    await conDatos(sm);
+    n = iaCalls.length;
     sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'Vivo en Juliaca, ¿envían?' });
     assert.match(iaCalls.slice(n).pop().system, /AGENCIAS SHALOM EN JULIACA[\s\S]*JULIACA TERMINAL/);
     const list = sm.messages.filter((m) => m.sender === 'bot').pop();
@@ -1404,15 +1421,15 @@ try {
     assert.ok(!sm.messages.some((m) => /Agencias Shalom en/.test(m.body || '')));
     // Lima sin cobertura (Ancón) sí va por agencia
     await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
-    await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' });
+    await conDatos(await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' }));
     sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'es para Ancón' });
     assert.ok(sm.messages.some((m) => /Agencias Shalom en ANCON/.test(m.body || '')), 'Ancón no tiene motorizado: ofrece agencia');
     // Solo dijo el departamento y hay muchas agencias: primero pregunta la provincia
     await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
-    await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' });
+    await conDatos(await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' }));
     n = iaCalls.length;
     sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'soy de La Libertad' });
-    assert.match(iaCalls.slice(n).pop().system, /Hay 12 agencias Shalom en LA LIBERTAD[\s\S]*primero pregúntale en qué provincia/);
+    assert.match(iaCalls.slice(n).pop().system, /Hay 12 agencias Shalom en LA LIBERTAD[\s\S]*pregúntale en qué provincia/);
     const zl = sm.messages.filter((m) => m.sender === 'bot').pop();
     assert.match(zl.body, /¿En qué provincia estás\?/);
     assert.ok(/TRUJILLO · 8 agencias/.test(JSON.stringify(zl.extra || '')), 'provincias para tocar con cuántas agencias tiene');
