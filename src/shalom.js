@@ -131,9 +131,12 @@ export async function findAgencies(env, q, limit = 10) {
   const words = norm(q).split(' ').filter((w) => w.length > 1).slice(0, 5);
   if (!words.length) return [];
   const where = words.map(() => 'search LIKE ?').join(' AND ');
-  const { results } = await env.DB.prepare(`SELECT id, ext_id, dep, prov, dist, name, address, raw FROM shalom_agencies WHERE ${where} ORDER BY dep, prov, dist, name LIMIT ?`)
-    .bind(...words.map((w) => `%${w}%`), limit).all();
-  return results.map(({ raw, ...a }) => {
+  const { results } = await env.DB.prepare(`SELECT id, ext_id, dep, prov, dist, name, address, raw FROM shalom_agencies WHERE ${where} ORDER BY dep, prov, dist, name LIMIT 300`)
+    .bind(...words.map((w) => `%${w}%`)).all();
+  // Primero las que coinciden en distrito/nombre/provincia/departamento; las que solo lo mencionan en la dirección van al final
+  const score = (a) => words.reduce((t, w) => t + (norm(a.dist).includes(w) ? 4 : 0) + (norm(a.name).includes(w) ? 3 : 0) + (norm(a.prov).includes(w) ? 2 : 0) + (norm(a.dep).includes(w) ? 1 : 0), 0);
+  results.sort((a, b) => score(b) - score(a));
+  return results.slice(0, limit).map(({ raw, ...a }) => {
     let x = {};
     try {
       x = JSON.parse(raw || '{}');

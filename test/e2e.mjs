@@ -1331,6 +1331,7 @@ try {
     assert.equal(f.agencias[0].dist, 'JULIACA');
     assert.equal(f.agencias[0].name, 'JULIACA TERMINAL');
     assert.equal((await call('GET', '/api/shalom/agencias?q=cayma')).agencias[0].habilitado, false);
+    assert.equal((await call('GET', '/api/shalom/agencias?q=lima')).agencias[0].dep, 'PUNO', 'solo en la dirección (Jr. Lima) también sale, pero al final');
     assert.match((await call('GET', '/api/shalom/agencias?q=puno centro')).agencias[0].horario, /LUNES/);
     f = await call('GET', '/api/shalom/agencias?q=puno');
     assert.equal(f.agencias.length, 2, 'por departamento');
