@@ -95,12 +95,13 @@ export async function renderPanel(content) {
   draw(content);
 }
 
-const tabs = () => `<div class="seg pntabs" role="tablist">${[['empresas', 'Empresas'], ['demos', `Demos${PN.demos?.nuevas ? ` <span class="pnbadge">${PN.demos.nuevas}</span>` : ''}`], ['horarios', 'Horarios de demo'], ['pagina', 'Página pública']].map(([k, l]) => `<button data-ptab="${k}" aria-pressed="${PN.tab === k}">${l}</button>`).join('')}</div>`;
+const tabs = () => `<div class="seg pntabs" role="tablist">${[['empresas', 'Empresas'], ['demos', `Demos${PN.demos?.nuevas ? ` <span class="pnbadge">${PN.demos.nuevas}</span>` : ''}`], ['horarios', 'Horarios de demo'], ['pagina', 'Página pública'], ['shalom', 'Shalom']].map(([k, l]) => `<button data-ptab="${k}" aria-pressed="${PN.tab === k}">${l}</button>`).join('')}</div>`;
 
 function draw(content) {
   if (PN.tab === 'demos') return drawDemos(content);
   if (PN.tab === 'horarios') return drawHorarios(content);
   if (PN.tab === 'pagina') return drawPagina(content);
+  if (PN.tab === 'shalom') return drawShalom(content);
   const d = PN.data;
   const p = d.plan;
   const rs = d.resumen;
@@ -435,5 +436,111 @@ async function drawPagina(content) {
       x.hidden = false;
       btn.disabled = false;
     }
+  };
+}
+
+/* ---------- Shalom: probar el servicio externo, guardar agencias y rastrear ---------- */
+async function drawShalom(content) {
+  let S0;
+  try {
+    S0 = await H.api('GET', '/admin/shalom');
+  } catch (er) {
+    H.toast(er.message, 5000);
+    return;
+  }
+  const at = S0.stats.at ? new Date(S0.stats.at).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }) : null;
+  content.innerHTML = `<div class="page pnl">
+    <div class="ph"><div><h2>Panel Suyon</h2><p>Conexión con «Shalom API Peru» (un servicio externo, no es de Shalom). Agencias y rastreo de guías.</p></div></div>
+    ${tabs()}
+    <div class="grid" style="gap:14px">
+      <div class="card"><h3>1 · Conexión</h3>
+        <div class="${S0.key ? 'okbox' : 'warnbox'}">${S0.key ? `✓ Clave lista (secreto «SHALOM_API_KEY»). Servicio: <span class="mono">${e(S0.base)}</span>` : '<b>Falta la clave.</b> En Cloudflare: suyon-crm → Settings → Variables and Secrets → Add → Secret → nombre <b class="mono">SHALOM_API_KEY</b> → pega la clave → Deploy. No la pegues aquí.'}</div>
+        <p class="sub" style="margin:10px 0 6px">Probar una ruta del servicio (solo lectura). Sirve para ver qué responde.</p>
+        <form id="shp" style="display:flex;gap:8px;flex-wrap:wrap"><input name="path" class="mono" value="${e(S0.cfg.agencies_path)}" style="flex:1 1 260px"><button class="send" ${S0.key ? '' : 'disabled'}>Probar</button></form>
+        <pre class="shout" id="shpo" hidden></pre></div>
+      <div class="card"><h3>2 · Agencias</h3>
+        <p class="sub">${S0.stats.total ? `<b>${S0.stats.total}</b> agencias guardadas en ${S0.stats.departamentos} departamentos · actualizado ${e(at)}` : 'Todavía no hay agencias guardadas.'} Se guardan en tu sistema: si el servicio se cae, siguen aquí.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="send" data-sh="sync" ${S0.key ? '' : 'disabled'}>${S0.stats.total ? 'Actualizar agencias' : 'Traer agencias'}</button></div>
+        <p class="note" id="shsync" hidden></p>
+        <div class="field" style="margin-top:12px"><label for="shq">Buscar (departamento, provincia, distrito o nombre)</label><input id="shq" placeholder="Ej. Puno, Juliaca, Arequipa Cayma" ${S0.stats.total ? '' : 'disabled'}></div>
+        <div id="shres" class="shres"></div></div>
+      <div class="card"><h3>3 · Rastrear una guía</h3>
+        <form id="sht" class="fields3" style="align-items:end">
+          <div class="field"><label>Número de guía</label><input name="guia" class="mono" required></div>
+          <div class="field"><label>Código (si Shalom te da uno)</label><input name="codigo" class="mono"></div>
+          <div><button class="send" ${S0.key ? '' : 'disabled'}>Rastrear</button></div></form>
+        <details style="margin-top:8px"><summary class="note">Ruta que se usa para rastrear</summary>
+          <form id="shcfg" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><input name="track_path" class="mono" value="${e(S0.cfg.track_path)}" style="flex:1 1 260px"><input name="agencies_path" class="mono" value="${e(S0.cfg.agencies_path)}" style="flex:1 1 200px"><button class="iconbtn">Guardar rutas</button></form>
+          <p class="note" style="margin:4px 0 0">{guia} y {codigo} se reemplazan por lo que escribas.</p></details>
+        <div id="shto"></div></div>
+    </div></div>`;
+  const root = content.querySelector('.pnl');
+  const show = (el, r) => {
+    el.hidden = false;
+    el.textContent = `${r.ok ? '✓' : '✗'} ${r.status || 'sin conexión'} · ${r.ms} ms\n\n${r.body || ''}`;
+  };
+  root.onclick = async (ev) => {
+    if (tabClick(ev, content)) return;
+    const b = ev.target.closest('[data-sh="sync"]');
+    if (!b) return;
+    const st = root.querySelector('#shsync');
+    st.hidden = false;
+    st.textContent = 'Trayendo agencias…';
+    b.disabled = true;
+    try {
+      const r = await H.api('POST', '/admin/shalom/agencias');
+      H.toast(`${r.total} agencias guardadas`);
+      drawShalom(content);
+    } catch (er) {
+      st.textContent = er.message;
+      b.disabled = false;
+    }
+  };
+  root.querySelector('#shp').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const o = root.querySelector('#shpo');
+    o.hidden = false;
+    o.textContent = 'Consultando…';
+    try {
+      show(o, await H.api('POST', '/admin/shalom/probar', { path: ev.target.path.value }));
+    } catch (er) {
+      o.textContent = er.message;
+    }
+  };
+  root.querySelector('#shcfg').onsubmit = async (ev) => {
+    ev.preventDefault();
+    try {
+      await H.api('PATCH', '/admin/shalom', Object.fromEntries(new FormData(ev.target)));
+      H.toast('Rutas guardadas');
+    } catch (er) {
+      H.toast(er.message, 5000);
+    }
+  };
+  root.querySelector('#sht').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const o = root.querySelector('#shto');
+    o.innerHTML = '<p class="note">Rastreando…</p>';
+    try {
+      const r = await H.api('POST', '/admin/shalom/rastrear', Object.fromEntries(new FormData(ev.target)));
+      o.innerHTML = `${r.estado ? `<div class="okbox" style="margin-top:10px">Estado: <b>${e(r.estado)}</b></div>` : ''}<p class="note mono" style="margin:8px 0 0">${e(r.path)}</p><pre class="shout"></pre>`;
+      show(o.querySelector('pre'), r);
+    } catch (er) {
+      o.innerHTML = `<div class="err">${e(er.message)}</div>`;
+    }
+  };
+  let tmr;
+  const q = root.querySelector('#shq');
+  q.oninput = () => {
+    clearTimeout(tmr);
+    tmr = setTimeout(async () => {
+      const box = root.querySelector('#shres');
+      if (q.value.trim().length < 2) return (box.innerHTML = '');
+      try {
+        const { agencias } = await H.api('GET', `/shalom/agencias?q=${encodeURIComponent(q.value)}`);
+        box.innerHTML = agencias.length ? agencias.map((a) => `<div class="shag"><b>${e(a.name)}</b><small>${e([a.dist, a.prov, a.dep].filter(Boolean).join(' · '))}${a.address ? ` — ${e(a.address)}` : ''}</small></div>`).join('') : '<p class="note">No hay agencias con esas palabras.</p>';
+      } catch (er) {
+        box.innerHTML = `<div class="err">${e(er.message)}</div>`;
+      }
+    }, 250);
   };
 }

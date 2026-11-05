@@ -1126,3 +1126,6 @@ a.iconbtn{text-decoration:none;color:inherit}
 .pnper input{width:100%;min-width:64px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);font:inherit}
 .pnper td,.pnper th{white-space:nowrap}
 .field:has(.pnper){overflow-x:auto}
+.shout{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto;margin:10px 0 0}
+.shres{display:grid;gap:6px;margin-top:10px}
+.shag{padding:10px 12px;border:1px solid var(--line);border-radius:10px}.shag small{display:block;color:var(--muted);margin-top:2px}

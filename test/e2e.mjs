@@ -51,6 +51,18 @@ const meta = http.createServer(async (req, res) => {
     if (auth !== 'OAuth test-token' || req.headers.file_offset !== '0' || !raw.length) return json(400, { error: { code: 100, message: 'bad upload' } });
     return json(200, { h: 'HANDLE1' });
   }
+  if (p.startsWith('shalom/')) {
+    // «Shalom API Peru» falso
+    if (req.headers['x-api-key'] !== 'sh-test-key') return json(401, { error: 'API key inválida' });
+    if (p === 'shalom/v1/agencies') return json(200, { data: [
+      { id: 1, departamento: 'PUNO', provincia: 'PUNO', distrito: 'PUNO', nombre: 'Puno Centro', direccion: 'Jr. Lima 123' },
+      { id: 2, departamento: 'PUNO', provincia: 'SAN ROMÁN', distrito: 'JULIACA', nombre: 'Juliaca Terminal', direccion: 'Av. Circunvalación 45' },
+      { id: 3, departamento: 'AREQUIPA', provincia: 'AREQUIPA', distrito: 'CAYMA', nombre: 'Arequipa Cayma', direccion: 'Av. Ejército 900' },
+    ] });
+    const m = p.match(/^shalom\/v1\/tracking\/(\w+)$/);
+    if (m) return json(200, { data: { guia: m[1], estado: 'En tránsito', origen: 'Lima', destino: 'Juliaca' } });
+    return json(404, { error: 'ruta no existe' });
+  }
   if (p === 'v1/audio/transcriptions') {
     // OpenAI falso: pasa la nota de voz a texto
     if (auth !== 'Bearer oa-test-key') return json(401, { error: { message: 'bad key' } });
@@ -134,6 +146,7 @@ const VARS = {
   GRAPH_API: `http://127.0.0.1:${META_PORT}`, ANTHROPIC_API: `http://127.0.0.1:${META_PORT}`, TEST_MODE: '1',
   WA_TOKEN: 'test-token', WA_VERIFY_TOKEN: 'verifica123', META_APP_SECRET: SECRET, SETUP_CODE: 'inicio-prueba', ANTHROPIC_API_KEY: 'ia-test-key', SHOPIFY_SECRET: 'shp-secret',
   OPENAI_API: `http://127.0.0.1:${META_PORT}`, OPENAI_API_KEY: 'oa-test-key', META_APP_ID: 'APP123', META_ES_CONFIG: 'CFG1',
+  SHALOM_API_BASE: `http://127.0.0.1:${META_PORT}/shalom`, SHALOM_API_KEY: 'sh-test-key',
 };
 const wd = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--persist-to', persist, ...Object.entries(VARS).flatMap(([k, v]) => ['--var', `${k}:${v}`]), '--show-interactive-dev-session=false'], { stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
 let log = '';
@@ -1295,6 +1308,28 @@ try {
     assert.match(sys, /Plan base S\/25 al mes/);
     assert.match(sys, /12 meses: plan base S\/20 al mes/);
     assert.match(sys, /\/inicio#demo/);
+  });
+  await step('Shalom: probar, guardar agencias, buscar y rastrear', async () => {
+    const st = await call('GET', '/api/admin/shalom');
+    assert.equal(st.key, true);
+    assert.ok(!JSON.stringify(st).includes('sh-test-key'), 'nunca devuelve la clave');
+    const pr = await call('POST', '/api/admin/shalom/probar', { path: '/v1/agencies' });
+    assert.equal(pr.status, 200);
+    assert.match(pr.body, /Juliaca Terminal/);
+    assert.equal((await call('POST', '/api/admin/shalom/probar', { path: 'http://otro.com/x' })).status, 400, 'solo rutas del servicio');
+    const sy = await call('POST', '/api/admin/shalom/agencias');
+    assert.equal(sy.total, 3);
+    let f = await call('GET', '/api/shalom/agencias?q=juliaca');
+    assert.equal(f.agencias.length, 1);
+    assert.equal(f.agencias[0].prov, 'SAN ROMÁN');
+    f = await call('GET', '/api/shalom/agencias?q=puno');
+    assert.equal(f.agencias.length, 2, 'por departamento');
+    f = await call('GET', '/api/shalom/agencias?q=san roman');
+    assert.equal(f.agencias.length, 1, 'sin tildes');
+    const tr = await call('POST', '/api/admin/shalom/rastrear', { guia: '12345678' });
+    assert.equal(tr.estado, 'En tránsito');
+    assert.equal((await call('POST', '/api/admin/shalom/rastrear', { guia: 'a b' })).status, 400);
+    assert.equal((await call('GET', '/api/admin/shalom', undefined, { keepCookie: false })).status, 401);
   });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos', '/planes']) assert.equal((await fetch(BASE + p)).status, 200);

@@ -490,6 +490,27 @@ export const MIGRATIONS = [
     name: 'trabajadora extra a S/10 al mes (decisión de Jordan, 4 nov)',
     sql: [`UPDATE platform_settings SET value = json_set(value, '$.per_user', 10), updated_at = CAST(strftime('%s','now') AS INTEGER) * 1000 WHERE key = 'plan'`],
   },
+  {
+    id: 15,
+    name: 'agencias de Shalom guardadas (servicio externo) y guía en pedidos',
+    sql: [
+      `CREATE TABLE shalom_agencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ext_id TEXT,
+        dep TEXT, prov TEXT, dist TEXT,
+        name TEXT NOT NULL,
+        address TEXT,
+        search TEXT NOT NULL,
+        raw TEXT,
+        updated_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX shalom_agencies_search ON shalom_agencies (search)`,
+      `ALTER TABLE orders ADD COLUMN guia TEXT`,
+      `ALTER TABLE orders ADD COLUMN guia_codigo TEXT`,
+      `ALTER TABLE orders ADD COLUMN guia_estado TEXT`,
+      `ALTER TABLE orders ADD COLUMN guia_at INTEGER`,
+    ],
+  },
 ];
 
 let ready = null;

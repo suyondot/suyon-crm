@@ -4,6 +4,7 @@ import { now, fail, hashPassword } from './util.js';
 import { requireUser, companyFor, createSession } from './auth.js';
 import { loadPlan, savePlan, billingOf, statusOf, addPayment, usageOf, priceOf, optionsOf } from './billing.js';
 import { loadLanding, setVideo, removeVideo, addTestimonio, removeTestimonio } from './landing-data.js';
+import { loadShalom, saveShalom, shalomGet, syncAgencies, findAgencies, agencyStats, track, baseOf } from './shalom.js';
 import { loadAgenda, saveAgenda, freeSlots, bookDemo, dayLabel, timeLabel, gcalLink, DEMO_STATUS } from './agenda.js';
 
 const r = new Hono();
@@ -234,6 +235,39 @@ r.post('/admin/landing/testimonios', async (c) => {
 r.delete('/admin/landing/testimonios/:id', async (c) => {
   await requireAdmin(c);
   return c.json({ landing: await removeTestimonio(c.env, c.req.param('id')) });
+});
+
+/* ---------- Shalom (servicio externo «Shalom API Peru») ---------- */
+const clip = (r) => {
+  const out = r.data != null ? JSON.stringify(r.data, null, 2) : r.text || '';
+  return { ok: r.ok, status: r.status, ms: r.ms, body: out.length > 30000 ? `${out.slice(0, 30000)}\n… (cortado)` : out };
+};
+r.get('/admin/shalom', async (c) => {
+  await requireAdmin(c);
+  return c.json({ key: !!c.env.SHALOM_API_KEY, base: baseOf(c.env), cfg: await loadShalom(c.env), stats: await agencyStats(c.env) });
+});
+r.patch('/admin/shalom', async (c) => {
+  await requireAdmin(c);
+  return c.json({ cfg: await saveShalom(c.env, await body(c)) });
+});
+r.post('/admin/shalom/probar', async (c) => {
+  await requireAdmin(c);
+  const b = await body(c);
+  return c.json(clip(await shalomGet(c.env, String(b.path || '/v1/agencies').trim())));
+});
+r.post('/admin/shalom/agencias', async (c) => {
+  await requireAdmin(c);
+  return c.json(await syncAgencies(c.env));
+});
+r.post('/admin/shalom/rastrear', async (c) => {
+  await requireAdmin(c);
+  const b = await body(c);
+  const t = await track(c.env, b.guia, b.codigo);
+  return c.json({ ...clip(t), path: t.path, estado: t.estado });
+});
+r.get('/shalom/agencias', async (c) => {
+  await requireUser(c);
+  return c.json({ agencias: await findAgencies(c.env, c.req.query('q') || '', 20) });
 });
 
 export default r;
