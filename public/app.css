@@ -1297,3 +1297,9 @@ a.iconbtn{text-decoration:none;color:inherit}
 .gav .gbar{position:absolute;left:0;bottom:0;height:5px;background:#fff;width:100%}
 @media (prefers-reduced-motion:no-preference){.gav .gbar{animation:gbar 6s linear forwards}@keyframes gbar{to{width:0}}}
 @media (max-width:860px){.env.gs{padding:12px 12px 60px}}
+.gbadges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.gpill{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;color:#fff;background:var(--pc);border-radius:99px;padding:3px 10px;letter-spacing:.01em}
+.gscroll{position:fixed;right:18px;bottom:24px;display:flex;flex-direction:column;gap:8px;z-index:30}
+.gscroll button{width:46px;height:46px;border-radius:50%;border:0;background:var(--accent);color:var(--accent-fg);font-size:17px;box-shadow:0 4px 14px rgba(0,0,0,.22);cursor:pointer}
+.gscroll button:active{transform:scale(.94)}
+@media (max-width:860px){.gscroll{right:12px;bottom:calc(78px + env(safe-area-inset-bottom,0px))}.gscroll button{width:42px;height:42px}}

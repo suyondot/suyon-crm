@@ -89,6 +89,7 @@ export async function renderEnvios(content) {
     <div class="gtabs" role="tablist" aria-label="Envíos" id="envtabs"></div>
     <div id="envtop"></div>
     <div id="envbody"><div class="gemp"><span class="spin"></span></div></div>
+    <div class="gscroll" aria-label="Mover la lista"><button type="button" data-escroll="up" aria-label="Ir arriba" title="Ir arriba">▲</button><button type="button" data-escroll="down" aria-label="Ir al final" title="Ir al final">▼</button></div>
   </div>`;
   const root = content.querySelector('.env');
   root.addEventListener('click', onClick);
@@ -303,6 +304,19 @@ function detHTML(x) {
   return h;
 }
 
+// Estado visible arriba de cada tarjeta. Si Shalom ya dio su estado (p. ej. «En tránsito»), se muestra ese.
+const TRACK_LABEL = [[/entregad|recogid/i, 'Recogido'], [/reparto/i, 'En reparto'], [/destino|agencia/i, 'En agencia'], [/tr[aá]nsito|camino/i, 'En tránsito'], [/origen/i, 'En agencia de origen'], [/registrad/i, 'Registrado en Shalom']];
+function pill(x) {
+  const base = ST[x.status] || [x.status, '#8a8a85'];
+  let label = x.status === 'en_camino' ? 'En tránsito' : base[0];
+  if (x.guia_estado && isOpen(x)) {
+    const hit = TRACK_LABEL.find(([re]) => re.test(x.guia_estado));
+    if (hit && !(x.status === 'falta_abonar')) label = hit[1];
+  }
+  const demora = x.guia_estado && /demora|retras/i.test(x.guia_estado) ? '<span class="gpill" style="--pc:#c0392b">⚠ Con demora</span>' : '';
+  return `<span class="gpill" style="--pc:${base[1]}">${e(label)}</span>${demora}`;
+}
+
 function card(x) {
   const d = days(sent(x));
   const ms = miss(x);
@@ -315,6 +329,7 @@ function card(x) {
   const fecha = `${dk(sent(x))} ${hm(sent(x))}`;
   return `<article class="gcard${isDV(x) ? ' dv' : isRR(x) ? ' rr' : ''}" style="--sc:${ST[x.status]?.[1] || 'var(--line)'};--fc:${fc}" data-eid="${x.id}" data-t="${dt.getTime()}">
    <div class="gcb"><div class="gcl">
+    <div class="gbadges">${pill(x)}${courier(x) === 'olva' ? '<span class="gpill" style="--pc:#1f6f5c">Olva</span>' : ''}</div>
     <div class="gtop"><span class="gnm">${e(x.nombre || '—')}${x.notas && /Recuperado/.test(x.notas) ? '<span class="rvb">♻ Recuperado</span>' : ''}</span><span class="gdy">${d} días</span></div>
     <div class="gds">${e(x.sede || x.ciudad || 'Sin destino')} · ${fecha}</div>
     <div class="grow">${olva ? `<span class="olv">Olva</span>${x.guia ? `<button class="gcod" data-cp="${e(x.guia)}" title="Clic para copiar">${e(x.guia)}</button>` : ''}`
@@ -414,6 +429,7 @@ function drawReg() {
       const d = days(x.created_at);
       const ex = extrasOf(x);
       return `<div class="gcard rg${d >= 2 ? ' old' : ''}" style="--sc:#8a8a85">
+        <div class="gbadges">${x.status === 'por_pagar' ? '<span class="gpill" style="--pc:#c78a0a">Yape por validar</span>' : '<span class="gpill" style="--pc:#8a8a85">Sin guía todavía</span>'}${courier(x) === 'olva' ? '<span class="gpill" style="--pc:#1f6f5c">Olva</span>' : ''}</div>
         <div class="gtop"><span class="gnm">${e(x.nombre || '—')}</span><span class="gdy">${d <= 0 ? 'hoy' : d === 1 ? 'hace 1 día' : `hace ${d} días`}</span></div>
         <div class="gds">${e(x.sede || x.ciudad || '')} · agendado ${dk(x.created_at)}${x.status === 'por_pagar' ? ' · <b style="color:var(--warn)">Yape por validar</b>' : ''}</div>
         <div class="grow">${x.dni ? `<button class="gord2" data-cp="${e(x.dni)}">DNI ${e(x.dni)}</button>` : ''}${cel9(x) ? `<button class="gord2" data-cp="${cel9(x)}">Cel ${cel9(x)}</button>` : ''}${courier(x) === 'olva' ? '<span class="olv">Olva</span>' : ''}
@@ -748,6 +764,12 @@ async function readQRs(files) {
 
 async function onClick(ev) {
   const t = ev.target;
+  const sc = t.closest('[data-escroll]');
+  if (sc) {
+    const box = H.$('.content');
+    if (box) box.scrollTo({ top: sc.dataset.escroll === 'up' ? 0 : box.scrollHeight, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    return;
+  }
   const xa = t.closest('[data-xadd]') || t.closest('[data-xdel]');
   if (xa) {
     const add = !!xa.dataset.xadd;
