@@ -755,7 +755,8 @@ async function attachLabels(db, chats) {
 }
 
 const CHAT_COLS = `id, store_id, wa_id, name, profile_name, handler, unread, last_msg_at, last_preview, last_dir, last_inbound_at,
-  ad_id, ad_headline, ad_source_url, referral_at, first_reply_at, notes, created_at, updated_at, bot_flow_id, bot_node, bot_wait, bot_paused, bot_vars`;
+  ad_id, ad_headline, ad_source_url, referral_at, first_reply_at, notes, created_at, updated_at, bot_flow_id, bot_node, bot_wait, bot_paused, bot_vars,
+  (SELECT COUNT(*) FROM orders o WHERE o.chat_id = chats.id AND o.status IN ('nuevo', 'por_pagar')) AS por_confirmar`;
 
 api.get('/stores/:id/chats', async (c) => {
   const st = await storeFor(c, c.req.param('id'));
@@ -784,6 +785,7 @@ api.get('/stores/:id/chats', async (c) => {
     }
     if (q.filter === 'unread') where.push('unread > 0');
     if (q.filter === 'pending') where.push("last_dir = 'in'");
+    if (q.filter === 'confirmar') where.push("id IN (SELECT chat_id FROM orders WHERE store_id = chats.store_id AND chat_id IS NOT NULL AND status IN ('nuevo', 'por_pagar'))");
     const lab = ids(String(q.labels || '').split(','));
     if (lab.length) {
       where.push(`id IN (SELECT chat_id FROM chat_labels WHERE label_id IN (${inList(lab.length)}) GROUP BY chat_id HAVING COUNT(*) = ?)`);

@@ -224,6 +224,7 @@ export async function insertOrder(env, store, data, { userId = null, source = 'm
          VALUES (?, (SELECT COALESCE(MAX(number), 0) + 1 FROM orders WHERE store_id = ?), ${keys.map(() => '?').join(', ')}, ?, ?, ?)`
       ).bind(store.id, store.id, ...keys.map((k) => row[k] ?? null), t, t, t).run();
       const id = r.meta.last_row_id;
+      if (row.chat_id) await env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(t, row.chat_id).run();
       await addEvent(env, id, 'creado', `${source === 'shopify' ? 'Llegó de Shopify' : source === 'ia' ? 'Lo creó la IA' : 'Creado'} · ${ESTADOS[row.status]}`, userId);
       await env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE id = ?').bind(store.id).run();
       return getOrder(env, id);

@@ -1495,6 +1495,22 @@ try {
     const av = await call('GET', `/api/stores/${sid}/avisos`);
     assert.ok(JSON.stringify(av).includes('Llegó a la agencia: Aviso Test'), 'aviso de llegada');
   });
+  await step('chats: «Por confirmar» cuando la clienta tiene un pedido nuevo o con Yape por validar', async () => {
+    const me = await call('GET', '/api/me');
+    const st = me.stores[0];
+    const chats = (await call('GET', `/api/stores/${st.id}/chats`)).chats;
+    const ch = chats[0];
+    const before = (await call('GET', `/api/stores/${st.id}/chats?filter=confirmar`)).chats.length;
+    const o = (await call('POST', `/api/stores/${st.id}/pedidos`, { chat_id: ch.id, modo: 'lima', nombre: 'Por Confirmar', distrito: 'Lince', items: [{ talla: 'M', color: 'Negro', cantidad: 1 }] })).pedido;
+    let L = (await call('GET', `/api/stores/${st.id}/chats?filter=confirmar`)).chats;
+    assert.ok(L.some((x) => x.id === ch.id && x.por_confirmar > 0), 'sale en Por confirmar');
+    const sync = (await call('GET', `/api/stores/${st.id}/chats?after=${Date.now() - 5000}`)).chats;
+    assert.ok(sync.some((x) => x.id === ch.id), 'el chat se actualiza en la bandeja al crear el pedido');
+    await call('PATCH', `/api/pedidos/${o.id}`, { status: 'confirmado' });
+    L = (await call('GET', `/api/stores/${st.id}/chats?filter=confirmar`)).chats;
+    assert.ok(!L.some((x) => x.id === ch.id && x.por_confirmar > 0) || before > 0, 'al confirmar sale de la lista');
+    await call('DELETE', `/api/pedidos/${o.id}`);
+  });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos', '/planes']) assert.equal((await fetch(BASE + p)).status, 200);
     const planes = await (await fetch(BASE + '/planes')).text();

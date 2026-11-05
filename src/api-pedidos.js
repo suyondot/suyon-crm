@@ -190,6 +190,7 @@ r.delete('/pedidos/:id', async (c) => {
     c.env.DB.prepare('DELETE FROM order_jobs WHERE order_id = ?').bind(order.id),
     c.env.DB.prepare('DELETE FROM order_events WHERE order_id = ?').bind(order.id),
     c.env.DB.prepare('DELETE FROM orders WHERE id = ?').bind(order.id),
+    c.env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(now(), order.chat_id || 0),
   ]);
   await bump(c.env, store.id);
   return c.json({ ok: true });

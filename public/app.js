@@ -650,7 +650,7 @@ function layoutChats() {
 }
 
 const matchChat = (c) =>
-  (S.filter === 'todos' || (S.filter === 'unread' && c.unread > 0) || (S.filter === 'pending' && c.last_dir === 'in')) &&
+  (S.filter === 'todos' || (S.filter === 'unread' && c.unread > 0) || (S.filter === 'pending' && c.last_dir === 'in') || (S.filter === 'confirmar' && c.por_confirmar > 0)) &&
   S.tagf.every((t) => c.labels.includes(t)) &&
   (!S.q || (chatName(c) + ' ' + (c.profile_name || '') + ' ' + c.wa_id).toLowerCase().includes(S.q.toLowerCase()) || (S.q.replace(/\D/g, '').length >= 4 && c.wa_id.includes(S.q.replace(/\D/g, ''))));
 const sortKey = (c) => c.last_msg_at || c.created_at;
@@ -673,10 +673,15 @@ function renderListHead() {
         <div class="search"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="Buscar nombre o número" value="${esc(S.q)}" aria-label="Buscar chats" autocomplete="off"></div>
         <button class="filterbtn ${S.tagf.length ? 'on' : ''}" data-act="tagmenu" aria-expanded="${S.tagMenu}">${ICON.filter}Etiqueta${S.tagf.length ? ` · ${S.tagf.length}` : ''}</button>
       </div>
-      ${S.tagMenu ? `<div class="tagmenu" role="menu">${S.labels.map((l) => `<button role="menuitemcheckbox" aria-checked="${S.tagf.includes(l.id)}" data-tagf="${l.id}">${tagHTML(l)}<span class="n">${S.tagf.includes(l.id) ? '✓ ' : ''}${all.filter((x) => x.labels.includes(l.id)).length}</span></button>`).join('') || '<p class="note" style="padding:8px">Sin etiquetas</p>'}</div>` : ''}
+      ${S.tagMenu ? (() => {
+        const opt = (l) => `<button role="menuitemcheckbox" aria-checked="${S.tagf.includes(l.id)}" data-tagf="${l.id}">${tagHTML(l)}<span class="n">${S.tagf.includes(l.id) ? '✓ ' : ''}${all.filter((x) => x.labels.includes(l.id)).length}</span></button>`;
+        const mine = S.labels.filter((l) => !l.auto || /PENDIENTE/i.test(l.name));
+        const bot = S.labels.filter((l) => l.auto && !/PENDIENTE/i.test(l.name));
+        return `<div class="tagmenu" role="menu">${mine.map(opt).join('') || '<p class="note" style="padding:8px">Sin etiquetas</p>'}${bot.length ? `<p class="tmsep">Las que pone el bot</p>${bot.map(opt).join('')}` : ''}</div>`;
+      })() : ''}
       ${S.tagf.length ? `<div class="activef">${S.tagf.map((id) => `<button data-tagf="${id}" aria-label="Quitar filtro">${esc(labelById(id)?.name || '')} ×</button>`).join('')}</div>` : ''}
       <div class="chips" role="group" aria-label="Estado">
-        ${[['todos', 'Todos'], ['unread', 'Sin leer'], ['pending', 'Por responder']].map(([k, l]) => `<button class="chip" data-filter="${k}" aria-pressed="${S.filter === k}">${l}${k === 'unread' ? `<span class="n" id="unreadchip">${S.unread[S.storeId] || ''}</span>` : ''}</button>`).join('')}
+        ${[['todos', 'Todos'], ['unread', 'Sin leer'], ['pending', 'Por responder'], ['confirmar', '🟡 Por confirmar']].map(([k, l]) => `<button class="chip${k === 'confirmar' ? ' pcchip' : ''}" data-filter="${k}" aria-pressed="${S.filter === k}">${l}${k === 'unread' ? `<span class="n" id="unreadchip">${S.unread[S.storeId] || ''}</span>` : k === 'confirmar' ? `<span class="n" id="pcchip">${all.filter((x) => x.por_confirmar > 0).length || ''}</span>` : ''}</button>`).join('')}
       </div>
     </div>
     <div class="items" id="items"></div>`;
@@ -696,6 +701,8 @@ function renderItems() {
   if (!box) return;
   const list = visibleChats();
   const sc = box.scrollTop;
+  const pcc = $('#pcchip');
+  if (pcc) pcc.textContent = [...S.chats.values()].filter((x) => x.por_confirmar > 0).length || '';
   if (!list.length) {
     box.innerHTML = S.chatsLoading
       ? '<div class="empty"><span class="spin"></span></div>'
@@ -703,12 +710,13 @@ function renderItems() {
     return;
   }
   box.innerHTML = list.map((x) => {
-    const labs = x.labels.map(labelById).filter((l) => l && !/^Talla /.test(l.name)).slice(0, 2);
-    return `<button class="item" data-open="${x.id}" aria-current="${x.id === S.openId}">
+    const labs = x.labels.map(labelById).filter((l) => l && !/^Talla /.test(l.name)).sort((a, b) => (a.auto ? 1 : 0) - (b.auto ? 1 : 0)).slice(0, 3);
+    const pc = x.por_confirmar > 0;
+    return `<button class="item${pc ? ' pc' : ''}" data-open="${x.id}" aria-current="${x.id === S.openId}">${pc ? '<i class="pcdot" aria-hidden="true"></i>' : ''}
       <span class="av" style="background:${avColor(x.id)}">${esc(initials(chatName(x)))}</span>
       <span style="min-width:0"><span class="nm">${esc(chatName(x))}</span>
         <span class="lm">${x.last_dir === 'out' ? 'Tú: ' : ''}${esc(x.last_preview || '')}</span>
-        ${labs.length || x.ad_id ? `<span class="row">${x.ad_id ? '<span class="who ia">Anuncio</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
+        ${labs.length || x.ad_id || pc ? `<span class="row">${pc ? '<span class="pcb">🟡 Por confirmar</span>' : ''}${x.ad_id ? '<span class="who ia">Anuncio</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
       <span class="meta"><span>${listTime(x.last_msg_at)}</span>${x.unread ? `<span class="unread">${x.unread}</span>` : ''}</span>
     </button>`;
   }).join('') + (S.chatsMore && !S.q ? '<button class="iconbtn loadmore" data-act="morechats" style="margin:10px auto;display:flex">Cargar más</button>' : '');

@@ -151,6 +151,7 @@ export async function onOrderStatus(env, store, order, prev) {
 export async function setOrderStatus(env, store, order, status, userId, why) {
   if (order.status === status) return order;
   await env.DB.prepare('UPDATE orders SET status = ?, status_at = ?, updated_at = ? WHERE id = ?').bind(status, now(), now(), order.id).run();
+  if (order.chat_id) await env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(now(), order.chat_id).run();
   await addEvent(env, order.id, 'estado', `${ESTADOS[order.status]} → ${ESTADOS[status]}${why ? ` · ${why}` : ''}`, userId);
   const next = await getOrder(env, order.id);
   await onOrderStatus(env, store, next, order.status);
