@@ -1557,6 +1557,13 @@ try {
     const sent = calls.slice(n0).find((x) => x.body?.type === 'audio');
     assert.equal(sent?.body?.audio?.voice, true, 'voice: true');
   });
+  await step('celular (9 dígitos, empieza con 9) vs DNI (8) vs carnet de extranjería (12)', async () => {
+    const { fixIds } = await import('../src/bot.js');
+    assert.deepEqual(fixIds({ celular: '73559594' }, 'Jordan Suyon 73559594'), { dni: '73559594' });
+    assert.deepEqual(fixIds({ dni: '987654321' }, ''), { celular: '987654321' });
+    assert.deepEqual(fixIds({}, 'JHORDAN SUYON\n73559594\n987 654 321'), { celular: '987654321', dni: '73559594' });
+    assert.deepEqual(fixIds({}, 'ce 001234567890'), { dni: '001234567890' });
+  });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos', '/planes']) assert.equal((await fetch(BASE + p)).status, 200);
     const planes = await (await fetch(BASE + '/planes')).text();

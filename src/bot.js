@@ -589,6 +589,12 @@ export function buildSystem(settings, node, labels, vars, assets) {
 ${knowledge ? `## CONOCIMIENTO\n${fillPrompt(knowledge, settings, labels, vars)}\n\n` : ''}## AHORA MISMO (calculado por el sistema, úsalo tal cual)
 Si una clienta de Lima confirma ahora, su pedido llega ${entregaDia(now(), settings.timezone, settings)}, ${String(settings.entrega_horario || DEFAULT_SETTINGS.entrega_horario).replace(/\.+$/, '')}. Donde tu guía diga [HOY/MAÑANA], escribe: ${entregaDia(now(), settings.timezone, settings)}.
 
+## CÓMO DISTINGUIR CELULAR Y DOCUMENTO (Perú)
+- Celular: 9 dígitos y empieza con 9 (ej. 987 654 321).
+- DNI: 8 dígitos; puede empezar con cualquier número, también con 9 (ej. 73559594).
+- Carnet de extranjería: 12 dígitos (a veces 9 con letras). Guárdalo en "dni".
+Cuenta los dígitos antes de decidir: nunca guardes un número de 8 dígitos como celular ni uno de 9 que empieza con 9 como DNI. Si la clienta solo te dio uno, pide el que falta.
+
 ## DATOS YA GUARDADOS DE ESTA CLIENTA
 ${known || 'ninguno'}
 
@@ -710,6 +716,30 @@ export function parseReply(text, validCases = null) {
 
 const today = (tz) => localDay(now(), tz);
 
+// Perú: celular = 9 dígitos que empiezan con 9 · DNI = 8 dígitos · carnet de extranjería = 12 dígitos.
+// Corrige si la IA los cruzó y completa lo que falta con los números que escribió la clienta.
+export function fixIds(vars, text = '') {
+  const dig = (x) => String(x || '').replace(/\D/g, '');
+  const isCel = (d) => /^9\d{8}$/.test(d);
+  const isDoc = (d) => d.length === 8 || d.length === 12;
+  let cel = dig(vars.celular).replace(/^51(?=9\d{8}$)/, '');
+  let doc = dig(vars.dni);
+  if (doc && isCel(doc) && !isCel(cel)) [cel, doc] = [doc, isDoc(cel) ? cel : ''];
+  if (cel && !isCel(cel) && isDoc(cel) && !isDoc(doc)) [doc, cel] = [cel, ''];
+  // Números sueltos de su último mensaje: celulares escritos «987 654 321» y números seguidos
+  let rest = String(text);
+  const nums = [];
+  rest = rest.replace(/(?<!\d)(?:\+?51[ .-]?)?9\d{2}[ .-]\d{3}[ .-]\d{3}(?!\d)/g, (m) => (nums.push(dig(m).slice(-9)), ' '));
+  nums.push(...(rest.match(/\d+/g) || []));
+  if (!isCel(cel)) cel = nums.find(isCel) || cel;
+  if (!isDoc(doc)) doc = nums.find((d) => isDoc(d) && d !== cel) || doc;
+  if (cel) vars.celular = cel;
+  else delete vars.celular;
+  if (doc) vars.dni = String(vars.dni || '').replace(/\D/g, '') === doc ? vars.dni : doc;
+  else delete vars.dni;
+  return vars;
+}
+
 async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId) {
   // Espera unos segundos por si la clienta manda varios mensajes seguidos
   const delay = chat.sim ? Math.min(Number(settings.ia_delay_s) || 0, 1) : Math.min(Math.max(Number(settings.ia_delay_s) || 0, 0), 20);
@@ -799,6 +829,7 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
     return { ok: false };
   }
   for (const [k, v] of Object.entries(reply.datos)) if (v != null && String(v).trim()) vars[k] = clip(String(v), 200);
+  fixIds(vars, lastIn);
   if (ag.chosen) vars.sede_shalom = ag.chosen; // la elegida de la lista manda
   // «Yape + sede» solo vale con captura del pago, sede y datos: si falta algo, la IA sigue vendiendo (no pasa a la asesora)
   if (reply.caso === 'yape_sede' && !(hasCaptura && String(vars.sede_shalom || '').trim() && datosOk())) reply.caso = null;
