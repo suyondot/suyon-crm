@@ -11,6 +11,7 @@ import { loadPlan, optionsOf } from './billing.js';
 import { currentUser } from './auth.js';
 import { runJobs } from './bot.js';
 import { runOrderJobs } from './automations.js';
+import { trackDue } from './rastreo.js';
 import { handleShopify } from './shopify.js';
 
 const app = new Hono();
@@ -44,6 +45,7 @@ app.post('/__test/jobs', async (c) => {
   }
   await runJobs(c.env);
   await runOrderJobs(c.env);
+  await trackDue(c.env);
   return c.json({ ok: true });
 });
 
@@ -115,6 +117,7 @@ export default {
     if (event.cron !== '0 8 * * *') {
       await runJobs(env);
       await runOrderJobs(env);
+      await trackDue(env).catch((e) => console.error('rastreo', e));
       return;
     }
     const t = now();

@@ -466,8 +466,8 @@ async function drawShalom(content) {
         <div id="shres" class="shres"></div></div>
       <div class="card"><h3>3 · Rastrear una guía</h3>
         <form id="sht" class="fields3" style="align-items:end">
-          <div class="field"><label>Número de guía</label><input name="guia" class="mono" required></div>
-          <div class="field"><label>Código (si Shalom te da uno)</label><input name="codigo" class="mono"></div>
+          <div class="field"><label>Nro. de orden (ticket)</label><input name="guia" class="mono" required placeholder="Ej. 10183909"></div>
+          <div class="field"><label>Código del ticket</label><input name="codigo" class="mono" required placeholder="Ej. NPJK"></div>
           <div><button class="send" ${S0.key ? '' : 'disabled'}>Rastrear</button></div></form>
         <details style="margin-top:8px"><summary class="note">Ruta que se usa para rastrear</summary>
           <form id="shcfg" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><input name="track_path" class="mono" value="${e(S0.cfg.track_path)}" style="flex:1 1 260px"><input name="agencies_path" class="mono" value="${e(S0.cfg.agencies_path)}" style="flex:1 1 200px"><button class="iconbtn">Guardar rutas</button></form>
@@ -522,7 +522,7 @@ async function drawShalom(content) {
     o.innerHTML = '<p class="note">Rastreando…</p>';
     try {
       const r = await H.api('POST', '/admin/shalom/rastrear', Object.fromEntries(new FormData(ev.target)));
-      o.innerHTML = `${r.estado ? `<div class="okbox" style="margin-top:10px">Estado: <b>${e(r.estado)}</b></div>` : ''}<p class="note mono" style="margin:8px 0 0">${e(r.path)}</p><pre class="shout"></pre>`;
+      o.innerHTML = `${r.estado ? `<div class="okbox" style="margin-top:10px">Estado: <b>${e(r.estado)}</b></div>` : ''}${r.summary ? `<ol class="shsteps">${r.summary.pasos.map((p) => `<li class="${p.ok ? 'ok' : ''}"><b>${e(p.label)}</b>${p.fecha ? ` <span class="note mono">${e(p.fecha)}</span>` : ''}</li>`).join('')}</ol>` : ''}<details><summary class="note">Respuesta completa</summary><pre class="shout"></pre></details>`;
       show(o.querySelector('pre'), r);
     } catch (er) {
       o.innerHTML = `<div class="err">${e(er.message)}</div>`;

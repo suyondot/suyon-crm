@@ -140,12 +140,14 @@ export function orderText(o, { horario = 'entre 2 y 8 p.m.' } = {}) {
     `⏰ Entrega: ${x.entrega ? x.entrega.split('-').reverse().join('/') : ''} ${horario}`.trim(), x.notas ? `📝 ${x.notas}` : ''].filter(Boolean).join('\n');
 }
 
-const FIELDS = { nombre: 80, celular: 20, dni: 12, distrito: 60, direccion: 200, referencia: 200, ciudad: 60, sede: 120, notas: 1000, ad_id: 40 };
+const FIELDS = { nombre: 80, celular: 20, dni: 12, distrito: 60, direccion: 200, referencia: 200, ciudad: 60, sede: 160, notas: 1000, ad_id: 40, guia: 20, guia_codigo: 12 };
 
 export function cleanOrder(b, cfg, cur = null) {
   const out = {};
   for (const [k, n] of Object.entries(FIELDS)) if (k in b) out[k] = clip(String(b[k] ?? '').trim(), n) || null;
   if ('celular' in out && out.celular) out.celular = normPhone(out.celular) || out.celular;
+  if (out.guia) out.guia = out.guia.replace(/\s+/g, '');
+  if (out.guia_codigo) out.guia_codigo = out.guia_codigo.replace(/\s+/g, '').toUpperCase();
   if ('modo' in b) {
     if (!MODOS[b.modo]) fail(400, 'Elige el tipo de envío: Lima, provincia o agencia.');
     out.modo = b.modo;

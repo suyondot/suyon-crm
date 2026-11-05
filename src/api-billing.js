@@ -267,7 +267,7 @@ r.post('/admin/shalom/rastrear', async (c) => {
   await requireAdmin(c);
   const b = await body(c);
   const t = await track(c.env, b.guia, b.codigo);
-  return c.json({ ...clip(t), path: t.path, estado: t.estado });
+  return c.json({ ...clip(t), path: t.path, estado: t.estado, summary: t.summary, error: t.error });
 });
 r.get('/shalom/agencias', async (c) => {
   await requireUser(c);

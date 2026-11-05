@@ -5,7 +5,7 @@ import { now, fail } from './util.js';
 const KEY = 'shalom';
 export const DEFAULT_SHALOM = {
   agencies_path: '/v1/agencies',
-  track_path: '/v1/tracking/{guia}', // {guia} y {codigo} se reemplazan
+  track_path: '/v1/tracking?numero={guia}&codigo={codigo}', // {guia} = nro. de orden, {codigo} = código del ticket
 };
 
 export const baseOf = (env) => String(env.SHALOM_API_BASE || 'https://api.shalom-api-peru.com').replace(/\/+$/, '');
@@ -16,7 +16,9 @@ export async function loadShalom(env) {
   try {
     v = r ? JSON.parse(r.value) : {};
   } catch {}
-  return { ...DEFAULT_SHALOM, ...v };
+  const out = { ...DEFAULT_SHALOM, ...v };
+  if (out.track_path === '/v1/tracking/{guia}') out.track_path = DEFAULT_SHALOM.track_path; // la ruta vieja no existía
+  return out;
 }
 
 export async function saveShalom(env, patch) {
@@ -150,20 +152,36 @@ export async function agencyStats(env) {
   return { total: r?.n || 0, departamentos: r?.deps || 0, at: r?.at || null };
 }
 
-// Rastrear una guía con la ruta configurada
+// Pasos del rastreo de Shalom API Peru: status.{registrado, origen, transito, destino, reparto, entregado} + demora
+export const PASOS = [
+  ['registrado', 'Registrado'],
+  ['origen', 'En agencia de origen'],
+  ['transito', 'En tránsito'],
+  ['destino', 'Llegó a la agencia de destino'],
+  ['reparto', 'En reparto'],
+  ['entregado', 'Entregado a la clienta'],
+];
+export function trackSummary(data) {
+  const st = data?.status && typeof data.status === 'object' ? data.status : null;
+  if (!st) return null;
+  const pasos = PASOS.map(([k, label]) => ({ k, label, fecha: st[k]?.fecha || null, ok: !!st[k] && st[k].completo !== false }));
+  const last = [...pasos].reverse().find((p) => p.fecha || p.ok);
+  return { key: last?.k || null, estado: last?.label || 'Sin movimientos', fecha: last?.fecha || null, demora: st.demora ? (typeof st.demora === 'object' ? st.demora.motivo || st.demora.detalle || 'Con demora' : String(st.demora)) : null, pasos };
+}
+
+// Rastrear una guía (nro. de orden + código del ticket)
 export async function track(env, guia, codigo = '') {
   const g = String(guia || '').trim();
-  if (!/^[\w-]{3,40}$/.test(g)) fail(400, 'Escribe un número de guía válido.');
-  const c = String(codigo || '').trim();
+  if (!/^[\w-]{3,40}$/.test(g)) fail(400, 'Escribe el número de orden de la guía.');
+  const c = String(codigo || '').trim().toUpperCase();
   if (c && !/^[\w-]{1,40}$/.test(c)) fail(400, 'Código no válido.');
   const cfg = await loadShalom(env);
   let path = cfg.track_path.replace('{guia}', encodeURIComponent(g)).replace('{codigo}', encodeURIComponent(c));
-  if (c && !cfg.track_path.includes('{codigo}')) path += (path.includes('?') ? '&' : '?') + `code=${encodeURIComponent(c)}`;
+  if (c && !cfg.track_path.includes('{codigo}')) path += (path.includes('?') ? '&' : '?') + `codigo=${encodeURIComponent(c)}`;
   const r = await shalomGet(env, path);
-  const d = r.data || {};
-  const flat = d.data && typeof d.data === 'object' && !Array.isArray(d.data) ? d.data : d;
-  const estado = pick(flat, ['status', 'estado', 'state', 'current_status', 'situacion', 'tracking.status', 'last_event.status']);
-  return { ...r, path, estado };
+  const sum = r.ok ? trackSummary(r.data) : null;
+  const err = !r.ok ? (r.data?.error?.message || r.data?.error || r.text || `Error ${r.status}`) : null;
+  return { ...r, path, estado: sum?.estado || null, summary: sum, error: err ? String(err).slice(0, 300) : null };
 }
 
 /* ---------- Agencias para el bot (sin IA) ---------- */

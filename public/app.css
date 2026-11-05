@@ -1129,3 +1129,7 @@ a.iconbtn{text-decoration:none;color:inherit}
 .shout{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto;margin:10px 0 0}
 .shres{display:grid;gap:6px;margin-top:10px}
 .shag{padding:10px 12px;border:1px solid var(--line);border-radius:10px}.shag small{display:block;color:var(--muted);margin-top:2px}
+.shsteps{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
+.shsteps li{position:relative;padding-left:22px;color:var(--muted);font-size:13.5px}
+.shsteps li::before{content:"";position:absolute;left:4px;top:5px;width:10px;height:10px;border-radius:50%;border:2px solid var(--line);background:var(--surface)}
+.shsteps li.ok{color:var(--fg)}.shsteps li.ok::before{background:var(--ok,#1F8A5B);border-color:var(--ok,#1F8A5B)}

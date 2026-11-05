@@ -75,8 +75,13 @@ const meta = http.createServer(async (req, res) => {
       const page = Number(url.searchParams.get('page') || 1);
       return json(200, { items: page === 1 ? all.slice(0, 2) : page === 2 ? all.slice(2) : [] });
     }
-    const m = p.match(/^shalom\/v1\/tracking\/(\w+)$/);
-    if (m) return json(200, { data: { guia: m[1], estado: 'En tránsito', origen: 'Lima', destino: 'Juliaca' } });
+    if (p === 'shalom/v1/tracking') {
+      // Formato real (5 nov): ?numero=&codigo= → { detailed, status: { registrado, origen, transito, demora, destino, entregado, reparto } }
+      const num = url.searchParams.get('numero'), cod = url.searchParams.get('codigo');
+      if (!num || !cod) return json(400, { error: { code: 'bad_request', message: 'debe enviar numero+codigo, u ose_id' } });
+      const llego = num === '20000001';
+      return json(200, { detailed: false, status: { registrado: { fecha: '2026-10-30 19:29:17' }, origen: { fecha: '2026-10-30 19:29:17' }, transito: { fecha: '2026-10-31 10:24:35', completo: true }, demora: null, destino: llego ? { fecha: '2026-10-31 12:27:43', completo: true } : null, entregado: null, reparto: null }, degraded_reason: 'sin_credenciales' });
+    }
     return json(404, { error: 'ruta no existe' });
   }
   if (p === 'v1/audio/transcriptions') {
@@ -1350,8 +1355,24 @@ try {
     assert.equal(f.agencias.length, 2, 'por departamento');
     f = await call('GET', '/api/shalom/agencias?q=san roman');
     assert.equal(f.agencias.length, 1, 'sin tildes');
-    const tr = await call('POST', '/api/admin/shalom/rastrear', { guia: '12345678' });
+    const tr = await call('POST', '/api/admin/shalom/rastrear', { guia: '12345678', codigo: 'npjk' });
     assert.equal(tr.estado, 'En tránsito');
+    assert.equal(tr.summary.pasos.find((x) => x.k === 'destino').ok, false);
+    // Pedido de agencia con su guía: el rastreo lo pasa solo a «En agencia»
+    const ped = (await call('POST', `/api/stores/${store.id}/pedidos`, { modo: 'agencia', nombre: 'Rosa', celular: '987111222', ciudad: 'Chimbote', sede: 'AV JOSE GALVEZ', items: [{ talla: 'M', color: 'Negro', cantidad: 1 }] })).pedido;
+    await call('PATCH', `/api/pedidos/${ped.id}`, { status: 'validado' });
+    let up = await call('PATCH', `/api/pedidos/${ped.id}`, { guia: '2000 0001', guia_codigo: 'npjk' });
+    assert.equal(up.pedido.guia, '20000001');
+    assert.equal(up.pedido.guia_codigo, 'NPJK');
+    const rr = await call('POST', `/api/pedidos/${ped.id}/rastrear`);
+    assert.equal(rr.ok, true);
+    assert.equal(rr.pedido.status, 'en_agencia', 'llegó a destino → en agencia');
+    assert.match(rr.pedido.guia_estado, /agencia de destino/);
+    const ev = await call('GET', `/api/pedidos/${ped.id}`);
+    assert.ok(ev.events.some((x) => /según el rastreo de Shalom/.test(x.detail)));
+    // Sin código no rastrea; con «Yape por validar» nunca avanza solo
+    const p2 = (await call('POST', `/api/stores/${store.id}/pedidos`, { modo: 'agencia', nombre: 'Ana', celular: '987111333', items: [{ talla: 'S', cantidad: 1 }], guia: '20000001', guia_codigo: 'ABCD' })).pedido;
+    assert.equal((await call('POST', `/api/pedidos/${p2.id}/rastrear`)).pedido.status, 'por_pagar', 'no salta la validación del adelanto');
     assert.equal((await call('POST', '/api/admin/shalom/rastrear', { guia: 'a b' })).status, 400);
     assert.equal((await call('GET', '/api/admin/shalom', undefined, { keepCookie: false })).status, 401);
     // El bot ofrece las agencias de provincia (y nunca en Lima con cobertura)

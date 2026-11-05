@@ -30,7 +30,7 @@ const dayLabel = (d, today) => {
   return dt.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric' });
 };
 const resumen = (o) => o.items.map((i) => `${i.cantidad}× ${[i.talla, i.color].filter(Boolean).join(' ') || i.producto}`).join(' · ');
-const destino = (o) => (o.modo === 'agencia' ? [o.sede, o.ciudad].filter(Boolean).join(' · ') : o.modo === 'ce_prov' ? o.ciudad || o.distrito : o.distrito) || '—';
+const destino = (o) => (o.modo === 'agencia' ? [o.sede, o.ciudad, o.guia_estado && `🚚 ${o.guia_estado}`].filter(Boolean).join(' · ') : o.modo === 'ce_prov' ? o.ciudad || o.distrito : o.distrito) || '—';
 
 export async function renderPedidos(content) {
   if (P.storeId !== H.S.storeId) Object.assign(P, { grupo: '', vista: 'dia', dia: null, estado: '', q: '', data: null, storeId: H.S.storeId });
@@ -206,7 +206,11 @@ function drawEditor() {
         : `
           <div class="field"><label>DNI</label><input data-f="dni" value="${e(o.dni || '')}" inputmode="numeric"></div>
           <div class="field"><label>Ciudad</label><input data-f="ciudad" value="${e(o.ciudad || '')}"></div>
-          <div class="field pwide"><label>Sede de Shalom</label><input data-f="sede" value="${e(o.sede || '')}" placeholder="Ej. Arequipa · Av. Ejército"></div>`}
+          <div class="field pwide"><label>Sede de Shalom</label><input data-f="sede" value="${e(o.sede || '')}" placeholder="Ej. Arequipa · Av. Ejército"></div>
+          <div class="field"><label>Nro. de orden (ticket Shalom)</label><input data-f="guia" value="${e(o.guia || '')}" inputmode="numeric" placeholder="Ej. 10183909"></div>
+          <div class="field"><label>Código del ticket</label><input data-f="guia_codigo" value="${e(o.guia_codigo || '')}" placeholder="Ej. NPJK" style="text-transform:uppercase"></div>
+          ${!isNew ? `<div class="field pwide shtrack">${o.guia_estado ? `<div class="okbox" style="margin:0">🚚 Shalom: <b>${e(o.guia_estado)}</b>${o.guia_at ? ` <span class="note">· revisado ${e(new Date(o.guia_at).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: 'numeric', minute: '2-digit' }))}</span>` : ''}</div>` : '<p class="note" style="margin:0">Pon el nro. de orden y el código del ticket y guarda: el estado se revisa solo cada 2 horas y el pedido avanza solo (enviado → en agencia → recogido).</p>'}
+            ${o.guia && o.guia_codigo ? '<button type="button" class="iconbtn sm" data-mtrack style="margin-top:6px">Rastrear ahora</button>' : ''}<div data-mtrackout></div></div>` : ''}`}
       </div></section>
       <section><div class="pmsec"><h3>Productos</h3><button type="button" class="iconbtn sm" data-madd>+ Producto</button></div>
         <div class="pitems">${items.map((it, i) => `<div class="pit" data-i="${i}">
@@ -315,6 +319,29 @@ async function editorClick(ev) {
     }
     return;
   }
+  if (t.closest('[data-mtrack]')) {
+    const b = t.closest('[data-mtrack]');
+    const out = M.wrap.querySelector('[data-mtrackout]');
+    b.disabled = true;
+    out.innerHTML = '<p class="note">Consultando a Shalom…</p>';
+    try {
+      const r = await H.api('POST', `/pedidos/${M.order.id}/rastrear`);
+      if (!r.ok) {
+        out.innerHTML = `<div class="err">${e(r.error || 'No se pudo rastrear.')}</div>`;
+      } else {
+        const d = await H.api('GET', `/pedidos/${M.order.id}`);
+        Object.assign(M, { order: d.pedido, events: d.events, texto: d.texto });
+        drawEditor();
+        const o2 = M.wrap.querySelector('[data-mtrackout]');
+        if (o2) o2.innerHTML = `<ol class="shsteps">${r.summary.pasos.map((p) => `<li class="${p.ok ? 'ok' : ''}"><b>${e(p.label)}</b>${p.fecha ? ` <span class="note mono">${e(p.fecha)}</span>` : ''}</li>`).join('')}</ol>`;
+        refresh();
+      }
+    } catch (er) {
+      out.innerHTML = `<div class="err">${e(er.message)}</div>`;
+    }
+    b.disabled = false;
+    return;
+  }
   if (t.closest('[data-msave]')) return save(t.closest('[data-msave]'));
 }
 
@@ -322,7 +349,7 @@ async function save(btn) {
   const o = collect();
   const err = M.wrap.querySelector('#pmerr');
   err.hidden = true;
-  const data = { modo: o.modo, status: o.status, nombre: o.nombre, celular: o.celular, dni: o.dni, distrito: o.distrito, direccion: o.direccion, referencia: o.referencia, ciudad: o.ciudad, sede: o.sede, entrega: o.entrega, notas: o.notas, items: o.items, adelanto: o.adelanto };
+  const data = { modo: o.modo, status: o.status, nombre: o.nombre, celular: o.celular, dni: o.dni, distrito: o.distrito, direccion: o.direccion, referencia: o.referencia, ciudad: o.ciudad, sede: o.sede, guia: o.guia, guia_codigo: o.guia_codigo, entrega: o.entrega, notas: o.notas, items: o.items, adelanto: o.adelanto };
   if (M.dirtyTotal || o.id) data.total = o.total;
   if (!o.id && !M.dirtyTotal) delete data.total;
   btn.disabled = true;

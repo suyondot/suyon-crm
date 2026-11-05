@@ -7,6 +7,7 @@ import {
 } from './orders.js';
 import { loadAutos, saveAuto, submitTemplate, syncTemplates, setOrderStatus, onOrderCreated, AUTO_VARS } from './automations.js';
 import { ensureDataset } from './capi.js';
+import { trackOrder } from './rastreo.js';
 import { loadSettings } from './bot.js';
 
 const r = new Hono();
@@ -145,15 +146,27 @@ r.patch('/pedidos/:id', async (c) => {
   const keys = Object.keys(patch).filter((k) => String(patch[k] ?? '') !== String(order[k] ?? ''));
   if (keys.length) {
     await c.env.DB.prepare(`UPDATE orders SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`).bind(...keys.map((k) => patch[k]), now(), order.id).run();
-    const names = { items: 'productos', modo: 'tipo de envío', total: 'total', adelanto: 'adelanto', entrega: 'día de entrega' };
+    const names = { items: 'productos', modo: 'tipo de envío', total: 'total', adelanto: 'adelanto', entrega: 'día de entrega', guia: 'nro. de orden Shalom', guia_codigo: 'código Shalom' };
     await addEvent(c.env, order.id, 'edicion', `Cambió ${keys.map((k) => names[k] || k).join(', ')}`, u.id);
   }
   let cur = await getOrder(c.env, order.id);
+  // Guía nueva: rastrear de una vez (en segundo plano)
+  if ((keys.includes('guia') || keys.includes('guia_codigo')) && cur.guia && cur.guia_codigo && c.env.SHALOM_API_KEY) {
+    c.executionCtx.waitUntil(trackOrder(c.env, store, cur, u.id).catch((e) => console.error('rastreo', e)));
+  }
   if (patch.modo && !FLUJO[cur.modo].includes(cur.status)) cur = await setOrderStatus(c.env, store, cur, firstStatus(cur.modo), u.id, 'Cambió el tipo de envío');
   if (status && status !== cur.status) cur = await setOrderStatus(c.env, store, cur, status, u.id);
   await bump(c.env, store.id);
   const s = await loadSettings(c.env, store.id);
   return c.json({ pedido: shape(cur), texto: orderText(cur, { horario: s.entrega_horario }) });
+});
+
+// Rastrear la guía de Shalom ahora
+r.post('/pedidos/:id/rastrear', async (c) => {
+  const { order, store } = await orderFor(c, c.req.param('id'));
+  const u = await requireUser(c);
+  const r2 = await trackOrder(c.env, store, order, u.id);
+  return c.json({ ok: r2.ok, error: r2.error || null, summary: r2.summary, pedido: shape(r2.order) });
 });
 
 // Recompra: el mismo pedido otra vez, con los mismos datos de entrega
