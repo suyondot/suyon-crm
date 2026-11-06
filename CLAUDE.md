@@ -37,6 +37,11 @@ CRM propio de Jordan Suyon (Perú) para vender por WhatsApp. Reemplaza Pancake (
 - Hay DOS cuentas llamadas "Orión - Pancake Singapore": no quitar Pancake de la equivocada (la otra puede tener Orión Perú).
 - Solo 1 usuario del sistema Admin permitido (negocio sin verificar): el nuestro es rol Empleado.
 
+## Número nuevo «Orion Perú» (6 nov 2026, conectado a mano)
+- +51 912 502 934 · tienda id 2 «Orion Perú» (empresa 1) · phone_number_id **`1495560446966558`** · cuenta de mensajes propia **«Orión Perú» `2584780075374794`** (portafolio Orión, SELF, verificado). Nombre visible «OriónPerú» en revisión.
+- El botón «Conectar con un clic» se cerraba tras «Continuar como Virginia Vergara» sin pedir el número → se agregó el número a mano en Meta, se dio **control total** al usuario del sistema `suyon-crm` en esa cuenta y se conectó con los IDs (token WA_TOKEN). Jordan activó con su PIN. 18:14: primer mensaje recibido (aviso de Meta) y envío OK.
+- Pendiente: averiguar por qué la ventana de Registro insertado no muestra los pasos (¿App Review en curso? ¿v4?).
+
 ## Reglas de Meta que importan
 - Ventana gratis de **72 h** si la clienta llega por anuncio de clic a WhatsApp y se responde dentro de 24 h (todo tipo de mensaje gratis).
 - Desde **1 oct 2026**: mensajes de servicio y plantillas de utilidad dentro de la ventana de 24 h se cobran (1,000 de servicio gratis/mes por número; Perú ~US$0.03). Plantillas marketing Perú ~US$0.08.
