@@ -1186,6 +1186,9 @@ try {
     // Meta pide el mismo redirect_uri de la ventana (subcódigo 36008): se prueba hasta dar con el correcto
     const { redirectCandidates } = await import('../src/signup.js');
     assert.deepEqual(redirectCandidates('https://x.com/config?a=1', 'https://x.com'), [null, 'https://x.com/config', 'https://x.com/', 'https://x.com', '']);
+    const xd = 'https://staticxx.facebook.com/x/connect/xd_arbiter/?version=46#cb=f1&domain=x.com';
+    assert.equal(redirectCandidates('https://x.com/', 'https://x.com', xd)[0], xd, 'primero la dirección que usó la ventana de Meta');
+    assert.equal(redirectCandidates('https://x.com/', 'https://x.com', 'https://malo.com/x')[0], null, 'nunca una dirección de otro sitio');
     const nr = calls.length;
     r = await call('POST', `/api/stores/${sid}/whatsapp/signup`, { code: 'es-code-redirect00', phone_number_id: '880000000001', waba_id: '770000000001', page_url: `${BASE}/configuracion` });
     assert.equal(r.ok, true, JSON.stringify(r));

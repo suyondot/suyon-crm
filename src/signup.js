@@ -33,8 +33,14 @@ export async function signupInfo(env, origin) {
 // El código de la ventana de Meta (SDK de JavaScript) a veces exige el mismo redirect_uri con que se abrió
 // y otras veces ninguno («Error validating verification code…», subcódigo 36008). Un intento fallido NO gasta
 // el código, así que se prueban en orden: sin redirect_uri, la página exacta, el dominio con «/» y sin «/».
-export function redirectCandidates(pageUrl, origin) {
-  const out = [null];
+export function redirectCandidates(pageUrl, origin, dialogRedirect = '') {
+  const out = [];
+  // 1) la que usó la ventana de Meta (se lee en el navegador), solo si es de Facebook o de este dominio
+  try {
+    const d = new URL(dialogRedirect);
+    if (d.protocol === 'https:' && (/(^|\.)(facebook|fbcdn)\.(com|net)$/.test(d.hostname) || d.origin === new URL(origin || pageUrl).origin)) out.push(dialogRedirect);
+  } catch {}
+  out.push(null);
   const add = (u) => {
     if (u !== null && u !== undefined && !out.includes(u)) out.push(u);
   };
@@ -51,14 +57,16 @@ export function redirectCandidates(pageUrl, origin) {
     add(o);
   }
   add('');
-  return out.slice(0, 6);
+  return out.slice(0, 7);
 }
 
-async function exchangeCode(env, code, { page_url, origin } = {}) {
+async function exchangeCode(env, code, { page_url, origin, dialog_redirect } = {}) {
   const appId = await appIdOf(env);
   if (!appId || !env.META_APP_SECRET) throw new HttpError(400, 'Falta configurar la app de Meta (ID de la app o su clave secreta).');
   let last = '';
-  for (const ru of redirectCandidates(page_url, origin)) {
+  const tried = [];
+  for (const ru of redirectCandidates(page_url, origin, dialog_redirect)) {
+    tried.push(ru === null ? 'sin' : ru === '' ? 'vacío' : ru.slice(0, 60));
     const u = `${env.GRAPH_API}/oauth/access_token?client_id=${encodeURIComponent(appId)}&client_secret=${encodeURIComponent(env.META_APP_SECRET)}&code=${encodeURIComponent(code)}${ru === null ? '' : `&redirect_uri=${encodeURIComponent(ru)}`}`;
     const res = await fetch(u);
     const d = await res.json().catch(() => ({}));
@@ -67,16 +75,17 @@ async function exchangeCode(env, code, { page_url, origin } = {}) {
     // Solo se reintenta si el problema es el redirect_uri; otro error (código vencido, usado) corta
     if (!(d?.error?.error_subcode === 36008 || /redirect_uri/i.test(last))) break;
   }
-  throw new HttpError(502, `Meta no entregó el permiso de la cuenta: ${last}. Vuelve a tocar el botón (el código dura 30 segundos).`);
+  console.log('signup exchange failed', JSON.stringify({ tried, dialog: !!dialog_redirect, last }));
+  throw new HttpError(502, `Meta no entregó el permiso de la cuenta: ${last}. Vuelve a tocar el botón (el código dura 30 segundos). [${tried.length} intentos${dialog_redirect ? '' : ', sin dirección de la ventana'}]`);
 }
 
 // Pide los permisos con el token NUEVO de la tienda (no el de Cloudflare)
 const asStore = (token, extra = {}) => ({ ...extra, token_enc: null, token_secret: '__signup__', __token: token });
 
-export async function connectSignup(env, store, { code, phone_number_id, waba_id, coexistencia, page_url, origin }) {
+export async function connectSignup(env, store, { code, phone_number_id, waba_id, coexistencia, page_url, origin, dialog_redirect }) {
   const steps = [];
   if (!/^[\w-]{10,}$/.test(String(code || ''))) throw new HttpError(400, 'Falta el código de Meta. Vuelve a tocar el botón.');
-  const token = await exchangeCode(env, String(code), { page_url, origin });
+  const token = await exchangeCode(env, String(code), { page_url, origin, dialog_redirect });
   steps.push('Meta entregó el permiso para esta cuenta de WhatsApp');
   const tenv = { ...env, __signup__: token };
   const tst = asStore(token);

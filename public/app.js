@@ -2171,6 +2171,7 @@ function startSignup(st, coex) {
           waba_id: session?.data?.waba_id || null,
           coexistencia: coex || session?.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
           page_url: location.href.split(/[?#]/)[0],
+          dialog_redirect: S.esRedirect?.() || '',
         });
         setMe(r);
         S.connSteps = { steps: r.steps || [], ok: r.ok, error: r.error };
@@ -2182,6 +2183,21 @@ function startSignup(st, coex) {
       }
     })();
   };
+  // Meta exige, al canjear el código, la MISMA dirección de regreso con que abrió su ventana:
+  // se lee de la ventana que abre el SDK (no cambia nada de lo que hace Meta)
+  let dialogRedirect = '';
+  const origOpen = window.open;
+  window.open = function (u, ...rest) {
+    try {
+      const url = new URL(String(u), location.href);
+      if (/(^|\.)facebook\.com$/.test(url.hostname) && /dialog\/oauth/.test(url.pathname)) dialogRedirect = url.searchParams.get('redirect_uri') || '';
+    } catch {}
+    return origOpen.call(window, u, ...rest);
+  };
+  S.esRedirect = () => dialogRedirect;
+  setTimeout(() => {
+    if (window.open !== origOpen) window.open = origOpen;
+  }, 1500);
   window.FB.login(done, {
     config_id: es.config_id,
     response_type: 'code',
