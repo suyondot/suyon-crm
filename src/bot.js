@@ -580,7 +580,7 @@ function nowText(tz = DEFAULT_TZ, hour12 = true) {
 // Datos del plan de Control Total para {precio_base}, {enlace_demo}…
 async function withPlan(env, settings) {
   const plan = await loadPlan(env).catch(() => null);
-  return { ...settings, __plan: plan, __url: String(env.PUBLIC_URL || 'https://suyon-crm.storesuyo.workers.dev').replace(/\/+$/, '') };
+  return { ...settings, __plan: plan, __url: String(env.PUBLIC_URL || 'https://controltotalecom.com').replace(/\/+$/, '') };
 }
 
 export function buildSystem(settings, node, labels, vars, assets) {

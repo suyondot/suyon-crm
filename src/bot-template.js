@@ -438,7 +438,7 @@ PREGUNTAS FRECUENTES
 - ¿Quién ve mis chats? Solo su equipo, cada uno con su usuario.
 - La demo es una videollamada de 30 minutos con Jordan: elige día y hora en {enlace_demo}.`;
 
-export function flowVentasCT(web = 'https://suyon-crm.storesuyo.workers.dev') {
+export function flowVentasCT(web = 'https://controltotalecom.com') {
   const demo = `${web}/inicio#demo`;
   return {
     v: 1,

@@ -36,7 +36,7 @@
     "APP_NAME": "Control Total",
     "CONTACT_EMAIL": "storesuyo@gmail.com",
     // Dirección pública (enlaces que manda el asistente de ventas)
-    "PUBLIC_URL": "https://suyon-crm.storesuyo.workers.dev",
+    "PUBLIC_URL": "https://controltotalecom.com",
     // Botón «Conectar con un clic»: ID de la configuración «WhatsApp Embedded Signup» (no es secreto)
     "META_ES_CONFIG": "996370686168010",
     // Remitente de los correos (Resend; se activa cuando exista el secreto RESEND_API_KEY)
