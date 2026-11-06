@@ -1536,6 +1536,15 @@ try {
     sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'soy de Miraflores, Lima' });
     assert.ok(!/AGENCIAS SHALOM/.test(iaCalls.slice(n).pop().system), 'en Lima no se mete');
     assert.ok(!sm.messages.some((m) => /Agencias Shalom en/.test(m.body || '')));
+    // Lima con cobertura, pero la clienta pide Shalom: se respeta y sí se ofrecen agencias de Lima
+    await conDatos(sm);
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'mejor por Shalom, Miraflores' });
+    assert.ok(sm.messages.some((m) => /Agencias Shalom en MIRAFLORES/.test(m.body || '')), 'pidió Shalom: ofrece agencias de Lima');
+    // Cobertura parcial (Ate después del Real Plaza…): no es agencia hasta saber en qué parte está
+    const { zonasSin, modoFor, DEFAULT_CFG } = await import('../src/orders.js');
+    assert.equal(zonasSin(DEFAULT_CFG.sin_cobertura).find((z) => z.name === 'ate').parcial, true);
+    assert.equal(modoFor({ distrito: 'Ate' }, DEFAULT_CFG), 'lima');
+    assert.equal(modoFor({ distrito: 'Lurín' }, DEFAULT_CFG), 'agencia');
     // Lima sin cobertura (Ancón) sí va por agencia
     await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
     await conDatos(await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' }));

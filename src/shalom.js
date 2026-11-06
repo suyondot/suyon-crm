@@ -1,5 +1,6 @@
 // Conector con «Shalom API Peru» (servicio de un tercero, no oficial de Shalom).
 // La clave va como secreto SHALOM_API_KEY en Cloudflare. Base cambiable con la variable SHALOM_API_BASE.
+import { zonasSin } from './orders.js';
 import { now, fail } from './util.js';
 
 const KEY = 'shalom';
@@ -210,14 +211,15 @@ const isLimaDep = (d) => d === 'lima' || d === 'callao';
 const W = (name) => new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`);
 
 // Busca un lugar de provincia en el texto y devuelve sus agencias. Lima con cobertura → null (el bot no se mete).
-export async function agenciesNear(env, text, sinCobertura = '') {
+export async function agenciesNear(env, text, sinCobertura = '', quiereAgencia = false) {
   const t = norm(text);
   if (!t) return null;
   const ix = await index(env);
   if (!ix) return null;
   const hits = ix.places.filter((p) => W(p.name).test(t));
   if (!hits.length) return null;
-  const sin = norm(sinCobertura).split(/\s*,\s*/).filter(Boolean);
+  // Zonas de Lima sin cobertura completa; las parciales («Ate (después del Real Plaza…)») solo si eligió agencia
+  const sin = zonasSin(sinCobertura).filter((z) => !z.parcial || quiereAgencia).map((z) => z.name);
   // Lugares de los que hay agencias según lo encontrado (distrito primero)
   const matchRows = (p) => ix.rows.filter((r) => r.ok && r.n[p.lv] === p.name);
   const deps = new Set(hits.filter((h) => h.lv === 'dep').map((h) => h.name));
@@ -230,9 +232,9 @@ export async function agenciesNear(env, text, sinCobertura = '') {
       if (!rows.length) continue;
       const lima = rows.filter((r) => isLimaDep(r.n.dep));
       if (lima.length) {
-        // Lima o Callao: solo si es una zona sin cobertura (va por agencia); si hay duda, el bot no ofrece nada
+        // Lima o Callao: solo si es una zona sin cobertura o si la clienta pidió Shalom; si hay duda, el bot no ofrece nada
         if (lima.length !== rows.length) return null;
-        if (!sin.some((z) => lima.some((r) => r.n.dist.includes(z) || z.includes(r.n.dist)))) return null;
+        if (!quiereAgencia && !sin.some((z) => lima.some((r) => r.n.dist.includes(z) || z.includes(r.n.dist)))) return null;
       }
       const title = (r, k) => r[k];
       // Muchas agencias (dijo solo «Piura» o «La Libertad»): primero se pregunta la provincia o el distrito

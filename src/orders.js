@@ -45,7 +45,8 @@ export const DEFAULT_CFG = {
   mayor_unit: 55,
   adelanto: 30,
   prov_modo: 'agencia', // cómo van los pedidos de provincia: agencia (Shalom con adelanto) o ce_prov
-  sin_cobertura: 'Ancón, Santa Rosa, Carabayllo, Jicamarca, Manchay, Chosica, Chaclacayo, Cieneguilla, Pachacámac, Lurín, Punta Hermosa, Punta Negra, San Bartolo, Santa María del Mar, Pucusana',
+  // Entre paréntesis = cobertura parcial: hasta ahí sí llega el motorizado (la IA pregunta en qué parte está)
+  sin_cobertura: 'Ancón, Santa Rosa, Carabayllo (después del km 22), Ate (después del Real Plaza Puruchuco), Jicamarca, Manchay, Chosica, Chaclacayo, Cieneguilla, Pachacámac, Lurín, Punta Hermosa, Punta Negra, San Bartolo, Santa María del Mar, Pucusana',
   recompra_dias: 20,
   carrito_min: 60,
 };
@@ -79,6 +80,14 @@ export function normPhone(s) {
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
+// Zonas sin cobertura: «Ate (después del Real Plaza Puruchuco)» = parcial (solo una parte va por agencia)
+export function zonasSin(text) {
+  return String(text || '').split(/\s*,\s*(?![^(]*\))/).map((x) => x.trim()).filter(Boolean).map((x) => {
+    const m = /^([^(]+?)\s*(?:\((.*)\))?$/.exec(x) || [];
+    return { name: norm(m[1] || x), parcial: !!m[2], nota: (m[2] || '').trim(), raw: x };
+  });
+}
+
 // Lima con cobertura → contraentrega; Lima sin cobertura o provincia → según la tienda
 export function modoFor({ ciudad, provincia, distrito, sede }, cfg) {
   if (sede) return 'agencia';
@@ -86,7 +95,8 @@ export function modoFor({ ciudad, provincia, distrito, sede }, cfg) {
   const isLima = !lugar || /lima|callao/.test(lugar);
   if (!isLima) return cfg.prov_modo === 'ce_prov' ? 'ce_prov' : 'agencia';
   const d = norm(distrito);
-  const sin = norm(cfg.sin_cobertura).split(/\s*,\s*/).filter(Boolean);
+  // Solo las zonas sin cobertura completa; las parciales (Ate…) dependen de la dirección: se deja en Lima
+  const sin = zonasSin(cfg.sin_cobertura).filter((z) => !z.parcial).map((z) => z.name);
   if (d && sin.some((z) => d.includes(z))) return 'agencia';
   return 'lima';
 }

@@ -793,7 +793,9 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
     // ¿Tocó una provincia/distrito de la lista anterior? Se usa esa zona tal cual
     const zona = (ag.zonas || []).find((z) => z.t.toLowerCase() === lastIn);
     if (zona) near = await agenciesIn(env, ag.nivel, zona.n, ag.dep).catch(() => null);
-    if (!near) near = await agenciesNear(env, [...ins.slice(-3), vars.destino, vars.distrito].filter(Boolean).join(' . '), cfgOf(store).sin_cobertura).catch(() => null);
+    // ¿Pidió Shalom / agencia (aunque sea de Lima)? Entonces también se le ofrecen agencias de Lima
+    const quiereAgencia = /shalom|agencia|recoj|recog/i.test([...ins.slice(-4), vars.destino].filter(Boolean).join(' '));
+    if (!near) near = await agenciesNear(env, [...ins.slice(-3), vars.destino, vars.distrito].filter(Boolean).join(' . '), cfgOf(store).sin_cobertura, quiereAgencia).catch(() => null);
     if (near && !datosOk()) {
       system += `\n\n## AGENCIA SHALOM: TODAVÍA NO\nLa clienta va por agencia (${near.lugar}). Primero pide sus datos (nombre y apellido, DNI y celular) en un solo mensaje. NO le preguntes la agencia ni la sede todavía: apenas dé sus datos, el sistema le manda la lista de agencias para tocar.`;
     } else if (near?.kind === 'agencias') {

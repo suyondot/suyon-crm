@@ -454,7 +454,7 @@ function drawConfig(body) {
         <div class="field"><label>Adelanto agencia (S/)</label><input name="adelanto" type="number" step="0.5" min="0" value="${c.adelanto}"></div>
         <div class="field"><label>Pedidos de provincia van por</label><select name="prov_modo"><option value="agencia" ${c.prov_modo !== 'ce_prov' ? 'selected' : ''}>Agencia (Shalom, con adelanto)</option><option value="ce_prov" ${c.prov_modo === 'ce_prov' ? 'selected' : ''}>Contraentrega provincia (courier)</option></select></div>
       </div>
-      <div class="field"><label>Distritos de Lima sin cobertura (van por agencia)</label><textarea name="sin_cobertura" rows="2" class="notesbox">${e(c.sin_cobertura)}</textarea></div>
+      <div class="field"><label>Distritos de Lima sin cobertura (van por agencia)</label><textarea name="sin_cobertura" rows="3" class="notesbox">${e(c.sin_cobertura)}</textarea><span class="note">Separados por coma. Si llegas solo a una parte del distrito, pon entre paréntesis desde dónde ya no llegas: «Ate (después del Real Plaza Puruchuco)». Así la IA pregunta en qué parte está antes de ofrecer contra entrega.</span></div>
       <div class="err" hidden></div><div><button class="send" type="submit">Guardar precios</button></div></form>`;
   const shopify = `<div class="card"><h3>Conectar Shopify</h3>
       <p class="sub">Cada compra de tu web entra sola a Pedidos (y si la apagas o cancelas en Shopify, aquí también). No hace falta instalar ninguna app.</p>

@@ -648,7 +648,9 @@ ${ropa ? `- Talla: "Dime tu talla y te muestro los colores que te quedan 👇"
   }
   paso('DESTINO', lima
     ? `SIN cobertura de motorizado${prov ? ' (van por Shalom)' : ''}: {sin_cobertura}.
-El resto de Lima y Callao SÍ. Si solo dice "Lima", pregunta su distrito. Si dudas: "Déjame confirmar si llegamos a tu zona 😊" y pasa a asesor.${prov ? '' : '\nSi es de provincia o de una zona sin cobertura: "Por ahora solo hacemos entregas en Lima 🙈" y pasa a asesor.'}`
+El resto de Lima y Callao SÍ. Si solo dice "Lima", pregunta su distrito.
+- Distrito con una condición entre paréntesis (ej. "Ate (después del Real Plaza Puruchuco)"): ANTES de ofrecer contra entrega pregunta en qué parte está, en una línea: "¿Tu dirección está antes o después del Real Plaza Puruchuco? 😊". Antes → LIMA CON COBERTURA. Después o no sabe → ${prov ? 'va por Shalom' : 'pasa a asesor'}.
+- Si dudas de una zona: "Déjame confirmar si llegamos a tu zona 😊" y pasa a asesor.${prov ? '\n- Si la clienta de Lima pide Shalom o agencia, respeta su elección: va por Shalom (paso PROVINCIA o LIMA SIN COBERTURA, sin el mensaje de "fuera de cobertura").' : ''}${prov ? '' : '\nSi es de provincia o de una zona sin cobertura: "Por ahora solo hacemos entregas en Lima 🙈" y pasa a asesor.'}`
     : 'Solo enviamos a provincia por agencia Shalom. Pregunta su ciudad o distrito.');
   if (lima) {
     paso('LIMA CON COBERTURA', `a) Cierre con urgencia, en un solo mensaje:
