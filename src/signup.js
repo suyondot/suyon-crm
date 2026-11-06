@@ -27,7 +27,8 @@ export async function signupInfo(env, origin) {
   if (!appId) falta.push('app');
   if (!configId) falta.push('config');
   if (!env.META_APP_SECRET) falta.push('secret');
-  return { ready: !falta.length, falta, app_id: appId, config_id: configId, version: apiVersion(env), domain: origin };
+  // La ventana de Meta usa la versión más nueva del SDK (Registro insertado v4); la API sigue con GRAPH_API
+  return { ready: !falta.length, falta, app_id: appId, config_id: configId, version: env.META_SDK_VERSION || 'v25.0', domain: origin };
 }
 
 // El código de la ventana de Meta (SDK de JavaScript) a veces exige el mismo redirect_uri con que se abrió
@@ -82,7 +83,7 @@ async function exchangeCode(env, code, { page_url, origin, dialog_redirect } = {
 // Pide los permisos con el token NUEVO de la tienda (no el de Cloudflare)
 const asStore = (token, extra = {}) => ({ ...extra, token_enc: null, token_secret: '__signup__', __token: token });
 
-export async function connectSignup(env, store, { code, phone_number_id, waba_id, coexistencia, page_url, origin, dialog_redirect }) {
+export async function connectSignup(env, store, { code, phone_number_id, waba_id, coexistencia, page_url, origin, dialog_redirect, es_event }) {
   const steps = [];
   if (!/^[\w-]{10,}$/.test(String(code || ''))) throw new HttpError(400, 'Falta el código de Meta. Vuelve a tocar el botón.');
   const token = await exchangeCode(env, String(code), { page_url, origin, dialog_redirect });
@@ -105,7 +106,7 @@ export async function connectSignup(env, store, { code, phone_number_id, waba_id
       phone = String(ph?.data?.[0]?.id || '');
     }
   }
-  if (!waba) throw new HttpError(400, 'Meta no devolvió la cuenta de WhatsApp. Vuelve a intentarlo y termina todos los pasos de la ventana.');
+  if (!waba) throw new HttpError(400, `Meta no devolvió la cuenta de WhatsApp. Vuelve a intentarlo y termina todos los pasos de la ventana.${es_event ? ` [ventana: ${es_event}]` : ''}`);
   if (!phone) throw new HttpError(400, 'La cuenta quedó conectada pero sin número. Vuelve a tocar el botón y agrega el número en la ventana de Meta.');
   const other = await env.DB.prepare('SELECT id, name FROM stores WHERE phone_number_id = ? AND id != ?').bind(phone, store.id).first();
   if (other) throw new HttpError(409, `Ese número ya está en la tienda «${other.name}».`);

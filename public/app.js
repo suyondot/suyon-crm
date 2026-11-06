@@ -2172,6 +2172,7 @@ function startSignup(st, coex) {
           coexistencia: coex || session?.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
           page_url: location.href.split(/[?#]/)[0],
           dialog_redirect: S.esRedirect?.() || '',
+          es_event: session ? `${session.event || ''}${session.data?.current_step ? ` · ${session.data.current_step}` : ''}${session.data?.error_message ? ` · ${session.data.error_message}` : ''}` : 'sin aviso de la ventana',
         });
         setMe(r);
         S.connSteps = { steps: r.steps || [], ok: r.ok, error: r.error };
@@ -2202,7 +2203,9 @@ function startSignup(st, coex) {
     config_id: es.config_id,
     response_type: 'code',
     override_default_response_type: true,
-    extras: coex ? { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' } : { setup: {}, sessionInfoVersion: '3' },
+    // Registro insertado v4: «extras» va casi vacío (las claves viejas de v2/v3 hacen que Meta salte los pasos);
+    // la coexistencia la detecta Meta sola si el número ya usa WhatsApp Business en el celular
+    extras: { setup: {} },
   });
 }
 

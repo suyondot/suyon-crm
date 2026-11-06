@@ -600,7 +600,7 @@ api.post('/stores/:id/whatsapp/signup', async (c) => {
   const st = await storeFor(c, c.req.param('id'), 'config');
   const b = await body(c);
   try {
-    const r = await connectSignup(c.env, st, { code: b.code, phone_number_id: b.phone_number_id, waba_id: b.waba_id, coexistencia: !!b.coexistencia, page_url: clip(String(b.page_url || ''), 300), dialog_redirect: clip(String(b.dialog_redirect || ''), 1500), origin: new URL(c.req.url).origin });
+    const r = await connectSignup(c.env, st, { code: b.code, phone_number_id: b.phone_number_id, waba_id: b.waba_id, coexistencia: !!b.coexistencia, page_url: clip(String(b.page_url || ''), 300), dialog_redirect: clip(String(b.dialog_redirect || ''), 1500), es_event: clip(String(b.es_event || ''), 200), origin: new URL(c.req.url).origin });
     c.set('access', undefined);
     return c.json({ ok: true, steps: r.steps, ...(await mePayload(c)) });
   } catch (e) {
