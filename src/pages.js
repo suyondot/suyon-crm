@@ -17,53 +17,70 @@ export function privacyPage(env) {
   const email = env.CONTACT_EMAIL || 'storesuyo@gmail.com';
   return shell('Política de privacidad', `
 <h1>Política de privacidad</h1>
-<small>Control Total · Última actualización: noviembre de 2026</small>
-<p>Control Total es el sistema de atención por WhatsApp que usan las tiendas de Jordan Suyon (Lima, Perú), como Porte Perú y Orión, para responder a sus clientas y gestionar sus pedidos. Esta política explica qué datos tratamos y cómo los cuidamos.</p>
+<small>Control Total · Última actualización: 6 de noviembre de 2026</small>
+<p><b>Control Total</b> es un software en línea (suscripción) para negocios que venden por WhatsApp. Lo opera <b>NUTRICHIKEN E.I.R.L.</b> (Lima, Perú). Lo usan las marcas propias del titular (como Porte Perú y Orión) y otros negocios que contratan el servicio («los negocios»). Cada negocio conecta su propio número de WhatsApp Business mediante la API oficial de WhatsApp de Meta y atiende ahí a sus clientes («los clientes finales»).</p>
+<p>Para los datos de los clientes finales, el responsable es cada negocio y Control Total actúa como encargado del tratamiento: solo los procesa para prestar el servicio a ese negocio.</p>
 <h2>Qué datos tratamos</h2>
 <ul>
-<li>Tu número de WhatsApp y el nombre de tu perfil.</li>
-<li>Los mensajes, fotos, audios, videos y documentos que intercambias con la tienda.</li>
-<li>Los datos que nos das para un pedido: nombre, celular, DNI, dirección o sede de agencia y prendas elegidas.</li>
-<li>Si nos escribes desde un anuncio, el identificador de ese anuncio.</li>
+<li><b>De los negocios:</b> nombre, correo, celular y contraseña (guardada cifrada) de cada usuario; datos de la empresa; y lo que el negocio autoriza al conectar su WhatsApp con Meta: identificadores de su cuenta de WhatsApp Business y de su número, nombre visible, perfil del negocio, plantillas de mensajes y un permiso de acceso (token) que guardamos cifrado.</li>
+<li><b>De los clientes finales:</b> número de WhatsApp y nombre del perfil; mensajes, fotos, audios, videos y documentos intercambiados con el negocio; los datos que dan para un pedido (nombre, celular, DNI, dirección o agencia, productos); y, si llegaron desde un anuncio, el identificador de ese anuncio.</li>
 </ul>
 <h2>Para qué los usamos</h2>
 <ul>
-<li>Responder tus consultas y atender tu compra.</li>
-<li>Coordinar el envío o el recojo de tu pedido.</li>
-<li>Medir qué anuncios funcionan, enviando a Meta un aviso de compra de forma segura.</li>
+<li>Mostrar y responder los chats del negocio desde una bandeja compartida por su equipo.</li>
+<li>Enviar las respuestas automáticas, seguimientos y avisos de pedido que el negocio configura.</li>
+<li>Registrar y seguir los pedidos, y generar los reportes del negocio.</li>
+<li>Si el negocio lo activa, avisar a Meta de una compra hecha por un cliente que llegó desde un anuncio (API de conversiones), para medir sus anuncios.</li>
 </ul>
-<p>Algunas respuestas pueden ser automáticas o generadas con ayuda de inteligencia artificial, siempre limitadas a los productos de la tienda. Puedes pedir hablar con una persona en cualquier momento.</p>
+<p>Algunas respuestas pueden generarse con inteligencia artificial, siempre limitadas a los productos del negocio y con la opción de hablar con una persona. No usamos los datos de un negocio para otro negocio, no los vendemos y no los usamos para publicidad propia.</p>
 <h2>Con quién los compartimos</h2>
-<p>Solo con los proveedores necesarios para operar: Meta (WhatsApp), Cloudflare (servidores y almacenamiento), OpenAI (respuestas automáticas) y la empresa de envíos que elijas (por ejemplo, Shalom). No vendemos tus datos.</p>
+<p>Solo con los proveedores necesarios para operar el servicio: Meta (WhatsApp Business Platform), Cloudflare (servidores, base de datos y almacenamiento), Anthropic y OpenAI (respuestas con IA, transcripción de notas de voz y lectura de guías de envío) y, cuando el negocio lo usa, servicios de envío (por ejemplo, la consulta de agencias y rastreo de Shalom) o su tienda Shopify. Cada uno recibe solo lo necesario para su tarea.</p>
 <h2>Cuánto tiempo los guardamos</h2>
-<p>Mientras sean necesarios para atenderte y para cumplir obligaciones legales y tributarias. Puedes pedir que los borremos antes.</p>
+<p>Mientras el negocio tenga su cuenta activa y lo necesite, y lo que exija la ley. Si un negocio desconecta su número o quita el permiso de Control Total en Meta, dejamos de recibir sus mensajes y borramos su permiso de acceso. El negocio puede pedir que borremos todos sus datos; también puede borrar desde la app la conversación o los datos de un cliente final.</p>
 <h2>Tus derechos</h2>
-<p>Según la Ley N.º 29733 de Protección de Datos Personales del Perú, puedes pedir acceso, corrección o eliminación de tus datos, u oponerte a su uso. Escríbenos a <a href="mailto:${email}">${email}</a> o pídelo por el mismo chat de WhatsApp. Ver también <a href="/eliminar-datos">cómo eliminar tus datos</a>.</p>
+<p>Según la Ley N.º 29733 de Protección de Datos Personales del Perú, puedes pedir acceso, corrección o eliminación de tus datos, u oponerte a su uso. Si eres cliente final, pídeselo al negocio por el mismo chat o escríbenos a <a href="mailto:${email}">${email}</a> y lo coordinamos con el negocio. Ver <a href="/eliminar-datos">cómo eliminar tus datos</a>.</p>
 <h2>Seguridad</h2>
-<p>Los datos viajan cifrados y solo el personal autorizado de cada tienda puede verlos, cada uno con su propio usuario.</p>
+<p>Los datos viajan cifrados (HTTPS). Los permisos de acceso de WhatsApp se guardan cifrados. Cada negocio solo ve sus propios datos, y dentro del negocio cada persona entra con su propio usuario y rol (dueño, asesora, despacho).</p>
 <h2>Contacto</h2>
-<p>Jordan Suyon · Lima, Perú · <a href="mailto:${email}">${email}</a></p>`);
+<p>NUTRICHIKEN E.I.R.L. · Control Total · Lima, Perú · <a href="mailto:${email}">${email}</a></p>
+<hr>
+<h2>Summary in English</h2>
+<p>Control Total is a subscription software (operated by NUTRICHIKEN E.I.R.L., Lima, Peru) that lets businesses manage their own WhatsApp Business number through Meta's official WhatsApp Business Platform: a shared inbox, automated replies, order tracking and reports. Businesses connect their number via Embedded Signup; we store the identifiers of their WhatsApp Business Account and phone number, their business profile, message templates and an encrypted access token. We process their customers' messages and order details only to provide the service to that business (we act as data processor). We share data only with the providers required to run the service (Meta, Cloudflare, Anthropic, OpenAI and, when the business uses them, shipping or Shopify integrations). We never sell data or use it for our own advertising. Businesses can disconnect at any time and request deletion; end customers can request deletion through the business or at <a href="mailto:${email}">${email}</a>.</p>`);
 }
 
 export function deletionPage(env) {
   const email = env.CONTACT_EMAIL || 'storesuyo@gmail.com';
   return shell('Eliminar tus datos', `
 <h1>Cómo eliminar tus datos</h1>
-<p>Para que borremos tu conversación y los datos de tus pedidos en Control Total:</p>
+<h2>Si eres cliente de una tienda</h2>
 <ol>
-<li>Escríbenos por el mismo WhatsApp de la tienda la frase <b>"Eliminar mis datos"</b>, o envía un correo a <a href="mailto:${email}">${email}</a> con tu número de celular.</li>
-<li>Confirmaremos tu identidad respondiendo a ese mismo número.</li>
-<li>Borraremos tus datos en un plazo máximo de 10 días hábiles y te avisaremos.</li>
+<li>Escríbele a la tienda, por el mismo WhatsApp, la frase <b>"Eliminar mis datos"</b>, o envía un correo a <a href="mailto:${email}">${email}</a> con tu número de celular y el nombre de la tienda.</li>
+<li>Confirmamos tu identidad respondiendo a ese mismo número.</li>
+<li>Borramos tu conversación y los datos de tus pedidos en un plazo máximo de 10 días hábiles y te avisamos.</li>
 </ol>
-<p><small>Podemos conservar solo lo que la ley exige (por ejemplo, comprobantes de venta).</small></p>`);
+<h2>Si eres un negocio que usa Control Total</h2>
+<ol>
+<li>Para desconectar tu WhatsApp: en Meta (Configuración del negocio → Integraciones → Apps conectadas) quita «Control Total», o escríbenos.</li>
+<li>Para borrar tu cuenta y todos sus datos (chats, clientes, pedidos y archivos), escríbenos a <a href="mailto:${email}">${email}</a> desde el correo de tu cuenta. Lo hacemos en un plazo máximo de 10 días hábiles.</li>
+</ol>
+<p><small>Podemos conservar solo lo que la ley exige (por ejemplo, comprobantes de pago). · English: to delete your data, email ${email} with your phone number (end customers) or from your account email (businesses); we delete it within 10 business days.</small></p>`);
 }
 
 export function termsPage(env) {
   const email = env.CONTACT_EMAIL || 'storesuyo@gmail.com';
   return shell('Términos de servicio', `
 <h1>Términos de servicio</h1>
-<p>Control Total es una herramienta interna para que las tiendas de Jordan Suyon atiendan a sus clientas por WhatsApp. Al escribirnos aceptas que usemos tus mensajes para atender tu consulta y tu pedido, según nuestra <a href="/privacidad">política de privacidad</a>.</p>
-<p>Puedes dejar de recibir mensajes en cualquier momento escribiendo "STOP" o bloqueando el número.</p>
+<small>Control Total · Última actualización: 6 de noviembre de 2026</small>
+<p><b>Control Total</b> (operado por NUTRICHIKEN E.I.R.L., Lima, Perú) es un software en línea para que los negocios atiendan a sus clientes por WhatsApp con la API oficial de Meta. Ver <a href="/planes">planes y precios</a>.</p>
+<h2>Para los negocios</h2>
+<ul>
+<li>Conectas tu propio número y tu propia cuenta de WhatsApp Business. Sigues siendo dueño de tu número y de tus datos, y puedes desconectarlo cuando quieras.</li>
+<li>Meta te cobra directamente los mensajes que no son gratis, con el método de pago de tu cuenta. Control Total cobra solo su suscripción.</li>
+<li>Debes cumplir las políticas de WhatsApp Business y de Meta: escribir solo a personas que te dieron su número, no enviar spam y ofrecer siempre la opción de hablar con una persona.</li>
+<li>Eres responsable de los datos de tus clientes y de lo que envías. Nosotros los tratamos solo para darte el servicio, según la <a href="/privacidad">política de privacidad</a>.</li>
+</ul>
+<h2>Para los clientes de las tiendas</h2>
+<p>Al escribirle a una tienda que usa Control Total, tus mensajes se usan para atender tu consulta y tu pedido. Puedes dejar de recibir mensajes escribiendo "STOP" o bloqueando el número, y pedir hablar con una persona en cualquier momento.</p>
 <p>Contacto: <a href="mailto:${email}">${email}</a></p>`);
 }
 
