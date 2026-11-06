@@ -1288,6 +1288,24 @@ try {
     bot = await as('GET', `/api/stores/${s1.store_id}/bot`);
     assert.equal(bot.flows.length, 1);
     assert.doesNotMatch(bot.settings.ia_prompt, /FORMULARIO SHALOM/);
+    // billetera de IA: regalo de la prueba, consumo, recarga y sin saldo → la IA no responde
+    me = await as('GET', '/api/me');
+    assert.ok(me.companies[0].ia_saldo > 0 && me.companies[0].ia_saldo <= 5, String(me.companies[0].ia_saldo));
+    let pl = await as('GET', `/api/companies/${co.id}/plan`);
+    assert.equal(pl.ia.usa, true);
+    assert.equal(pl.ia.recargas.at(-1).method, 'regalo');
+    const bw = await call('GET', '/api/admin/billetera');
+    assert.ok(bw.empresas.some((x) => x.id === co.id));
+    assert.equal((await call('GET', '/api/me')).companies[0].ia_saldo, null, 'las empresas de Jordan no usan billetera');
+    await call('POST', `/api/admin/empresas/${co.id}`, { action: 'recarga', amount: -100, method: 'ajuste' });
+    sm = await as('POST', `/api/stores/${s1.store_id}/sim/send`, { text: 'quiero 2' });
+    assert.ok(!sm.messages.slice(-3).some((m) => m.sender === 'ia' && m.direction === 'out'), 'sin saldo no responde la IA');
+    assert.ok(sm.messages.some((m) => m.sender === 'sys' && /saldo de IA/.test(m.body || '')), JSON.stringify(sm.messages.slice(-3)));
+    await call('POST', `/api/admin/empresas/${co.id}`, { action: 'recarga', amount: 120, method: 'yape' });
+    pl = await as('GET', `/api/companies/${co.id}/plan`);
+    assert.ok(pl.ia.saldo > 0);
+    assert.equal((await call('PATCH', '/api/admin/billetera', { margen: 40 })).wallet.margen, 40);
+    assert.equal((await fetch(BASE + '/api/correo/clave', { method: 'POST', headers: { 'x-crm': '1', 'content-type': 'application/json' }, body: '{"email":"ana@alumna.pe"}' })).status, 400, 'sin correo configurado');
     assert.equal((await as('POST', `/api/stores/${s1.store_id}/asistente/listo`)).ok, true);
     me = await as('GET', '/api/me');
     assert.equal(me.stores[0].setup, 0);

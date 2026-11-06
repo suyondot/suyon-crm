@@ -17,6 +17,7 @@ import carritosApi from './api-carritos.js';
 import { fixSpelling } from './ortografia.js';
 import { loadSaldo } from './saldo.js';
 import { loadPlan } from './billing.js';
+import { mailReady, sendCode, checkCode, sendReset } from './correo.js';
 import { signupInfo, connectSignup } from './signup.js';
 
 const api = new Hono();
@@ -61,7 +62,7 @@ async function mePayload(c) {
   const iaSaldo = a.user.is_admin ? await loadSaldo(c.env).catch(() => null) : null;
   const soporte = (await loadPlan(c.env).catch(() => null))?.contact || null;
   return {
-    user: { id: a.user.id, name: a.user.name, email: a.user.email, is_admin: !!a.user.is_admin },
+    user: { id: a.user.id, name: a.user.name, email: a.user.email, is_admin: !!a.user.is_admin, email_ok: a.user.email_ok !== 0 },
     demos_nuevas: demos,
     ia_saldo: iaSaldo,
     soporte,
@@ -80,9 +81,39 @@ api.get('/state', async (c) => {
   const u = await currentUser(c);
   if (!u) {
     const p = await loadPlan(c.env);
-    return c.json({ login: true, signup_open: !!p.signup_open, trial_days: p.trial_days, soporte: p.contact || null });
+    return c.json({ login: true, signup_open: !!p.signup_open, trial_days: p.trial_days, soporte: p.contact || null, correo: mailReady(c.env) });
   }
   return c.json(await mePayload(c));
+});
+
+/* ---------- Correo: confirmar el correo y «olvidé mi contraseña» ---------- */
+api.post('/correo/codigo', async (c) => {
+  const u = await requireUser(c);
+  if (!mailReady(c.env)) fail(400, 'El correo no está configurado.');
+  const full = await c.env.DB.prepare('SELECT id, email, name, email_code_at FROM users WHERE id = ?').bind(u.id).first();
+  try {
+    await sendCode(c.env, full);
+  } catch (e) {
+    if (e instanceof HttpError) throw e;
+    fail(502, e.message);
+  }
+  return c.json({ ok: true });
+});
+api.post('/correo/verificar', async (c) => {
+  const u = await requireUser(c);
+  await checkCode(c.env, u.id, (await body(c)).code);
+  c.set('access', undefined);
+  return c.json(await mePayload(c));
+});
+api.post('/correo/clave', async (c) => {
+  if (!mailReady(c.env)) fail(400, 'Pide tu enlace por WhatsApp.');
+  const origin = String(c.env.PUBLIC_URL || new URL(c.req.url).origin).replace(/\/+$/, '');
+  try {
+    await sendReset(c.env, origin, (await body(c)).email);
+  } catch (e) {
+    console.error('correo', e);
+  }
+  return c.json({ ok: true });
 });
 
 // Primera cuenta (dueño y administrador). Solo funciona si no hay usuarios.

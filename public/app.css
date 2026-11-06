@@ -1405,3 +1405,14 @@ body[data-rubro="simple"] .pit{grid-template-columns:minmax(0,1fr) 64px auto}
 /* Logo nuevo (laptop + prenda + crecimiento) */
 .brand-mark,.ab-mark,.side .brand-mark,.asis-logo{background:#F3E6D9!important;overflow:hidden;padding:0}
 .brand-mark img,.ab-mark img,.asis-logo img{width:100%;height:100%;display:block;object-fit:cover}
+/* Billetera IA */
+.pnstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:14px 0}
+.pnstats .card{display:flex;flex-direction:column;gap:4px}
+.pnstats b{font-size:22px}
+.iacard.low{border-color:#e2b23c}
+.iarow{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.iarow>div{display:flex;flex-direction:column;gap:2px}
+.iarow b{font-size:17px}
+.iarow .iabig{font-size:26px}
+.iapill{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:5px 11px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.iapill.low{background:#fde8e8;border-color:#e57373;color:#8a1c1c}

@@ -3,6 +3,7 @@
 // Si la IA tarda, falla o cambia alguna palabra, se manda tal cual lo escribió la asesora.
 import { now, localDay } from './util.js';
 import { addSpend } from './saldo.js';
+import { iaAllowed } from './billetera.js';
 
 const MODEL = 'claude-haiku-5-5';
 const PROMPT = `Corrige la ortografía de este mensaje de WhatsApp en español peruano que una vendedora le escribe a una clienta.
@@ -18,6 +19,7 @@ export async function fixSpelling(env, store, text) {
   if (!key || !text || text.length < 3 || text.length > 1500) return text;
   if (/https?:\/\/|www\.|@\w|\{|\}/i.test(text)) return text; // enlaces, correos o variables: no se tocan
   if (!/[a-záéíóúñ]{2}/i.test(text)) return text; // solo emojis o números
+  if (!(await iaAllowed(env, store.id)).ok) return text; // sin saldo de IA: va tal cual
   let out = '';
   try {
     const ctl = new AbortController();
@@ -38,7 +40,7 @@ export async function fixSpelling(env, store, text) {
       `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 1, ?, ?, ?)
        ON CONFLICT (store_id, day) DO UPDATE SET calls = calls + 1, in_tokens = in_tokens + excluded.in_tokens, out_tokens = out_tokens + excluded.out_tokens, cost = cost + excluded.cost`
     ).bind(store.id, localDay(now(), store.timezone || 'America/Lima'), inTok, outTok, (inTok * 0.1 + outTok * 0.5) / 1e6).run().catch(() => {});
-    await addSpend(env, 'anthropic', (inTok * 0.1 + outTok * 0.5) / 1e6, store.timezone);
+    await addSpend(env, 'anthropic', (inTok * 0.1 + outTok * 0.5) / 1e6, store.timezone, store.id);
   } catch {
     return text;
   }

@@ -44,6 +44,23 @@ function stateText(p) {
   return `Tu plan venció el ${day(p.until)}. Tus chats y pedidos siguen guardados: renueva para seguir.`;
 }
 
+// Saldo de IA del alumno (billetera)
+function iaBox(ia) {
+  const sol = (n) => `S/ ${Number(n || 0).toFixed(2)}`;
+  const n = String(ia.contact || '').replace(/\D/g, '');
+  const wa = n ? `https://wa.me/${n}?text=${encodeURIComponent(`Hola, quiero recargar S/ ${ia.minimo} de saldo de IA en Control Total. Te mando la captura del pago.`)}` : null;
+  return `<div class="card iacard ${ia.bajo ? 'low' : ''}"><h3>🤖 Saldo de IA</h3>
+    <div class="iarow"><div><span class="note">Te queda</span><b class="iabig">${sol(ia.saldo)}</b></div>
+      <div><span class="note">Gastado en 30 días</span><b>${sol(ia.gastado_30)}</b><small class="note">${ia.respuestas_30} respuestas de la IA</small></div>
+      <div><span class="note">Te alcanza para</span><b>${ia.dias == null ? '—' : `${ia.dias} ${ia.dias === 1 ? 'día' : 'días'}`}</b></div></div>
+    ${ia.saldo <= 0 ? '<div class="err" style="margin:10px 0 0">Sin saldo: tu IA no está respondiendo y los chats pasan a tu asesora. Recarga para que vuelva a atender sola.</div>' : ia.bajo ? '<div class="warnbox" style="margin:10px 0 0">Te queda poco saldo. Recarga para que tu IA no se detenga.</div>' : ''}
+    <p class="sub" style="margin:10px 0 6px">Con tu saldo pagas lo que gasta la IA: las respuestas a tus clientas, pasar notas de voz a texto, corregir la ortografía de tu equipo y leer fotos de guías. Recarga desde ${sol(ia.minimo)}.</p>
+    ${ia.pay_info ? `<p style="white-space:pre-line;margin:0 0 8px">${e(ia.pay_info)}</p>` : ''}
+    ${wa ? `<a class="send" href="${e(wa)}" target="_blank" rel="noopener" style="display:inline-flex">Recargar saldo de IA</a>` : ''}
+    ${ia.recargas?.length ? `<details style="margin-top:10px"><summary class="note" style="cursor:pointer">Recargas</summary><table class="ptable"><tbody>${ia.recargas.map((x) => `<tr><td>${day(x.created_at)}</td><td>${e(x.method === 'regalo' ? 'Regalo de la prueba' : x.method || '')}</td><td class="r mono">${sol(x.amount)}</td></tr>`).join('')}</tbody></table></details>` : ''}
+  </div>`;
+}
+
 // Configuración → Mi plan (dueño)
 export async function renderMiPlan(body, companyId) {
   body.innerHTML = '<div class="empty" style="padding:40px"><span class="spin"></span></div>';
@@ -58,7 +75,8 @@ export async function renderMiPlan(body, companyId) {
   body.innerHTML = `<div class="ph"><div><h2>Mi plan</h2><p>${stateText(p)}</p></div><span class="grow"></span>${pill(p.state)}</div>
     <div class="grid" style="gap:14px">
       <div class="card"><h3>Lo que pagas al mes</h3><p class="sub">Tienes ${p.usage.numbers} ${p.usage.numbers === 1 ? 'número' : 'números'} de WhatsApp y ${p.usage.users} ${p.usage.users === 1 ? 'trabajadora' : 'trabajadoras'} (sin contar al dueño).</p>${priceBox(p)}
-        <p class="note" style="margin:8px 0 0">Los mensajes que cobra Meta y lo que gasta la IA se pagan aparte, con tu tarjeta en Meta y tu clave de IA.</p></div>
+        <p class="note" style="margin:8px 0 0">Los mensajes que cobra Meta se pagan aparte, con tu tarjeta en tu cuenta de Meta. La IA se paga con tu saldo de IA.</p></div>
+      ${r.ia?.usa ? iaBox(r.ia) : ''}
       ${p.state !== 'free' ? `<div class="card">${payBox(p)}</div>` : ''}
       ${r.pagos.length ? `<div class="card"><h3>Pagos</h3><table class="ptable"><thead><tr><th>Fecha</th><th>Meses</th><th>Medio</th><th class="r">Monto</th><th>Cubre hasta</th></tr></thead><tbody>${r.pagos.map((x) => `<tr><td>${day(x.created_at)}</td><td>${x.months}</td><td>${e(x.method || '')}</td><td class="r mono">${money(x.amount, x.currency)}</td><td>${day(x.paid_to)}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </div>`;
@@ -95,7 +113,7 @@ export async function renderPanel(content) {
   draw(content);
 }
 
-const tabs = () => `<div class="seg pntabs" role="tablist">${[['empresas', 'Empresas'], ['demos', `Demos${PN.demos?.nuevas ? ` <span class="pnbadge">${PN.demos.nuevas}</span>` : ''}`], ['horarios', 'Horarios de demo'], ['pagina', 'Página pública'], ['refs', 'Referencias'], ['shalom', 'Shalom']].map(([k, l]) => `<button data-ptab="${k}" aria-pressed="${PN.tab === k}">${l}</button>`).join('')}</div>`;
+const tabs = () => `<div class="seg pntabs" role="tablist">${[['empresas', 'Empresas'], ['demos', `Demos${PN.demos?.nuevas ? ` <span class="pnbadge">${PN.demos.nuevas}</span>` : ''}`], ['horarios', 'Horarios de demo'], ['billetera', 'Billetera IA'], ['pagina', 'Página pública'], ['refs', 'Referencias'], ['shalom', 'Shalom']].map(([k, l]) => `<button data-ptab="${k}" aria-pressed="${PN.tab === k}">${l}</button>`).join('')}</div>`;
 
 function draw(content) {
   if (PN.tab === 'demos') return drawDemos(content);
@@ -103,6 +121,7 @@ function draw(content) {
   if (PN.tab === 'pagina') return drawPagina(content);
   if (PN.tab === 'shalom') return drawShalom(content);
   if (PN.tab === 'refs') return drawRefs(content);
+  if (PN.tab === 'billetera') return drawBilletera(content);
   const d = PN.data;
   const p = d.plan;
   const rs = d.resumen;
@@ -623,6 +642,74 @@ async function drawRefs(content) {
       }
     } catch (er) {
       H.toast(er.message, 5000);
+    }
+  };
+}
+
+/* ---------- Billetera IA: saldo de IA de cada alumno, recargas y margen ---------- */
+async function drawBilletera(content) {
+  let B;
+  try {
+    B = await H.api('GET', '/admin/billetera');
+  } catch (er) {
+    H.toast(er.message, 5000);
+    return;
+  }
+  const w = B.wallet;
+  const sol = (n) => `S/ ${Number(n || 0).toFixed(2)}`;
+  content.innerHTML = `<div class="page pnl">
+    <div class="ph"><div><h2>Panel Suyon</h2><p>La IA de tus alumnos usa tu cuenta de Claude/OpenAI. Cada alumno te recarga saldo y el sistema le descuenta lo que gasta, con tu margen.</p></div></div>
+    ${tabs()}
+    <div class="pnstats">
+      <div class="card"><span class="note">Recargado por alumnos</span><b>${sol(B.resumen.recargado)}</b></div>
+      <div class="card"><span class="note">Gastado por alumnos</span><b>${sol(B.resumen.gastado)}</b></div>
+      <div class="card"><span class="note">Tu ganancia (margen)</span><b>${sol(B.resumen.ganancia)}</b></div>
+    </div>
+    <form class="card" id="bwf"><h3>Cómo se cobra</h3>
+      <p class="sub">Costo de cada respuesta = precio del proveedor en US$ + 18 % de impuesto × tipo de cambio × (1 + tu margen). Ejemplo hoy: una respuesta típica de Claude Haiku cuesta ~US$0.001 → al alumno le cobras ~${sol(0.001 * 1.18 * w.tc * (1 + w.margen / 100))}.</p>
+      <div class="fields3">
+        <div class="field"><label>Tu margen (%)</label><input name="margen" type="number" min="0" max="500" value="${w.margen}"></div>
+        <div class="field"><label>Tipo de cambio (S/ por US$)</label><input name="tc" type="number" step="0.01" min="1" value="${w.tc}"></div>
+        <div class="field"><label>Saldo de regalo al registrarse (S/)</label><input name="regalo" type="number" step="0.5" min="0" value="${w.regalo}"></div>
+        <div class="field"><label>Avisar cuando queden (S/)</label><input name="aviso" type="number" step="0.5" min="0" value="${w.aviso}"></div>
+        <div class="field"><label>Recarga mínima (S/)</label><input name="minimo" type="number" step="1" min="1" value="${w.minimo}"></div>
+      </div>
+      <div class="err" hidden></div><div><button class="send" type="submit">Guardar</button></div></form>
+    <div class="card"><h3>Saldo de cada alumno</h3>
+      ${B.empresas.length ? `<table class="ptable"><thead><tr><th>Empresa</th><th class="r">Saldo</th><th class="r">Gastado</th><th class="r">Recargado</th><th></th></tr></thead><tbody>
+        ${B.empresas.map((x) => `<tr data-bw="${x.id}"><td><b>${e(x.name)}</b>${x.contact_phone ? `<small class="mono">${e(x.contact_phone)}</small>` : ''}</td>
+          <td class="r mono" style="${x.ia_saldo <= w.aviso ? 'color:var(--bad);font-weight:700' : ''}">${sol(x.ia_saldo)}</td><td class="r mono">${sol(x.ia_gastado)}</td><td class="r mono">${sol(x.recargado)}</td>
+          <td class="r"><button class="iconbtn sm" data-bwr>Registrar recarga</button></td></tr>`).join('')}</tbody></table>` : '<p class="note">Todavía no hay alumnos.</p>'}
+      <p class="note" style="margin:8px 0 0">Cuando un alumno te yapea, toca «Registrar recarga» y pon el monto: el saldo sube al instante. Pronto: recarga con tarjeta aquí mismo.</p></div>
+  </div>`;
+  const root = content.querySelector('.pnl');
+  root.onclick = async (ev) => {
+    if (tabClick(ev, content)) return;
+    const b = ev.target.closest('[data-bwr]');
+    if (!b) return;
+    const id = Number(b.closest('[data-bw]').dataset.bw);
+    const co = B.empresas.find((x) => x.id === id);
+    const amt = prompt(`¿Cuánto recargó ${co.name}? (S/)`, String(w.minimo));
+    if (!amt) return;
+    try {
+      await H.api('POST', `/admin/empresas/${id}`, { action: 'recarga', amount: Number(String(amt).replace(',', '.')), method: 'yape' });
+      H.toast('Recarga registrada');
+      drawBilletera(content);
+    } catch (er) {
+      H.toast(er.message, 5000);
+    }
+  };
+  const f = root.querySelector('#bwf');
+  f.onsubmit = async (ev) => {
+    ev.preventDefault();
+    try {
+      await H.api('PATCH', '/admin/billetera', Object.fromEntries(new FormData(f)));
+      H.toast('Guardado');
+      drawBilletera(content);
+    } catch (er) {
+      const x = f.querySelector('.err');
+      x.textContent = er.message;
+      x.hidden = false;
     }
   };
 }

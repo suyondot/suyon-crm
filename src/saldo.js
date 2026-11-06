@@ -2,13 +2,15 @@
 // Ni Anthropic ni OpenAI dan el saldo por API: el dueño escribe el saldo que ve en su consola
 // y desde ahí se resta lo que el sistema va gastando (mismo precio que cobra el proveedor, sin el 18 %).
 import { now, localDay } from './util.js';
+import { chargeIA } from './billetera.js';
 
 const KEY = 'ia_saldo';
 export const PROVIDERS = { anthropic: 'Claude', openai: 'OpenAI' };
 
 // Suma gasto por proveedor y día (además de ia_usage por tienda)
-export async function addSpend(env, provider, cost, tz = 'America/Lima') {
+export async function addSpend(env, provider, cost, tz = 'America/Lima', storeId = null) {
   if (!PROVIDERS[provider] || !(cost > 0)) return;
+  if (storeId) await chargeIA(env, storeId, cost).catch(() => {}); // billetera del alumno (las tiendas de Jordan no)
   await env.DB.prepare(
     `INSERT INTO ia_spend (provider, day, calls, cost) VALUES (?, ?, 1, ?)
      ON CONFLICT (provider, day) DO UPDATE SET calls = calls + 1, cost = cost + excluded.cost`

@@ -33,7 +33,7 @@ export async function currentUser(c) {
   if (token) {
     const id = await sha256hex(token);
     user = await c.env.DB.prepare(
-      `SELECT u.id, u.email, u.name, u.is_admin, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id
+      `SELECT u.id, u.email, u.name, u.is_admin, u.email_ok, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.id = ? AND s.expires_at > ? AND u.disabled = 0`
     ).bind(id, now()).first();
     // Renueva la sesión si le quedan menos de 15 días
@@ -62,13 +62,13 @@ export async function loadAccess(c) {
   const user = await requireUser(c);
   const db = c.env.DB;
   const { results: mem } = await db.prepare(
-    `SELECT m.company_id, m.role, m.all_stores, co.name AS company_name, co.plan_status, co.trial_ends_at, co.paid_until FROM memberships m
+    `SELECT m.company_id, m.role, m.all_stores, co.name AS company_name, co.plan_status, co.trial_ends_at, co.paid_until, co.ia_saldo FROM memberships m
      JOIN companies co ON co.id = m.company_id WHERE m.user_id = ? ORDER BY co.id`
   ).bind(user.id).all();
   const plan = mem.some((m) => m.plan_status && m.plan_status !== 'free') ? await loadPlan(c.env) : DEFAULT_PLAN;
   const companies = mem.map((m) => {
     const b = statusOf(m, plan);
-    return { id: m.company_id, name: m.company_name, role: m.role, plan: { state: b.state, blocked: b.blocked && !user.is_admin, days_left: b.days_left, until: b.until } };
+    return { id: m.company_id, name: m.company_name, role: m.role, plan: { state: b.state, blocked: b.blocked && !user.is_admin, days_left: b.days_left, until: b.until }, ia_saldo: m.role === 'dueno' && m.plan_status && m.plan_status !== 'free' ? Math.round((Number(m.ia_saldo) || 0) * 100) / 100 : null };
   });
   const blockedCo = new Set(companies.filter((x) => x.plan.blocked).map((x) => x.id));
   let stores = [];

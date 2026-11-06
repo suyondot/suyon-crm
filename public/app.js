@@ -373,12 +373,41 @@ function showLogin(msg, st) {
     };
 }
 
+// Confirmar el correo con el código de 6 números (solo si el correo está configurado)
+function showVerify(me) {
+  authShell(`<div class="auth-h"><h1>Confirma tu correo</h1><p>Te mandamos un código de 6 números a <b>${esc(me.user.email)}</b>. Revisa también la carpeta de spam o promociones.</p></div>
+    <form id="f" class="grid" style="gap:12px">
+      <div class="field"><label for="code">Código</label><input id="code" name="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required class="mono" style="font-size:22px;letter-spacing:6px;text-align:center"></div>
+      <div class="err" hidden></div>
+      <button class="send" type="submit">Confirmar</button>
+    </form>
+    <button class="link" id="resend">Mandarme otro código</button>
+    <button class="link" id="out">Salir</button>`);
+  $('#code').focus();
+  formHandler($('#f'), async (d) => startApp(await api('POST', '/correo/verificar', d)));
+  $('#resend').onclick = async () => {
+    try {
+      await api('POST', '/correo/codigo');
+      toast('Te mandamos otro código');
+    } catch (e) {
+      toast(e.message, 5000);
+    }
+  };
+  $('#out').onclick = async () => {
+    await api('POST', '/logout').catch(() => {});
+    location.href = '/entrar';
+  };
+}
+
 function showRecover(st) {
   const n = String(st?.soporte || '').replace(/\D/g, '');
   const wa = n ? `<a class="send" style="text-align:center;text-decoration:none" href="https://wa.me/${n}?text=${encodeURIComponent('Hola, olvidé mi contraseña de Control Total. Mi correo es: ')}" target="_blank" rel="noopener">Pedir mi enlace por WhatsApp</a>` : '';
   authShell(`<h1>Recuperar acceso</h1>
-    <p>Si eres <b>dueño de una tienda</b>: escríbenos por WhatsApp con tu correo y te mandamos un enlace para poner una contraseña nueva.</p>
-    ${wa}
+    ${st?.correo ? `<form id="rf" class="grid" style="gap:12px"><p style="margin:0">Escribe tu correo y te mandamos un enlace para poner una contraseña nueva.</p>
+      <div class="field"><label for="rmail">Tu correo</label><input id="rmail" name="email" type="email" required autocomplete="email"></div>
+      <div class="err" hidden></div><button class="send" type="submit">Mandarme el enlace</button></form>
+      <p class="note">¿No te llega? ${n ? `<a href="https://wa.me/${n}" target="_blank" rel="noopener">Escríbenos por WhatsApp</a>` : 'Escríbenos'}.</p>` : `<p>Si eres <b>dueño de una tienda</b>: escríbenos por WhatsApp con tu correo y te mandamos un enlace para poner una contraseña nueva.</p>
+    ${wa}`}
     <p>Si eres <b>asesora o despacho</b>: pide al dueño de tu tienda que te genere el enlace (Configuración → Equipo).</p>
     <details><summary class="note" style="cursor:pointer">Soy el administrador de Control Total</summary>
     <form id="f" class="grid" style="gap:12px;margin-top:10px">
@@ -390,6 +419,11 @@ function showRecover(st) {
     </form></details>
     <button class="link" id="back">← Volver</button>`);
   formHandler($('#f'), async (d) => startApp(await api('POST', '/recover', d)));
+  const rf = $('#rf');
+  if (rf) formHandler(rf, async (d) => {
+    await api('POST', '/correo/clave', d);
+    rf.innerHTML = '<div class="okmsg">Listo: si ese correo tiene cuenta, te llegó un enlace. Revisa también spam o promociones.</div>';
+  });
   $('#back').onclick = () => showLogin(null, st);
 }
 
@@ -456,6 +490,7 @@ function loggedOut() {
 /* =================== App principal =================== */
 function startApp(me) {
   if (location.pathname === '/entrar') history.replaceState(null, '', '/');
+  if (me?.user && me.user.email_ok === false) return showVerify(me);
   document.body.classList.remove('auth-mode');
   root().className = 'app';
   setMe(me);
@@ -617,6 +652,7 @@ function render() {
       <span class="grow"></span>
       ${S.me.user.is_admin && st ? `<button class="viewpill ${S.preview ? 'on' : ''}" data-act="vercomo" title="Ver la app como la ve un alumno, sin cambiar tu tienda">👁 ${S.preview ? `${S.preview.canal === 'shopify' ? 'Shopify' : 'Mensajes'} · ${S.preview.rubro === 'simple' ? 'Sin variantes' : 'Ropa'}` : 'Ver como'}</button>` : ''}
       ${S.me.user.is_admin && S.me.ia_saldo ? saldoPill(S.me.ia_saldo) : ''}
+      ${co?.role === 'dueno' && co.ia_saldo != null ? `<button class="iapill ${co.ia_saldo <= 3 ? 'low' : ''}" data-nav="config" data-tab="miplan" title="Saldo de IA">🤖 IA S/ ${Number(co.ia_saldo).toFixed(2)}</button>` : ''}
       ${co?.role === 'dueno' && co.plan && ['trial', 'grace'].includes(co.plan.state) ? `<button class="planpill ${co.plan.state === 'grace' || co.plan.days_left <= 3 ? 'warn' : ''}" data-nav="config" data-tab="miplan">${co.plan.state === 'trial' ? `Prueba gratis · ${co.plan.days_left} ${co.plan.days_left === 1 ? 'día' : 'días'}` : 'Tu plan venció · renovar'}</button>` : ''}
     </header>
     ${S.preview && S.me.user.is_admin ? `<div class="viewband">👁 Vista previa: <b>${S.preview.canal === 'shopify' ? 'vende por Shopify' : 'vende por mensajes'} · ${S.preview.rubro === 'simple' ? 'producto sin variantes' : 'ropa'}</b>. Tu tienda real no cambia.<span class="grow"></span><button data-act="vercomo-asis">Ver el asistente de inicio</button><button data-act="vercomo-off">Salir</button></div>` : ''}

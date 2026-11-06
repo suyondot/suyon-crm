@@ -553,6 +553,28 @@ export const MIGRATIONS = [
     name: 'cuándo vence el permiso de Meta de la tienda (Conectar con un clic)',
     sql: [`ALTER TABLE stores ADD COLUMN token_exp INTEGER`],
   },
+  {
+    id: 22,
+    name: 'billetera de IA por empresa (saldo en soles) y verificación de correo',
+    sql: [
+      `ALTER TABLE companies ADD COLUMN ia_saldo REAL NOT NULL DEFAULT 0`,
+      `ALTER TABLE companies ADD COLUMN ia_gastado REAL NOT NULL DEFAULT 0`,
+      `CREATE TABLE ia_recargas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        amount REAL NOT NULL,
+        method TEXT,
+        note TEXT,
+        created_by INTEGER,
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX ia_recargas_co ON ia_recargas (company_id, created_at)`,
+      `ALTER TABLE users ADD COLUMN email_ok INTEGER NOT NULL DEFAULT 1`,
+      `ALTER TABLE users ADD COLUMN email_code TEXT`,
+      `ALTER TABLE users ADD COLUMN email_code_at INTEGER`,
+      `ALTER TABLE users ADD COLUMN email_tries INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 let ready = null;

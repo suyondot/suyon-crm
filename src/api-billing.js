@@ -6,6 +6,8 @@ import { loadPlan, savePlan, billingOf, statusOf, addPayment, usageOf, priceOf, 
 import { loadLanding, setVideo, removeVideo, addTestimonio, removeTestimonio } from './landing-data.js';
 import { loadShalom, saveShalom, shalomGet, syncAgencies, findAgencies, agencyStats, track, baseOf } from './shalom.js';
 import { loadSaldo, setSaldo } from './saldo.js';
+import { loadWallet, saveWallet, addRecarga, walletOf } from './billetera.js';
+import { mailReady, sendCode } from './correo.js';
 import { loadAgenda, saveAgenda, freeSlots, bookDemo, dayLabel, timeLabel, gcalLink, DEMO_STATUS } from './agenda.js';
 
 const r = new Hono();
@@ -55,6 +57,9 @@ r.post('/registro', async (c) => {
   const co = await db.prepare("INSERT INTO companies (name, created_at, plan_status, trial_ends_at, owner_user_id, contact_phone, created_via) VALUES (?, ?, 'trial', ?, ?, ?, 'registro')")
     .bind(company, t, t + p.trial_days * DAY, userId, phone).run();
   await db.prepare("INSERT INTO memberships (user_id, company_id, role, all_stores, created_at) VALUES (?, ?, 'dueno', 1, ?)").bind(userId, co.meta.last_row_id, t).run();
+  // Saldo de IA de regalo para la prueba (lo fija Jordan en Panel → Billetera IA)
+  const w = await loadWallet(c.env);
+  if (w.regalo > 0) await addRecarga(c.env, co.meta.last_row_id, { amount: w.regalo, method: 'regalo', note: 'Saldo de regalo de la prueba' });
   // Su primera tienda nace con lo que eligió: cómo vende y qué vende. Al entrar le sale el asistente.
   await insertStore(db, co.meta.last_row_id, {
     name: company,
@@ -62,6 +67,12 @@ r.post('/registro', async (c) => {
     rubro: RUBROS.includes(b.rubro) ? b.rubro : 'ropa',
   });
   await createSession(c, userId);
+  // Con correo configurado: primero confirma su correo con un código de 6 números
+  if (mailReady(c.env)) {
+    await db.prepare('UPDATE users SET email_ok = 0 WHERE id = ?').bind(userId).run();
+    await sendCode(c.env, { id: userId, email, name }).catch((e) => console.error('codigo', e));
+    return c.json({ ok: true, verificar: true });
+  }
   return c.json({ ok: true });
 });
 
@@ -70,7 +81,28 @@ r.get('/companies/:id/plan', async (c) => {
   const co = await companyFor(c, c.req.param('id'), 'config', { allowBlocked: true });
   const row = await c.env.DB.prepare('SELECT * FROM companies WHERE id = ?').bind(co.id).first();
   const { results: pagos } = await c.env.DB.prepare('SELECT amount, currency, months, method, paid_from, paid_to, created_at FROM payments WHERE company_id = ? ORDER BY id DESC LIMIT 12').bind(co.id).all();
-  return c.json({ plan: await billingOf(c.env, row), pagos });
+  const p = await loadPlan(c.env);
+  return c.json({ plan: await billingOf(c.env, row), pagos, ia: { ...(await walletOf(c.env, co.id)), pay_info: p.pay_info || null, contact: p.contact || null } });
+});
+
+/* ---------- Panel Suyon → Billetera IA ---------- */
+r.get('/admin/billetera', async (c) => {
+  await requireAdmin(c);
+  const { results } = await c.env.DB.prepare(
+    `SELECT co.id, co.name, co.plan_status, co.ia_saldo, co.ia_gastado, co.contact_phone,
+       (SELECT COALESCE(SUM(amount), 0) FROM ia_recargas r WHERE r.company_id = co.id AND r.method != 'regalo') AS recargado
+     FROM companies co WHERE co.plan_status IS NOT NULL AND co.plan_status != 'free' ORDER BY co.ia_saldo ASC LIMIT 500`
+  ).all();
+  const w = await loadWallet(c.env);
+  const tot = results.reduce((a, x) => ({ recargado: a.recargado + (x.recargado || 0), gastado: a.gastado + (x.ia_gastado || 0) }), { recargado: 0, gastado: 0 });
+  // Lo que ganó Jordan = lo cobrado a los alumnos − lo que costó (sin su margen)
+  const costo = tot.gastado / (1 + w.margen / 100);
+  return c.json({ wallet: w, empresas: results.map((x) => ({ ...x, ia_saldo: Math.round(x.ia_saldo * 100) / 100, ia_gastado: Math.round(x.ia_gastado * 100) / 100 })),
+    resumen: { recargado: Math.round(tot.recargado * 100) / 100, gastado: Math.round(tot.gastado * 100) / 100, ganancia: Math.round((tot.gastado - costo) * 100) / 100 } });
+});
+r.patch('/admin/billetera', async (c) => {
+  await requireAdmin(c);
+  return c.json({ wallet: await saveWallet(c.env, await body(c)) });
 });
 
 /* ---------- Panel Suyon (administrador) ---------- */
@@ -159,6 +191,14 @@ r.post('/admin/empresas/:id', async (c) => {
     case 'nota':
       await db.prepare('UPDATE companies SET plan_note = ? WHERE id = ?').bind(String(b.note || '').slice(0, 500) || null, co.id).run();
       break;
+    case 'recarga': {
+      try {
+        await addRecarga(c.env, co.id, { amount: b.amount, method: b.method, note: b.note, userId: admin.id });
+      } catch (er) {
+        fail(400, er.message);
+      }
+      break;
+    }
     case 'clave': {
       // El alumno olvidó su contraseña: enlace para que ponga una nueva (vale 2 días, se usa una vez)
       const owner = await db.prepare("SELECT u.id, u.email, u.name FROM users u WHERE u.id = COALESCE(?, (SELECT m.user_id FROM memberships m WHERE m.company_id = ? AND m.role = 'dueno' ORDER BY m.created_at LIMIT 1))")

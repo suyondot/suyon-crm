@@ -1,6 +1,7 @@
 // Notas de voz → texto (OpenAI). La asesora lee el texto debajo del audio y el bot / la IA lo entienden.
 import { now, clip, localDay } from './util.js';
 import { addSpend } from './saldo.js';
+import { iaAllowed } from './billetera.js';
 
 export const VOZ_MODEL = 'gpt-4o-mini-transcribe';
 export const VOZ_PRICE_MIN = 0.003; // US$ por minuto (aprox.)
@@ -10,6 +11,7 @@ export const VOZ_SECRET = 'OPENAI_API_KEY';
 export async function transcribe(env, store, msgId, { notify } = {}) {
   const key = env[VOZ_SECRET];
   if (!key) return null;
+  if (!(await iaAllowed(env, store.id)).ok) return null; // sin saldo de IA: el audio queda sin texto
   const m = await env.DB.prepare('SELECT id, chat_id, media_key, media_mime, media_size FROM messages WHERE id = ?').bind(msgId).first();
   if (!m?.media_key) return null;
   try {
@@ -36,7 +38,7 @@ export async function transcribe(env, store, msgId, { notify } = {}) {
       `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 0, 0, 0, ?)
        ON CONFLICT (store_id, day) DO UPDATE SET cost = cost + excluded.cost`
     ).bind(store.id, localDay(now(), store.timezone), min * VOZ_PRICE_MIN).run();
-    await addSpend(env, 'openai', min * VOZ_PRICE_MIN, store.timezone);
+    await addSpend(env, 'openai', min * VOZ_PRICE_MIN, store.timezone, store.id);
     await env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE id = ?').bind(store.id).run();
     return text;
   } catch (e) {

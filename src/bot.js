@@ -1,8 +1,9 @@
 // Bot Suyon AI: corre los flujos (bloques), los seguimientos y la IA Suyon.
 // Todo es por tienda. Se activa desde el webhook (mensaje entrante) y desde el cron de cada minuto.
-import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay } from './util.js';
+import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay, HttpError } from './util.js';
 import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON, PROMPT_GENERICO } from './bot-template.js';
+import { iaAllowed } from './billetera.js';
 import { draftFromChat, insertOrder, cfgOf } from './orders.js';
 import { agenciesNear, agenciesIn, agencyOptions } from './shalom.js';
 import { onOrderCreated } from './automations.js';
@@ -801,6 +802,12 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
     }
   }
   const caseIds = (node.cases || []).map((c) => c.id);
+  // Billetera: una tienda de alumno sin saldo no llama a la IA (pasa a la asesora)
+  const allow = await iaAllowed(env, store.id);
+  if (!allow.ok) {
+    await alertFor(env, store, chat, { kind: 'ia', title: 'Te quedaste sin saldo de IA', body: 'La IA no respondió y el chat pasó a tu asesora. Recarga tu saldo en Configuración → Mi plan → Saldo de IA.', dedupe: true });
+    return { ok: false };
+  }
   let reply = null;
   let lastErr = null;
   // Hasta 2 intentos: si la IA no responde en el formato pedido, se le pide de nuevo. Nunca se manda texto raro.
@@ -819,7 +826,7 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
       `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 1, ?, ?, ?)
        ON CONFLICT (store_id, day) DO UPDATE SET calls = calls + 1, in_tokens = in_tokens + excluded.in_tokens, out_tokens = out_tokens + excluded.out_tokens, cost = cost + excluded.cost`
     ).bind(store.id, today(store.timezone), out.inTok, out.outTok, cost).run();
-    if (!settings.ia_secret || ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'].includes(settings.ia_secret)) await addSpend(env, price.provider, cost, store.timezone);
+    if (!settings.ia_secret || ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'].includes(settings.ia_secret)) await addSpend(env, price.provider, cost, store.timezone, store.id);
     const p = parseReply(out.text, caseIds);
     if (p.valid && (p.mensajes.length || p.caso)) reply = p;
     else lastErr = { raw: clip(out.text, 1500) };
@@ -891,6 +898,7 @@ export async function testIA(env, store, flow, node, text) {
   const settings = await loadSettings(env, store.id);
   const { results: arows } = await env.DB.prepare('SELECT key FROM bot_assets WHERE store_id = ?').bind(store.id).all();
   const system = buildSystem(await withPlan(env, settings), node, [], {}, arows.map((a) => a.key));
+  if (!(await iaAllowed(env, store.id)).ok) throw new HttpError(400, 'Te quedaste sin saldo de IA. Recarga en Configuración → Mi plan.');
   const out = await callModel(env, settings, system, [{ role: 'user', text }]);
   const r = parseReply(out.text, (node.cases || []).map((c) => c.id));
   return r.valid ? r : { mensajes: [], caso: null, datos: {}, error: 'La IA no respondió en el formato pedido (en un chat real se reintenta y, si falla, pasa a asesora).' };

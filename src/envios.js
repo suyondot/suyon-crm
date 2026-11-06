@@ -1,6 +1,7 @@
 // Envíos a provincia (Shalom / Olva): registro desde formularios, cruce con la guía, «ya recogió», ajustes e importación
 import { now, fail, clip, localDay } from './util.js';
 import { addSpend } from './saldo.js';
+import { iaAllowed } from './billetera.js';
 import { cfgOf, normPhone, priceFor, insertOrder, getOrder, addEvent, shape } from './orders.js';
 import { setOrderStatus } from './automations.js';
 import { strip } from './catalogo.js';
@@ -328,6 +329,7 @@ Si un dato no se lee, pon "". No inventes nada.`;
 export async function readGuides(env, store, files) {
   const key = env.ANTHROPIC_API_KEY;
   if (!key) fail(400, 'Falta la clave de la IA (secreto ANTHROPIC_API_KEY) para leer fotos. Mientras tanto, cruza con el código y el DNI.');
+  if (!(await iaAllowed(env, store.id)).ok) fail(400, 'Te quedaste sin saldo de IA para leer fotos. Recarga en Configuración → Mi plan, o cruza con el código y el DNI.');
   const imgs = [];
   for (const f of files.slice(0, 10)) {
     if (!/^image\/(jpeg|png|webp|gif)$/.test(f.type)) fail(400, 'Las fotos deben ser JPG, PNG o WebP.');
@@ -353,7 +355,7 @@ export async function readGuides(env, store, files) {
     `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 1, ?, ?, ?)
      ON CONFLICT (store_id, day) DO UPDATE SET calls = calls + 1, in_tokens = in_tokens + excluded.in_tokens, out_tokens = out_tokens + excluded.out_tokens, cost = cost + excluded.cost`
   ).bind(store.id, localDay(now(), store.timezone || 'America/Lima'), inTok, outTok, cost).run().catch(() => {});
-  await addSpend(env, 'anthropic', cost, store.timezone);
+  await addSpend(env, 'anthropic', cost, store.timezone, store.id);
   const text = (data.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('');
   const a = text.indexOf('[');
   const b = text.lastIndexOf(']');
