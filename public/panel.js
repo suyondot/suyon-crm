@@ -132,6 +132,7 @@ function draw(content) {
         <td class="r"><div class="pnacts">
           <button class="iconbtn sm" data-pa="pagado">Registrar pago</button>
           <details class="pnmore"><summary class="iconbtn sm">Más</summary><div class="pnmenu">
+            <button data-pa="clave">Olvidó su contraseña</button>
             <button data-pa="dias">Dar días extra</button>
             <button data-pa="prueba">Reiniciar prueba</button>
             <button data-pa="gratis">Sin cobro</button>
@@ -204,6 +205,19 @@ function draw(content) {
       if (!d) return;
       payload.days = Number(d);
     } else if (act === 'bloquear' && !confirm(`¿Pausar el acceso de ${co.name}? Sus datos no se borran.`)) return;
+    if (act === 'clave') {
+      try {
+        const r = await H.api('POST', `/admin/empresas/${id}`, payload);
+        const msg = `Hola ${r.name || ''}, este es tu enlace para poner una contraseña nueva en Control Total (vale 2 días, úsalo una sola vez): ${r.link}`;
+        try { await navigator.clipboard.writeText(msg); } catch {}
+        const ph = String(r.phone || '').replace(/\D/g, '');
+        if (ph && confirm(`Enlace listo para ${r.email} (ya está copiado).\n\n¿Abrir WhatsApp para mandárselo a +${ph}?`)) window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
+        else if (!ph) prompt(`Enlace para ${r.email}. Cópialo y mándaselo por WhatsApp:`, r.link);
+      } catch (er) {
+        H.toast(er.message, 5000);
+      }
+      return;
+    }
     try {
       await H.api('POST', `/admin/empresas/${id}`, payload);
       H.toast('Listo');

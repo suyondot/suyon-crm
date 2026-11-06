@@ -2,7 +2,7 @@
 // Todo es por tienda. Se activa desde el webhook (mensaje entrante) y desde el cron de cada minuto.
 import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay } from './util.js';
 import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
-import { PROMPT_PANTALON, KNOWLEDGE_PANTALON } from './bot-template.js';
+import { PROMPT_PANTALON, KNOWLEDGE_PANTALON, PROMPT_GENERICO } from './bot-template.js';
 import { draftFromChat, insertOrder, cfgOf } from './orders.js';
 import { agenciesNear, agenciesIn, agencyOptions } from './shalom.js';
 import { onOrderCreated } from './automations.js';
@@ -106,9 +106,11 @@ export function recognize(text, options) {
 
 export async function loadSettings(env, storeId) {
   const row = await env.DB.prepare('SELECT * FROM bot_settings WHERE store_id = ?').bind(storeId).first();
-  const st = await env.DB.prepare('SELECT timezone, language, hour12 FROM stores WHERE id = ?').bind(storeId).first();
+  const st = await env.DB.prepare('SELECT s.timezone, s.language, s.hour12, co.plan_status FROM stores s LEFT JOIN companies co ON co.id = s.company_id WHERE s.id = ?').bind(storeId).first();
   const saved = Object.fromEntries(Object.entries(row || {}).filter(([k, v]) => v != null || DEFAULT_SETTINGS[k] == null));
-  return { ...DEFAULT_SETTINGS, ...saved, timezone: st?.timezone || DEFAULT_TZ, language: st?.language || 'es', hour12: st?.hour12 ?? 1, store_id: storeId };
+  // Las tiendas de Jordan (empresas sin cobro) usan su prompt «Ventas pantalón» por defecto; las de alumnos, uno genérico
+  const own = !st?.plan_status || st.plan_status === 'free';
+  return { ...DEFAULT_SETTINGS, ...saved, timezone: st?.timezone || DEFAULT_TZ, language: st?.language || 'es', hour12: st?.hour12 ?? 1, store_id: storeId, __own: own };
 }
 
 export async function loadFlow(env, flowId) {
@@ -581,8 +583,8 @@ async function withPlan(env, settings) {
 }
 
 export function buildSystem(settings, node, labels, vars, assets) {
-  const base = settings.ia_prompt || PROMPT_PANTALON;
-  const knowledge = settings.ia_knowledge ?? KNOWLEDGE_PANTALON;
+  const base = settings.ia_prompt || (settings.__own === false ? PROMPT_GENERICO : PROMPT_PANTALON);
+  const knowledge = settings.ia_knowledge ?? (settings.__own === false ? '' : KNOWLEDGE_PANTALON);
   const filled = fillPrompt(base, settings, labels, vars);
   const cases = (node.cases || []).map((c) => `- "${c.id}": ${c.when}`).join('\n');
   const known = Object.entries(vars).filter(([k, v]) => v && k !== 'respuesta').map(([k, v]) => `${k}: ${v}`).join(' · ');

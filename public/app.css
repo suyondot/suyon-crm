@@ -1402,3 +1402,6 @@ body[data-rubro="simple"] .pit{grid-template-columns:minmax(0,1fr) 64px auto}
 .kpill.info{background:color-mix(in srgb,#2f6fd0 14%,var(--surface));color:var(--fg)}
 .kpill.warn{background:color-mix(in srgb,#e2b23c 22%,var(--surface));color:var(--fg)}
 .send.sm{padding:5px 12px;font-size:12.5px;border-radius:9px}
+/* Logo nuevo (laptop + prenda + crecimiento) */
+.brand-mark,.ab-mark,.side .brand-mark,.asis-logo{background:#F3E6D9!important;overflow:hidden;padding:0}
+.brand-mark img,.ab-mark img,.asis-logo img{width:100%;height:100%;display:block;object-fit:cover}

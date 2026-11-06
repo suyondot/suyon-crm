@@ -5,7 +5,7 @@ import { initClientes, renderClientes, resetClientes, openCliente } from './clie
 import { initReportes, renderReportes, resetReportes } from './reportes.js';
 
 // Marca: C y T (la T en rosado). Sin fondo: el fondo lo pone el contenedor.
-const LOGO = '<svg viewBox="38 90 400 332" aria-hidden="true" fill="none" stroke-linecap="round"><path d="M304 168A128 128 0 1 0 304 344" stroke="#fff" stroke-width="60"/><path d="M248 206H396M322 206V350" stroke="#F2B6C4" stroke-width="54"/></svg>';
+const LOGO = '<img src="/logo-mark.png" alt="" width="128" height="128">';
 import { initPedidos, renderPedidos, resetPedidos, fichaPedidos, renderPedidosConfig } from './pedidos.js';
 import { initEnvios, renderEnvios, resetEnvios } from './envios.js';
 import { initAsistente, renderAsistente, resetAsistente, rubroPicker } from './asistente.js';
@@ -269,7 +269,7 @@ function authShell(inner) {
       <div class="ab-demo" aria-hidden="true">
         <div class="abm in">Hola, ¿qué talla tienen? Uso 30 de jean</div>
         <div class="abm out"><span>Bot</span>¡Te queda la <b>S</b>! 😍 Estos son tus colores 👇</div>
-        <div class="abtags"><i style="--c:#4A74D9">Talla S</i><i style="--c:#2E9E5E">pantalón prod</i></div>
+        <div class="abtags"><i style="--c:#4A74D9">Talla S</i><i style="--c:#2E9E5E">ANUNCIO</i></div>
         <div class="abm out ia"><span>IA Suyon</span>Llevando 3 te sale a S/58.33 c/u 🔥 ¿A qué distrito te lo enviamos?</div>
       </div>
       <footer class="ab-foot">Hecho en Perú · Con la API oficial de WhatsApp</footer>
@@ -302,7 +302,7 @@ function showSetup(st) {
     ${st.code_set ? '' : '<div class="err">Falta poner la clave de inicio (SETUP_CODE) en Cloudflare. Sigue los pasos de la guía y recarga esta página.</div>'}
     <form id="f" class="grid" style="gap:12px">
       <div class="field"><label for="code">Clave de inicio</label><input id="code" name="code" required autocomplete="off"><span class="note">La clave que inventaste y pusiste en Cloudflare (el valor de SETUP_CODE, no el nombre).</span></div>
-      <div class="field"><label for="company">Nombre de tu empresa</label><input id="company" name="company" required value="Porte Perú"></div>
+      <div class="field"><label for="company">Nombre de tu empresa</label><input id="company" name="company" required placeholder="Ej: Mi Marca"></div>
       <div class="field"><label for="name">Tu nombre</label><input id="name" name="name" required autocomplete="name"></div>
       <div class="field"><label for="email">Tu correo</label><input id="email" name="email" type="email" required autocomplete="email"></div>
       <div class="field"><label for="pw">Contraseña (mínimo 8)</label><input id="pw" name="password" type="password" minlength="8" required autocomplete="new-password"></div>
@@ -363,7 +363,7 @@ function showLogin(msg, st) {
     <button class="link" id="forgot">Olvidé mi contraseña</button>
     ${st?.signup_open ? `<p class="note" style="margin:0;text-align:center">¿Nuevo en Control Total? <a href="/registro" id="toreg">Crea tu cuenta gratis · ${st.trial_days} días</a></p>` : ''}`);
   formHandler($('#f'), async (d) => startApp(await api('POST', '/login', d)));
-  $('#forgot').onclick = showRecover;
+  $('#forgot').onclick = () => showRecover(st);
   const tr = $('#toreg');
   if (tr)
     tr.onclick = (ev) => {
@@ -373,20 +373,24 @@ function showLogin(msg, st) {
     };
 }
 
-function showRecover() {
+function showRecover(st) {
+  const n = String(st?.soporte || '').replace(/\D/g, '');
+  const wa = n ? `<a class="send" style="text-align:center;text-decoration:none" href="https://wa.me/${n}?text=${encodeURIComponent('Hola, olvidé mi contraseña de Control Total. Mi correo es: ')}" target="_blank" rel="noopener">Pedir mi enlace por WhatsApp</a>` : '';
   authShell(`<h1>Recuperar acceso</h1>
-    <p>Si eres <b>asesora o despacho</b>: pide al dueño que te genere un enlace para cambiar tu contraseña (Configuración → Equipo).</p>
-    <p>Si eres <b>el administrador</b>: usa la clave de inicio (SETUP_CODE).</p>
-    <form id="f" class="grid" style="gap:12px">
+    <p>Si eres <b>dueño de una tienda</b>: escríbenos por WhatsApp con tu correo y te mandamos un enlace para poner una contraseña nueva.</p>
+    ${wa}
+    <p>Si eres <b>asesora o despacho</b>: pide al dueño de tu tienda que te genere el enlace (Configuración → Equipo).</p>
+    <details><summary class="note" style="cursor:pointer">Soy el administrador de Control Total</summary>
+    <form id="f" class="grid" style="gap:12px;margin-top:10px">
       <div class="field"><label for="code">Clave de inicio</label><input id="code" name="code" required autocomplete="off"></div>
       <div class="field"><label for="email">Tu correo</label><input id="email" name="email" type="email" required></div>
       <div class="field"><label for="pw">Nueva contraseña (mínimo 8)</label><input id="pw" name="password" type="password" minlength="8" required autocomplete="new-password"></div>
       <div class="err" hidden></div>
       <button class="send" type="submit">Cambiar y entrar</button>
-    </form>
+    </form></details>
     <button class="link" id="back">← Volver</button>`);
   formHandler($('#f'), async (d) => startApp(await api('POST', '/recover', d)));
-  $('#back').onclick = () => showLogin();
+  $('#back').onclick = () => showLogin(null, st);
 }
 
 async function showInvite(token) {
@@ -1969,8 +1973,8 @@ async function cfgPerfil() {
       </div>
       <div class="field"><label for="wp-addr">Dirección</label><input id="wp-addr" name="address" maxlength="256" value="${esc(p.address)}" placeholder="Los Olivos, Lima"></div>
       <div class="fields">
-        <div class="field"><label for="wp-w1">Enlace 1 (ej. Instagram)</label><input id="wp-w1" name="w1" value="${esc(w[0])}" placeholder="https://instagram.com/porteperu"></div>
-        <div class="field"><label for="wp-w2">Enlace 2 (ej. Facebook o tu web)</label><input id="wp-w2" name="w2" value="${esc(w[1])}" placeholder="https://facebook.com/porteperu"></div>
+        <div class="field"><label for="wp-w1">Enlace 1 (ej. Instagram)</label><input id="wp-w1" name="w1" value="${esc(w[0])}" placeholder="https://instagram.com/tumarca"></div>
+        <div class="field"><label for="wp-w2">Enlace 2 (ej. Facebook o tu web)</label><input id="wp-w2" name="w2" value="${esc(w[1])}" placeholder="https://facebook.com/tumarca"></div>
       </div>
       <div class="err" hidden></div>
       <div><button class="send" type="submit">Guardar perfil</button></div></div></div>
@@ -2014,6 +2018,13 @@ function statusPill(s) {
   return s === 'activo' ? '<span class="pillst st-on">Conectado</span>' : '<span class="pillst st-off" style="background:var(--warn-soft);color:var(--warn)">Sin conectar</span>';
 }
 
+// Botón de ayuda por WhatsApp (el número de contacto sale del Panel Suyon)
+function helpWA(text, label = '¿Necesitas ayuda? Escríbenos y lo hacemos juntos.') {
+  const n = String(S.me?.soporte || '').replace(/\D/g, '');
+  if (!n) return `<p class="note" style="margin:8px 0 0">${esc(label)}</p>`;
+  return `<p class="note" style="margin:10px 0 6px">${esc(label)}</p><a class="iconbtn" href="https://wa.me/${n}?text=${encodeURIComponent(text)}" target="_blank" rel="noopener">${ICON.wa || ''} Escribir por WhatsApp</a>`;
+}
+
 /* ---- Conectar WhatsApp con un clic (Registro insertado de Meta) ---- */
 async function drawSignup(st) {
   const box = $('#esconn');
@@ -2028,6 +2039,12 @@ async function drawSignup(st) {
   const es = S.es;
   if (!$('#esconn')) return;
   const linked = st.connected_via === 'embedded' || st.connected_via === 'coexistencia';
+  if (!es.ready && !S.me.user.is_admin) {
+    box.innerHTML = `<h3>Conectar tu WhatsApp</h3>
+      <p class="sub">Conectamos tu número juntos en una videollamada corta: tú pones el código que te llega por SMS y listo. Tu número queda a tu nombre, en tu propia cuenta de Meta.</p>
+      ${helpWA('Hola, quiero conectar mi número de WhatsApp en Control Total')}`;
+    return;
+  }
   if (!es.ready) {
     box.innerHTML = `<h3>Conectar con un clic</h3>
       <p class="sub">Con este botón, tú o tus alumnos conectan su número sin copiar identificadores ni tokens: se abre la ventana de Meta, eligen su cuenta, ponen el código SMS y listo.</p>
@@ -2046,7 +2063,8 @@ async function drawSignup(st) {
       <button class="send esbtn" id="es-new" type="button">${ICON.wa || ''}<span><b>${linked ? 'Conectar otro número' : 'Conectar WhatsApp'}</b><small>Número nuevo, solo para la API</small></span></button>
       <button class="iconbtn esbtn" id="es-coex" type="button"><span><b>Ya uso WhatsApp Business en el celular</b><small>Lo sigues usando en el celular y también aquí</small></span></button>
     </div>
-    <p class="note" style="margin:8px 0 0">Después de conectar, agrega una tarjeta en la cuenta de WhatsApp (Meta cobra los mensajes que no son gratis).</p>`;
+    <p class="note" style="margin:8px 0 0">Tu número queda a tu nombre, en tu propia cuenta de Meta. Después de conectar, agrega una tarjeta en esa cuenta (Meta cobra directo los mensajes que no son gratis).</p>
+    ${S.me.user.is_admin ? '' : helpWA('Hola, tuve un problema al conectar mi número de WhatsApp en Control Total', '¿Algo no funcionó? Escríbenos y lo conectamos juntos.')}`;
   loadFbSdk(es).catch(() => {});
   $('#es-new').onclick = () => startSignup(st, false);
   $('#es-coex').onclick = () => startSignup(st, true);
@@ -2151,6 +2169,7 @@ function cfgNumero() {
   if (!st) return (body.innerHTML = '<div class="empty"><b>Sin tienda</b><span>Agrega una tienda desde el selector.</span><button class="send" data-act="addstore">Agregar tienda</button></div>');
   const h = S.health;
   const yes = (v) => (v ? '<span class="y">✓</span>' : '<span class="n">✗</span>');
+  const adm = !!S.me.user.is_admin; // los pasos técnicos (identificadores, PIN, webhook) solo los ve el administrador
   body.innerHTML = `
   <div class="ph"><div><h2>${esc(st.name)}</h2><p>Este número es la tienda: sus chats, etiquetas y equipo son solo suyos.</p></div><span class="grow"></span>${statusPill(st.status)}</div>
   <div class="grid">
@@ -2158,17 +2177,17 @@ function cfgNumero() {
     <div class="card"><h3>Conexión</h3>
       ${st.status === 'activo'
         ? `<p class="sub">Conectado como <b>${esc(st.verified_name || '—')}</b> · <span class="mono">${esc(st.phone_display || '')}</span></p>${tokenExpHTML(st)}`
-        : `<p class="sub">Pon los identificadores de abajo, toca «Guardar» y luego «Conectar número». Si no sabes el de la cuenta, déjalo vacío: el CRM lo busca solo.</p>`}
+        : adm ? `<p class="sub">Pon los identificadores de abajo, toca «Guardar» y luego «Conectar número». Si no sabes el de la cuenta, déjalo vacío: el CRM lo busca solo.</p>` : `<p class="sub">Todavía no hay un número conectado. Toca «Conectar WhatsApp» arriba.</p>${helpWA('Hola, necesito ayuda para conectar mi número de WhatsApp en Control Total')}`}
       ${st.connect_error ? `<div class="err" style="margin-bottom:12px">${esc(st.connect_error)}</div>` : ''}
       ${S.connSteps ? `<ul class="stlist" style="margin-bottom:12px">${S.connSteps.steps.map((x) => `<li><span class="${/^(Cuenta|El token|No se pudo)/.test(x) ? 'n' : /^Info/.test(x) ? 'y' : 'y'}">${/^(Cuenta|El token|No se pudo)/.test(x) ? '•' : /^Info/.test(x) ? 'ℹ' : '✓'}</span><span style="overflow-wrap:anywhere">${esc(x)}</span></li>`).join('')}${S.connSteps.ok ? '' : `<li><span class="n">✗</span><span>${esc(S.connSteps.error)}</span></li>`}</ul>` : ''}
-      <button class="send" data-act="connect" ${st.phone_number_id ? '' : 'disabled'}>${st.status === 'activo' ? 'Probar conexión otra vez' : 'Conectar número'}</button>
+      ${adm || st.phone_number_id ? `<button class="send" data-act="connect" ${st.phone_number_id ? '' : 'disabled'}>${st.status === 'activo' ? 'Probar conexión otra vez' : 'Conectar número'}</button>` : ''}
     </div>
-    <div class="card"><h3>Activar número en la API</h3><p class="sub">Solo para un número recién agregado o pasado a una cuenta nueva: después de verificarlo con el código SMS en Meta, se activa aquí. El PIN de 6 números queda como «verificación en dos pasos». Anótalo.</p>
+    ${adm ? `<div class="card"><h3>Activar número en la API</h3><p class="sub">Solo para un número recién agregado o pasado a una cuenta nueva: después de verificarlo con el código SMS en Meta, se activa aquí. El PIN de 6 números queda como «verificación en dos pasos». Anótalo.</p>
       <form id="rf" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
         <div class="field" style="flex:1;min-width:160px"><label for="r-pin">PIN nuevo (6 números)</label><input id="r-pin" name="pin" inputmode="numeric" maxlength="6" pattern="\\d{6}" required autocomplete="off" class="mono"></div>
         <button class="iconbtn" type="submit" style="height:38px" ${st.phone_number_id ? '' : 'disabled'}>Activar número</button>
         <div class="err" hidden style="width:100%"></div>
-      </form></div>
+      </form></div>` : ''}
     <div class="card"><h3>Datos del número</h3><p class="sub">Se guardan solo para esta tienda.</p>
       <form id="sf" class="grid" style="gap:12px">
         <div class="fields">
@@ -2176,7 +2195,7 @@ function cfgNumero() {
           <div class="field"><label for="s-disp">Número visible</label><input id="s-disp" name="phone_display" value="${esc(st.phone_display || '')}" placeholder="+51 9…"></div>
         </div>
         <div class="field"><label>Color</label><div class="swatches" id="ssw">${STORE_COLORS.map((col) => `<button type="button" data-swatch="${col}" aria-pressed="${col.toLowerCase() === (st.color || '').toLowerCase()}" style="background:${col}" aria-label="Color"></button>`).join('')}</div></div>
-        <div class="fields">
+        ${adm ? `<div class="fields">
           <div class="field"><label for="s-pid">Identificador del número de teléfono</label><input id="s-pid" name="phone_number_id" class="mono" inputmode="numeric" value="${esc(st.phone_number_id || '')}" placeholder="Ej: 106540352242922"></div>
           <div class="field"><label for="s-waba">Identificador de la cuenta de WhatsApp Business</label><input id="s-waba" name="waba_id" class="mono" inputmode="numeric" value="${esc(st.waba_id || '')}" placeholder="Ej: 102290129340398"></div>
         </div>
@@ -2185,12 +2204,12 @@ function cfgNumero() {
             <div class="field"><label for="s-tok">Nombre del secreto del token en Cloudflare</label><input id="s-tok" name="token_secret" class="mono" value="${esc(st.token_secret || 'WA_TOKEN')}"><span class="note">Déjalo en WA_TOKEN si todos tus números están en el mismo portafolio de Meta.</span></div>
             <label class="check"><input type="checkbox" name="read_receipts" ${st.read_receipts ? 'checked' : ''}> Mostrar doble check azul a la clienta cuando abrimos su chat</label>
           </div>
-        </details>
+        </details>` : `<label class="check"><input type="checkbox" name="read_receipts" ${st.read_receipts ? 'checked' : ''}> Mostrar doble check azul a la clienta cuando abrimos su chat</label>`}
         <div class="err" hidden></div>
         <div><button class="send" type="submit">Guardar</button></div>
       </form>
     </div>
-    <div class="card"><h3>Webhook de Meta</h3><p class="sub">Esto se pega una sola vez en Meta → tu app SUYON CRM → WhatsApp → Configuración.</p>
+    ${adm ? `<div class="card"><h3>Webhook de Meta</h3><p class="sub">Esto se pega una sola vez en Meta → tu app SUYON CRM → WhatsApp → Configuración.</p>
       ${h ? `<div class="grid" style="gap:10px">
         <div class="field"><label>URL de devolución de llamada</label><div class="copyrow"><code>${esc(h.webhook_url)}</code><button class="iconbtn" data-copy="${esc(h.webhook_url)}">${ICON.copy}Copiar</button></div></div>
         <div class="field"><label>Token de verificación</label><p class="note" style="margin:0">El mismo texto que pusiste en Cloudflare como <span class="mono">WA_VERIFY_TOKEN</span>.</p></div>
@@ -2206,7 +2225,7 @@ function cfgNumero() {
         <div class="field"><label>Política de privacidad</label><div class="copyrow"><code>${esc(h.privacy_url)}</code><button class="iconbtn" data-copy="${esc(h.privacy_url)}">${ICON.copy}</button></div></div>
         <div class="field"><label>Eliminación de datos</label><div class="copyrow"><code>${esc(h.privacy_url.replace('/privacidad', '/eliminar-datos'))}</code><button class="iconbtn" data-copy="${esc(h.privacy_url.replace('/privacidad', '/eliminar-datos'))}">${ICON.copy}</button></div></div>
         <div class="field"><label>Condiciones del servicio</label><div class="copyrow"><code>${esc(h.privacy_url.replace('/privacidad', '/terminos'))}</code><button class="iconbtn" data-copy="${esc(h.privacy_url.replace('/privacidad', '/terminos'))}">${ICON.copy}</button></div></div>
-      </div></div>` : ''}
+      </div></div>` : ''}` : ''}
     <div class="card danger"><h3>Borrar tienda</h3><p class="sub">Borra sus chats, mensajes, archivos y etiquetas para siempre. No toca nada en Meta.</p>
       <button class="btn-danger" data-act="delstore">Borrar ${esc(st.name)}</button></div>
   </div>`;
@@ -2374,13 +2393,13 @@ function editMemberModal(id) {
 function cfgEmpresa() {
   const body = $('#cfgbody');
   const mine = S.me.companies.filter((c) => c.role === 'dueno');
-  body.innerHTML = `<div class="ph"><div><h2>Empresas</h2><p>Cada empresa (Porte Perú, Orión…) tiene sus propias tiendas y su propio equipo.</p></div></div>
+  body.innerHTML = `<div class="ph"><div><h2>Empresas</h2><p>Cada empresa (cada marca) tiene sus propias tiendas y su propio equipo.</p></div></div>
     <div class="grid">${mine.map((c) => `<div class="card"><form data-coform="${c.id}" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
       <div class="field" style="flex:1;min-width:180px"><label>Nombre</label><input name="name" value="${esc(c.name)}" required maxlength="60"></div>
       <button class="iconbtn" type="submit" style="height:38px">Guardar</button><div class="err" hidden style="width:100%"></div></form>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><span class="note" style="flex:1">${S.me.stores.filter((s) => s.company_id === c.id).map((s) => esc(s.name)).join(' · ') || 'Sin tiendas todavía'}</span><button class="iconbtn" data-act="addstore">+ Agregar tienda</button></div></div>`).join('')}
     ${S.me.user.is_admin ? `<div class="card"><h3>Nueva empresa</h3><form id="cf" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-      <input name="name" required maxlength="60" placeholder="Ej: Orión" aria-label="Nombre de la empresa" style="flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg)">
+      <input name="name" required maxlength="60" placeholder="Ej: Mi Marca" aria-label="Nombre de la empresa" style="flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg)">
       <button class="send" type="submit">Crear</button><div class="err" hidden style="width:100%"></div></form></div>` : ''}</div>`;
   $$('[data-coform]', body).forEach((f) => formHandler(f, async (d) => {
     setMe(await api('PATCH', `/companies/${f.dataset.coform}`, d));

@@ -1,6 +1,6 @@
 // Registro de alumnos, «Mi plan» y Panel Suyon (solo administrador)
 import { Hono } from 'hono';
-import { now, fail, hashPassword, insertStore, RUBROS } from './util.js';
+import { now, fail, hashPassword, insertStore, RUBROS, randomToken, sha256hex } from './util.js';
 import { requireUser, companyFor, createSession } from './auth.js';
 import { loadPlan, savePlan, billingOf, statusOf, addPayment, usageOf, priceOf, optionsOf } from './billing.js';
 import { loadLanding, setVideo, removeVideo, addTestimonio, removeTestimonio } from './landing-data.js';
@@ -159,6 +159,16 @@ r.post('/admin/empresas/:id', async (c) => {
     case 'nota':
       await db.prepare('UPDATE companies SET plan_note = ? WHERE id = ?').bind(String(b.note || '').slice(0, 500) || null, co.id).run();
       break;
+    case 'clave': {
+      // El alumno olvidó su contraseña: enlace para que ponga una nueva (vale 2 días, se usa una vez)
+      const owner = await db.prepare("SELECT u.id, u.email, u.name FROM users u WHERE u.id = COALESCE(?, (SELECT m.user_id FROM memberships m WHERE m.company_id = ? AND m.role = 'dueno' ORDER BY m.created_at LIMIT 1))")
+        .bind(co.owner_user_id || null, co.id).first();
+      if (!owner) fail(404, 'Esa empresa no tiene dueño.');
+      const token = randomToken(24);
+      await db.prepare('INSERT INTO password_resets (token_hash, user_id, created_by, expires_at) VALUES (?, ?, ?, ?)').bind(await sha256hex(token), owner.id, admin.id, t + 2 * DAY).run();
+      const origin = String(c.env.PUBLIC_URL || new URL(c.req.url).origin).replace(/\/+$/, '');
+      return c.json({ ok: true, link: `${origin}/clave/${token}`, email: owner.email, name: owner.name, phone: co.contact_phone || null });
+    }
     default:
       fail(400, 'Acción desconocida.');
   }

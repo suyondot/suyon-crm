@@ -59,10 +59,12 @@ async function mePayload(c) {
     ? (await c.env.DB.prepare("SELECT COUNT(*) AS n FROM demos WHERE status = 'nueva' AND starts_at > ?").bind(Date.now()).first().catch(() => null))?.n || 0
     : 0;
   const iaSaldo = a.user.is_admin ? await loadSaldo(c.env).catch(() => null) : null;
+  const soporte = (await loadPlan(c.env).catch(() => null))?.contact || null;
   return {
     user: { id: a.user.id, name: a.user.name, email: a.user.email, is_admin: !!a.user.is_admin },
     demos_nuevas: demos,
     ia_saldo: iaSaldo,
+    soporte,
     companies: a.companies,
     stores: a.stores.map(publicStore),
     roles: ROLES,
@@ -78,7 +80,7 @@ api.get('/state', async (c) => {
   const u = await currentUser(c);
   if (!u) {
     const p = await loadPlan(c.env);
-    return c.json({ login: true, signup_open: !!p.signup_open, trial_days: p.trial_days });
+    return c.json({ login: true, signup_open: !!p.signup_open, trial_days: p.trial_days, soporte: p.contact || null });
   }
   return c.json(await mePayload(c));
 });

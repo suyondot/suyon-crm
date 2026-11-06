@@ -1,7 +1,7 @@
 // Página pública de Control Total (/inicio): qué hace, cómo se ve, precios y agenda de demos
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
 
-const MARK = (s = 30) => `<svg width="${s}" height="${s}" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#7A1F35"/><g transform="translate(-14 0)" fill="none" stroke-linecap="round"><path d="M318 168A128 128 0 1 0 318 344" stroke="#fff" stroke-width="60"/><path d="M262 206H410M336 206V350" stroke="#F2B6C4" stroke-width="54"/></g></svg>`;
+const MARK = (s = 30) => `<img src="/logo-mark.png" alt="" width="${s}" height="${s}" style="border-radius:${Math.round(s * 0.22)}px;flex:none">`;
 const I = {
   check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
@@ -533,7 +533,7 @@ ${feature({
     ${MARK(120).replace('width="120" height="120"', 'class="big" width="120" height="120"')}
     <div><p class="kicker" style="color:var(--rose)">Por qué existe</p>
     <h2>Lo hicimos para nuestra propia marca de ropa.</h2>
-    <p>Control Total nació en Porte Perú, una marca de pantalones que vende con anuncios de clic a WhatsApp, envíos a Lima y por agencia a provincia.</p>
+    <p>Control Total nació dentro de una marca de ropa peruana que vende todos los días con anuncios de clic a WhatsApp, envíos a Lima y por agencia a provincia.</p>
     <p>Cada función salió de un problema real del día a día: tallas de jean, «yapeo más tarde», sedes de Shalom, cortes de entrega a la 1 p. m. Por eso habla como tu tienda.</p></div>
   </div>
 </div></section>
@@ -774,7 +774,7 @@ function drawBook() {
     '<form class="form" id="bf" novalidate>' +
     '<div><label for="bn">Tu nombre</label><input id="bn" name="name" autocomplete="name" required maxlength="60"></div>' +
     '<div><label for="bp">Tu WhatsApp</label><input id="bp" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="987 654 321" required></div>' +
-    '<div><label for="bb">Tu marca</label><input id="bb" name="brand" maxlength="80" placeholder="Ej. Porte Perú"></div>' +
+    '<div><label for="bb">Tu marca</label><input id="bb" name="brand" maxlength="80" placeholder="Ej. Mi Marca"></div>' +
     '<div><label for="bv">Chats al día</label><select id="bv" name="volume"><option value="">Elige</option><option>Menos de 20</option><option>20 a 50</option><option>50 a 150</option><option>Más de 150</option></select></div>' +
     '<div class="full"><label for="bs">¿Qué vendes?</label><input id="bs" name="sells" maxlength="120" placeholder="Ej. pantalones de vestir, polos, leggings"></div>' +
     '<div class="hp" aria-hidden="true"><label>Web<input name="website" tabindex="-1" autocomplete="off"></label></div>' +

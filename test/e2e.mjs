@@ -1241,6 +1241,9 @@ try {
     const lb = await as('GET', `/api/stores/${s1.store_id}/labels`);
     assert.ok(!lb.labels.some((l) => l.name.startsWith('Talla ')), 'sin variantes: sin etiquetas de talla');
     // asistente: preguntas → bot, IA y precios
+    const pre = await as('GET', `/api/stores/${s1.store_id}/bot`);
+    assert.doesNotMatch(pre.settings.ia_prompt, /Porte/, 'sin el prompt de Porte');
+    assert.ok(!pre.template_assets.some((x) => x.key === 'colores-XS'), 'sin la lista de archivos de Porte');
     let A = await as('GET', `/api/stores/${s1.store_id}/asistente`);
     assert.equal(A.respuestas, null);
     assert.equal((await as('POST', `/api/stores/${s1.store_id}/asistente`, { producto: 'Cápsulas', precios: {} })).status, 400);
@@ -1252,6 +1255,11 @@ try {
     assert.equal(A.respuestas.producto, 'Cápsulas de colágeno');
     assert.deepEqual(A.assets.map((x) => x.key), ['precios', 'producto', 'audio-seguimiento', 'video-producto', 'fotos-pedidos', 'confianza-lima', 'confianza-provincia', 'foto-despacho']);
     assert.equal(A.assets[0].need, 'si');
+    // antes del asistente, la tienda de una alumna NO trae el prompt ni la plantilla de las marcas de Jordan
+    assert.equal((await as('POST', `/api/stores/${s1.store_id}/bot/flows`, { template: 'pantalon' })).status, 403);
+    const clave = await call('POST', `/api/admin/empresas/${co.id}`, { action: 'clave' });
+    assert.match(clave.link, /\/clave\/[\w-]+$/);
+    assert.equal(clave.email, 'ana@alumna.pe');
     let bot = await as('GET', `/api/stores/${s1.store_id}/bot`);
     assert.match(bot.settings.ia_prompt, /Vendes SOLO Cápsulas de colágeno/);
     assert.match(bot.settings.ia_prompt, /S\/129\.90/);

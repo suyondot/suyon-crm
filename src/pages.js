@@ -18,7 +18,7 @@ export function privacyPage(env) {
   return shell('Política de privacidad', `
 <h1>Política de privacidad</h1>
 <small>Control Total · Última actualización: 6 de noviembre de 2026</small>
-<p><b>Control Total</b> es un software en línea (suscripción) para negocios que venden por WhatsApp. Lo opera <b>NUTRICHIKEN E.I.R.L.</b> (Lima, Perú). Lo usan las marcas propias del titular (como Porte Perú y Orión) y otros negocios que contratan el servicio («los negocios»). Cada negocio conecta su propio número de WhatsApp Business mediante la API oficial de WhatsApp de Meta y atiende ahí a sus clientes («los clientes finales»).</p>
+<p><b>Control Total</b> es un software en línea (suscripción) para negocios que venden por WhatsApp. Lo opera <b>NUTRICHIKEN E.I.R.L.</b> (Lima, Perú). Lo usan los negocios que contratan el servicio («los negocios»), incluidas las marcas propias del titular. Cada negocio conecta su propio número de WhatsApp Business mediante la API oficial de WhatsApp de Meta y atiende ahí a sus clientes («los clientes finales»).</p>
 <p>Para los datos de los clientes finales, el responsable es cada negocio y Control Total actúa como encargado del tratamiento: solo los procesa para prestar el servicio a ese negocio.</p>
 <h2>Qué datos tratamos</h2>
 <ul>

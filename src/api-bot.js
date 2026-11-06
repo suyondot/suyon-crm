@@ -7,7 +7,7 @@ import { kindForMime, SEND_RULES } from './whatsapp.js';
 import {
   NODE_TYPES, IA_MODELS, PROMPT_VARS, entregaDia, loadSettings, loadFlow, flowStats, startFlow, cancelJobs, testIA, addLabel, onInbound, runJob,
 } from './bot.js';
-import { flowPantalon, PROMPT_PANTALON, KNOWLEDGE_PANTALON, TEMPLATE_ASSETS, assetsFor, flowVentasCT, PROMPT_VENTAS_CT, KNOWLEDGE_VENTAS_CT } from './bot-template.js';
+import { flowPantalon, PROMPT_PANTALON, KNOWLEDGE_PANTALON, PROMPT_GENERICO, TEMPLATE_ASSETS, assetsFor, flowVentasCT, PROMPT_VENTAS_CT, KNOWLEDGE_VENTAS_CT } from './bot-template.js';
 
 const r = new Hono();
 const body = async (c) => {
@@ -72,10 +72,10 @@ r.get('/stores/:id/bot', async (c) => {
   const { results: usage } = await db.prepare('SELECT day, calls, in_tokens, out_tokens, cost FROM ia_usage WHERE store_id = ? ORDER BY day DESC LIMIT 7').bind(st.id).all();
   const secretNames = [...new Set(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', settings.ia_secret])];
   return c.json({
-    settings: { ...settings, ia_prompt: settings.ia_prompt ?? PROMPT_PANTALON, ia_knowledge: settings.ia_knowledge ?? KNOWLEDGE_PANTALON },
+    settings: { ...settings, ia_prompt: settings.ia_prompt ?? (settings.__own ? PROMPT_PANTALON : PROMPT_GENERICO), ia_knowledge: settings.ia_knowledge ?? (settings.__own ? KNOWLEDGE_PANTALON : '') },
     flows,
     assets,
-    template_assets: (st.asistente
+    template_assets: (st.asistente || !settings.__own
       ? assetsFor(st.rubro || 'ropa', JSON.parse(st.asistente || '{}').respuestas || {}).map((a) => [a.key, `${a.desc}${a.need === 'si' ? '' : ' (opcional)'}`])
       : TEMPLATE_ASSETS
     ).map(([key, desc]) => ({ key, desc, ok: assets.some((a) => a.key === key) })),
@@ -93,11 +93,12 @@ r.get('/stores/:id/bot', async (c) => {
 r.patch('/stores/:id/bot/settings', async (c) => {
   const st = await storeFor(c, c.req.param('id'), 'config');
   const b = await body(c);
-  if ('ia_prompt' in b && String(b.ia_prompt || '').trim() === PROMPT_PANTALON.trim()) b.ia_prompt = null;
+  if ('ia_prompt' in b && [PROMPT_PANTALON.trim(), PROMPT_GENERICO.trim()].includes(String(b.ia_prompt || '').trim())) b.ia_prompt = null;
   if ('ia_knowledge' in b && String(b.ia_knowledge || '').trim() === KNOWLEDGE_PANTALON.trim()) b.ia_knowledge = null;
   const s = await saveSettings(c.env, st.id, b);
   await bump(c.env, st.id);
-  return c.json({ settings: { ...s, ia_prompt: s.ia_prompt ?? PROMPT_PANTALON, ia_knowledge: s.ia_knowledge ?? KNOWLEDGE_PANTALON } });
+  const own = (await loadSettings(c.env, st.id)).__own;
+  return c.json({ settings: { ...s, ia_prompt: s.ia_prompt ?? (own ? PROMPT_PANTALON : PROMPT_GENERICO), ia_knowledge: s.ia_knowledge ?? (own ? KNOWLEDGE_PANTALON : '') } });
 });
 
 /* ---------- Flujos ---------- */
@@ -161,6 +162,8 @@ async function flowFor(c, id, need = 'config') {
 r.post('/stores/:id/bot/flows', async (c) => {
   const st = await storeFor(c, c.req.param('id'), 'config');
   const b = await body(c);
+  // Las plantillas de Jordan (su prompt y su flujo de pantalones) solo en sus tiendas
+  if (['pantalon', 'ventas_ct'].includes(b.template) && !(await requireUser(c)).is_admin) fail(403, 'Esa plantilla no está disponible. Usa «✨ Armar mi bot con preguntas».');
   const web = String(c.env.PUBLIC_URL || new URL(c.req.url).origin).replace(/\/+$/, '');
   const graph = b.template === 'pantalon'
     ? flowPantalon()

@@ -145,7 +145,7 @@ function draw(body = C.$('#cfgbody')) {
   const subs = [['flujo', 'Flujo'], ['sim', 'Probar'], ['seg', 'Seguimientos'], ['ia', 'IA Suyon'], ['files', 'Archivos']];
   const missing = B.data.template_assets.filter((a) => !a.ok).length;
   body.innerHTML = `
-  <div class="ph"><div><h2>Bot Suyon AI</h2><p>${B.data.asistente || C.store()?.rubro === 'simple' ? 'Tu bot: lo gratis (foto, precios y la primera pregunta) va sin IA; la IA entra después con lo que respondiste en el asistente.' : 'Tu flujo de Botcake, aquí. Lo gratis (precios, talla, colores) va sin IA; la IA entra después, con tu mismo prompt.'}</p></div><span class="grow"></span>
+  <div class="ph"><div><h2>Bot Suyon AI</h2><p>${B.data.asistente || C.store()?.rubro === 'simple' || !C.S.me?.user?.is_admin ? 'Tu bot: lo gratis (foto, precios y la primera pregunta) va sin IA; la IA entra después con lo que respondiste en el asistente.' : 'Tu flujo de Botcake, aquí. Lo gratis (precios, talla, colores) va sin IA; la IA entra después, con tu mismo prompt.'}</p></div><span class="grow"></span>
     <button class="iconbtn" data-bact="asis" title="Responde preguntas de tu producto y se arma tu bot, tu IA y la lista de fotos y videos">✨ Asistente</button>
     <label class="bswitch"><input type="checkbox" id="bon" ${st.bot_on ? 'checked' : ''}><span>${st.bot_on ? 'Bot encendido' : 'Bot apagado'}</span></label></div>
   <div class="card bwho"><div class="field" style="flex:1 1 220px"><label for="baud">Responde a</label>
@@ -190,7 +190,7 @@ function flowBar() {
 function drawFlow() {
   const box = C.$('#bsub');
   if (!B.flow) {
-    const ropaJordan = C.store()?.rubro !== 'simple';
+    const ropaJordan = C.S.me?.user?.is_admin && C.store()?.rubro !== 'simple';
     box.innerHTML = `<div class="card empty" style="gap:10px"><b>Todavía no hay flujos en esta tienda</b>
       <span>${ropaJordan ? 'Responde unas preguntas de tu producto y se arma tu bot en el orden que funciona: foto y precios, pregunta, seguimientos, IA y asesora. O usa la plantilla «Ventas pantalón».' : 'Responde unas preguntas de tu producto y se arma tu bot en el orden que funciona: foto y precios, pregunta, seguimientos, IA y asesora.'}</span>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="send" data-bact="asis">✨ Armar mi bot con preguntas</button>${ropaJordan ? '<button class="iconbtn" data-bact="tpl">Plantilla «Ventas pantalón»</button>' : ''}${C.S.me?.user?.is_admin ? '<button class="iconbtn" data-bact="tplct" title="Tu asistente para vender Control Total: responde dudas del plan y manda el enlace de la demo">Crear «Ventas Control Total»</button>' : ''}<button class="iconbtn" data-bact="blank">Flujo vacío</button></div></div>`;
@@ -993,11 +993,11 @@ function drawIA() {
         <ol><li>Saca una clave en platform.openai.com → API keys (con tu tarjeta y un tope de gasto).</li>
         <li>En Cloudflare: Workers → suyon-crm → Configuración → Variables y secretos → Agregar.</li>
         <li>Tipo «Secreto», nombre <b class="mono">OPENAI_API_KEY</b>, pega la clave y guarda. No la pegues en este chat ni aquí.</li></ol>`}</div></div>
-    <div class="card"><div class="brow"><h3 style="flex:1">Prompt (copiado de tu Botcake)</h3><span class="note mono" id="bpc">${(s.ia_prompt || '').length.toLocaleString('en-US')} caracteres</span><button type="button" class="iconbtn" data-bact="resetprompt">Restaurar el de Botcake</button></div>
+    <div class="card"><div class="brow"><h3 style="flex:1">${C.S.me?.user?.is_admin && !B.data.asistente ? 'Prompt (copiado de tu Botcake)' : 'Prompt de tu IA'}</h3><span class="note mono" id="bpc">${(s.ia_prompt || '').length.toLocaleString('en-US')} caracteres</span><button type="button" class="iconbtn" data-bact="resetprompt">Restaurar el de Botcake</button></div>
       <p class="sub">Para otro producto, copia este y cambia solo lo del producto (precios, tallas, colores, stock, archivos). Escribe <b class="mono">{</b> para insertar un dato que se llena solo (fecha, hora, día de entrega, etiquetas, talla…).</p>
       <div class="bvars">${(B.data.prompt_vars || []).map(([k, d]) => `<button type="button" data-pvar="${k}" title="${e(d)}">{${k}}</button>`).join('')}</div>
       <div class="bpwrap"><textarea name="ia_prompt" id="bprompt" class="bcode" rows="22">${e(s.ia_prompt || '')}</textarea><div class="bvmenu" id="bvmenu" hidden role="listbox" aria-label="Datos para insertar"></div></div></div>
-    <div class="card"><h3>Conocimiento (tus 2 archivos de Botcake)</h3><textarea name="ia_knowledge" class="bcode" rows="12">${e(s.ia_knowledge || '')}</textarea></div>
+    <div class="card"><h3>${C.S.me?.user?.is_admin && !B.data.asistente ? 'Conocimiento (tus 2 archivos de Botcake)' : 'Conocimiento (preguntas frecuentes y datos de tu producto)'}</h3><textarea name="ia_knowledge" class="bcode" rows="12">${e(s.ia_knowledge || '')}</textarea></div>
     <div class="savebar"><span class="note" id="biast"></span><button class="send" type="submit">Guardar IA Suyon</button></div>
     ${B.data.usage.length ? `<div class="card"><h3>Gasto de los últimos días</h3><table class="btable"><thead><tr><th>Día</th><th>Respuestas</th><th>Tokens entrada</th><th>Tokens salida</th><th>US$</th></tr></thead><tbody>${B.data.usage.map((x) => `<tr><td>${x.day}</td><td>${fmt(x.calls)}</td><td>${fmt(x.in_tokens)}</td><td>${fmt(x.out_tokens)}</td><td>${x.cost.toFixed(3)}</td></tr>`).join('')}</tbody></table></div>` : ''}
   </form>`;
@@ -1180,7 +1180,7 @@ document.addEventListener('click', async (ev) => {
         const admin = C.S.me?.user?.is_admin;
         const ans = admin
           ? prompt('¿Qué plantilla? Escribe 1, 2 o 3:\n1 = Ventas pantalón\n2 = Ventas Control Total (tu asistente para vender el sistema)\n3 = Flujo vacío', '1')
-          : C.store()?.rubro === 'simple' ? '3'
+          : !admin || C.store()?.rubro === 'simple' ? '3'
           : confirm('¿Crear desde la plantilla «Ventas pantalón»? (Cancelar = flujo vacío)') ? '1' : '3';
         if (ans === null) return;
         const tpl = { 1: 'pantalon', 2: 'ventas_ct' }[String(ans).trim()] || null;
@@ -1223,7 +1223,7 @@ document.addEventListener('click', async (ev) => {
         markDirty();
         return drawSeqs();
       case 'resetprompt':
-        if (!confirm('¿Volver al prompt copiado de Botcake? Se pierden tus cambios al prompt.')) return;
+        if (!confirm('¿Volver al prompt original? Se pierden tus cambios al prompt.')) return;
         await saveSettings({ ia_prompt: null });
         return;
       case 'testia': {

@@ -68,7 +68,7 @@ function draw(root, st, onDone) {
   let inner = '';
   if (A.step === 0) {
     inner = `<h1>¡Hola! Armemos tu bot en 5 minutos 👋</h1>
-      <p class="sub">Te haremos unas preguntas de tu producto. Con tus respuestas creamos tu bot, tu IA y tus precios, en el mismo orden que usa Porte Perú para vender todos los días.</p>
+      <p class="sub">Te haremos unas preguntas de tu producto. Con tus respuestas creamos tu bot, tu IA y tus precios, en un orden probado vendiendo todos los días por WhatsApp: foto y precios, pregunta, seguimientos, IA y asesora.</p>
       <div class="field"><label>¿Qué vendes?</label>${rubroPicker(a.rubro)}</div>`;
   } else if (A.step === 1) {
     inner = `<h1>Tu producto</h1><p class="sub">Escribe como se lo explicarías a una clienta. La IA usa esto para responder.</p>
@@ -102,7 +102,7 @@ function draw(root, st, onDone) {
       <div class="field"><label for="as-faq">Preguntas frecuentes (pregunta y respuesta)</label><textarea id="as-faq" name="faq" rows="7" maxlength="3000" placeholder="Ej:\n¿Tienen tienda física? → No, solo ventas online con envío.\n¿Cuánto demora a provincia? → 1 a 2 días por Shalom.\n¿Se puede cambiar? → Sí, dentro de 7 días si está sin usar.">${e(a.faq)}</textarea></div>
       <div class="field"><label for="as-gar">Cambios o garantía (opcional)</label><input id="as-gar" name="garantia" value="${e(a.garantia)}" maxlength="300" placeholder="Ej: Cambio de talla gratis dentro de 7 días"></div>`;
   } else if (A.step === 4) {
-    inner = `<h1>Así atenderá tu bot ✅</h1><p class="sub">Ya está armado, en el orden que usa Porte Perú. Puedes cambiar cualquier texto después en Configuración → Bot Suyon AI.</p>
+    inner = `<h1>Así atenderá tu bot ✅</h1><p class="sub">Ya está armado, en un orden probado para vender por WhatsApp. Puedes cambiar cualquier texto después en Configuración → Bot Suyon AI.</p>
       ${timeline(a)}`;
   } else {
     inner = `<h1>Necesito estas fotos y videos 📸</h1>
