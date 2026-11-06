@@ -1657,6 +1657,17 @@ try {
     assert.ok(R.keys.find((k) => k.key === 'ropa:precios').mime, 'la foto de precios de Porte queda como ejemplo');
     assert.equal((await call('DELETE', '/api/admin/referencias/simple%3Aprecios')).ok, true);
     assert.equal((await call('GET', '/api/referencias/simple%3Aprecios')).status, 404);
+    // «Ver como» del admin: el asistente en vista previa no guarda nada
+    const before = await call('GET', `/api/stores/${st.id}/bot`);
+    const pv = await call('POST', `/api/stores/${st.id}/asistente?preview=1`, { rubro: 'simple', producto: 'Parlante', precios: { 1: 99 } });
+    assert.equal(pv.preview, true);
+    assert.equal(pv.flow_id, null);
+    assert.equal(pv.rubro, 'simple');
+    assert.ok(pv.assets.some((x) => x.key === 'producto'));
+    const after = await call('GET', `/api/stores/${st.id}/bot`);
+    assert.equal(after.settings.ia_prompt, before.settings.ia_prompt, 'su prompt no cambia');
+    assert.equal(after.flows.length, before.flows.length, 'no crea flujo');
+    assert.equal((await call('GET', '/api/me')).stores[0].rubro, 'ropa', 'su tienda sigue siendo de ropa');
     // una tienda nueva de ropa nace con el asistente pendiente
     const ns = await call('POST', `/api/companies/${st.company_id}/stores`, { name: 'Prueba ropa', rubro: 'ropa' });
     const nst = ns.stores.find((x) => x.id === ns.store_id);

@@ -461,6 +461,11 @@ function startApp(me) {
 }
 
 function setMe(me) {
+  // «Ver como» (solo admin): cambia cómo se VE la tienda (mensajes/Shopify, ropa/sin variantes) sin tocar la tienda real
+  for (const st of me.stores) {
+    st._real = { canal: st.canal, rubro: st.rubro };
+    if (S.preview && me.user.is_admin) Object.assign(st, S.preview);
+  }
   S.me = me;
   for (const s of me.stores) if (S.revs[s.id] === undefined) S.revs[s.id] = s.rev;
 }
@@ -545,8 +550,16 @@ function renderAsis() {
   if (S.view === 'asis' && root().querySelector('.asis') && S.asisStore === st.id) return; // ya está en pantalla: no se borra lo escrito
   S.view = 'asis';
   S.asisStore = st.id;
-  renderAsistente(root(), st, (hecho) => {
+  renderAsistente(root(), st, { preview: S.asis === 'preview' }, (hecho) => {
     const from = S.asis;
+    if (from === 'preview') {
+      S.asis = false;
+      S.asisStore = null;
+      S.view = 'config';
+      S.cfgTab = 'bot';
+      render();
+      return toast('Así lo ve un alumno nuevo. No se guardó nada en tu tienda.');
+    }
     S.asis = false;
     S.asisStore = null;
     st.setup = 0;
@@ -565,7 +578,7 @@ function renderAsis() {
 }
 
 window.addEventListener('ct:asistente', () => {
-  S.asis = 'bot';
+  S.asis = S.preview ? 'preview' : 'bot';
   resetAsistente();
   render();
 });
@@ -593,9 +606,11 @@ function render() {
       <button class="store-top" data-act="stores" aria-label="Cambiar tienda"><span>${st ? esc(storeLabel(st)) : 'Elegir tienda'}</span><span class="caret">▾</span></button>
       <h1>${titles[S.view]}</h1>
       <span class="grow"></span>
+      ${S.me.user.is_admin && st ? `<button class="viewpill ${S.preview ? 'on' : ''}" data-act="vercomo" title="Ver la app como la ve un alumno, sin cambiar tu tienda">👁 ${S.preview ? `${S.preview.canal === 'shopify' ? 'Shopify' : 'Mensajes'} · ${S.preview.rubro === 'simple' ? 'Sin variantes' : 'Ropa'}` : 'Ver como'}</button>` : ''}
       ${S.me.user.is_admin && S.me.ia_saldo ? saldoPill(S.me.ia_saldo) : ''}
       ${co?.role === 'dueno' && co.plan && ['trial', 'grace'].includes(co.plan.state) ? `<button class="planpill ${co.plan.state === 'grace' || co.plan.days_left <= 3 ? 'warn' : ''}" data-nav="config" data-tab="miplan">${co.plan.state === 'trial' ? `Prueba gratis · ${co.plan.days_left} ${co.plan.days_left === 1 ? 'día' : 'días'}` : 'Tu plan venció · renovar'}</button>` : ''}
     </header>
+    ${S.preview && S.me.user.is_admin ? `<div class="viewband">👁 Vista previa: <b>${S.preview.canal === 'shopify' ? 'vende por Shopify' : 'vende por mensajes'} · ${S.preview.rubro === 'simple' ? 'producto sin variantes' : 'ropa'}</b>. Tu tienda real no cambia.<span class="grow"></span><button data-act="vercomo-asis">Ver el asistente de inicio</button><button data-act="vercomo-off">Salir</button></div>` : ''}
     <div class="content" id="content"></div>
   </main>`;
   const content = $('#content');
@@ -620,6 +635,49 @@ function saldoPill(x) {
   const txt = ps.map((p) => `${p.name} ${p.configurado ? `$${p.saldo.toFixed(2)}` : '—'}`).join(' · ');
   return `<button class="saldopill${bajo ? ' warn' : ''}" data-act="saldo" title="Saldo de la IA: toca para actualizarlo">🤖 ${esc(txt)}</button>`;
 }
+// «Ver como» un alumno: elige cómo vende y qué vende; solo cambia lo que ves tú
+function setPreview(p) {
+  S.preview = p;
+  for (const st of S.me.stores) Object.assign(st, p || st._real || {});
+  resetBot();
+  resetEnvios();
+  resetReportes();
+  render();
+  toast(p ? 'Vista previa activada. Tu tienda real no cambia.' : 'Volviste a tu vista real.');
+}
+
+function openVerComo() {
+  const cur = S.preview || store()?._real || {};
+  modal(`<h3>Ver como un alumno</h3>
+    <p class="note" style="margin:0">Mira el panel como lo ve alguien que vende por Shopify o que vende un producto sin variantes. Solo cambia lo que ves tú: tu tienda, tu bot y tus pedidos siguen igual.</p>
+    <form id="vf" class="grid" style="gap:12px">
+      <div class="field"><label>¿Cómo vende?</label>${canalPicker(cur.canal || 'mensajes')}</div>
+      <div class="field"><label>¿Qué vende?</label>${rubroPicker(cur.rubro || 'ropa')}</div>
+      <div class="err" hidden></div>
+      <div class="row" style="flex-wrap:wrap">${S.preview ? '<button type="button" class="iconbtn" id="vf-off">Volver a mi vista real</button>' : '<button type="button" class="iconbtn" data-close>Cancelar</button>'}<span class="grow"></span>
+        <button type="button" class="iconbtn" id="vf-asis">Ver el asistente de inicio</button><button class="send" type="submit">Ver así</button></div>
+    </form>`);
+  const pick = () => ({ canal: $('#vf input[name=canal]:checked')?.value || 'mensajes', rubro: $('#vf input[name=rubro]:checked')?.value || 'ropa' });
+  formHandler($('#vf'), async () => {
+    const p = pick();
+    closeModal();
+    setPreview(p);
+  });
+  $('#vf-asis').onclick = () => {
+    const p = pick();
+    closeModal();
+    setPreview(p);
+    S.asis = 'preview';
+    resetAsistente();
+    render();
+  };
+  const off = $('#vf-off');
+  if (off) off.onclick = () => {
+    closeModal();
+    setPreview(null);
+  };
+}
+
 function openSaldo() {
   const x = S.me.ia_saldo;
   const wrap = document.createElement('div');
@@ -1850,6 +1908,11 @@ function cfgGeneral() {
     tick();
   };
   formHandler($('#gf'), async (d) => {
+    if (S.preview) {
+      // en vista previa no se guarda cómo vende ni qué vende (sería la tienda real)
+      delete d.canal;
+      delete d.rubro;
+    }
     const r = await api('PATCH', `/stores/${st.id}`, { ...d, hour12: d.hour12 === '1', autocorrect: d.autocorrect !== '0' });
     setMe(r);
     toast('Guardado');
@@ -2507,6 +2570,17 @@ document.addEventListener('click', async (e) => {
   switch (d.act) {
     case 'saldo':
       openSaldo();
+      break;
+    case 'vercomo':
+      openVerComo();
+      break;
+    case 'vercomo-off':
+      setPreview(null);
+      break;
+    case 'vercomo-asis':
+      S.asis = 'preview';
+      resetAsistente();
+      render();
       break;
     case 'stores':
       S.storeMenu = !S.storeMenu;

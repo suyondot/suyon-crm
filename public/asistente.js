@@ -7,7 +7,7 @@ export function initAsistente(ctx) {
 }
 const e = (s) => H.esc(s ?? '');
 
-const A = { step: 0, data: null, ans: null, busy: false, storeId: null };
+const A = { step: 0, data: null, ans: null, busy: false, storeId: null, preview: false };
 
 const TALLAS_JEAN = 'XS · Jean 26-27\nS · Jean 28-30\nM · Jean 31-33\nL · Jean 34-37\nXL · Jean 38-40';
 const RUBROS = [
@@ -36,9 +36,10 @@ function defaults(st) {
 
 const STEPS = ['Qué vendes', 'Tu producto', 'Precios y envíos', 'Cómo atiende', 'Tu bot', 'Fotos y videos'];
 
-export async function renderAsistente(root, st, onDone) {
+export async function renderAsistente(root, st, opts, onDone) {
   if (A.storeId !== st.id || !A.data) {
     A.storeId = st.id;
+    A.preview = !!opts?.preview;
     root.innerHTML = '<div class="asis"><div class="asis-box"><p class="note">Cargando…</p></div></div>';
     try {
       A.data = await H.api('GET', `/stores/${st.id}/asistente`);
@@ -47,15 +48,17 @@ export async function renderAsistente(root, st, onDone) {
       root.querySelector('#as-out').onclick = () => onDone(false);
       return;
     }
-    A.ans = { ...defaults(st), ...(A.data.respuestas || {}), rubro: A.data.rubro };
-    A.ans.precios = { 1: '', 2: '', 3: '', 4: '', ...(A.data.respuestas?.precios || {}) };
-    A.step = A.data.respuestas ? 4 : 0;
+    const saved = A.preview ? null : A.data.respuestas; // en vista previa empieza de cero, como un alumno nuevo
+    A.ans = { ...defaults(st), ...(saved || {}), rubro: A.preview ? st.rubro || 'ropa' : A.data.rubro };
+    A.ans.precios = { 1: '', 2: '', 3: '', 4: '', ...(saved?.precios || {}) };
+    A.step = saved ? 4 : 0;
   }
   draw(root, st, onDone);
 }
 
 function head(st) {
   return `<div class="asis-top"><span class="asis-logo">${H.LOGO}</span><b>Control Total</b><span class="grow"></span><span class="note">${e(st.name)}</span></div>
+  ${A.preview ? '<div class="viewband" style="margin:0;border-radius:10px">👁 Vista previa: así lo ve un alumno nuevo. No se guarda nada en tu tienda.</div>' : ''}
   <ol class="asis-steps">${STEPS.map((s, i) => `<li class="${i < A.step ? 'done' : i === A.step ? 'on' : ''}"><span>${i + 1}</span>${s}</li>`).join('')}</ol>`;
 }
 
@@ -135,6 +138,7 @@ function draw(root, st, onDone) {
     if (act === 'tsml') f.tallas.value = 'S\nM\nL';
     if (act === 'tjean') f.tallas.value = TALLAS_JEAN;
     if (act === 'up') {
+      if (A.preview) return H.toast('En la vista previa no se sube nada.');
       const inp = root.querySelector(`#up-${b.dataset.key}`);
       inp.onchange = () => upload(root, st, onDone, b.dataset.key, inp.files[0]);
       inp.click();
@@ -147,10 +151,12 @@ function draw(root, st, onDone) {
     const bad = validate();
     if (bad) return showErr(bad);
     if (A.step === 3) {
+      // Tienda que ya vendía con su propio prompt: avisar antes de reemplazarlo
+      if (!A.preview && !A.data.respuestas && !A.data.setup && !confirm('Esto reemplaza el prompt de la IA de esta tienda por uno nuevo armado con tus respuestas y crea un flujo nuevo (apagado). Tus flujos actuales no se borran. ¿Seguir?')) return;
       A.busy = true;
       draw(root, st, onDone);
       try {
-        A.data = await H.api('POST', `/stores/${st.id}/asistente`, { ...A.ans, rubro: A.ans.rubro });
+        A.data = await H.api('POST', `/stores/${st.id}/asistente${A.preview ? '?preview=1' : ''}`, { ...A.ans, rubro: A.ans.rubro });
         A.busy = false;
         A.step = 4;
       } catch (er) {
@@ -255,9 +261,11 @@ async function upload(root, st, onDone, key, file) {
 }
 
 async function finish(st, onDone) {
-  try {
-    await H.api('POST', `/stores/${st.id}/asistente/listo`);
-  } catch {}
+  if (!A.preview) {
+    try {
+      await H.api('POST', `/stores/${st.id}/asistente/listo`);
+    } catch {}
+  }
   const done = !!A.data?.respuestas;
   resetAsistente();
   onDone(done);

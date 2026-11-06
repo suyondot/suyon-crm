@@ -74,6 +74,14 @@ r.post('/stores/:id/asistente', async (c) => {
     fail(400, er.message);
   }
   const db = c.env.DB;
+  // Vista previa del admin («Ver como»): muestra lo que se armaría, sin guardar nada
+  if (c.req.query('preview')) {
+    const refs = await loadRefs(c.env);
+    return c.json({
+      rubro, canal: st.canal || 'mensajes', setup: st.setup || 0, respuestas: { ...a, rubro }, flow_id: null, preview: true,
+      assets: assetsFor(rubro, a).map((x) => ({ ...x, ok: false, asset_id: null, asset_mime: null, ref_mime: refs[x.ref]?.mime || null })),
+    });
+  }
   const prev = parse(st.asistente);
   // 1) IA: prompt y conocimiento
   await saveSettings(c.env, st.id, { ia_prompt: promptAsistente(a, rubro), ia_knowledge: knowledgeAsistente(a) });

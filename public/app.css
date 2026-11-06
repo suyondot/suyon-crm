@@ -1383,3 +1383,8 @@ body[data-rubro="simple"] .pit{grid-template-columns:minmax(0,1fr) 64px auto}
 .asis-check input{width:auto!important;flex:0 0 auto;margin-top:3px}
 .asis-check span{text-align:left;flex:1}
 .asis .link{background:none;border:0;color:var(--muted);text-decoration:underline;cursor:pointer;font:inherit;font-size:13px;padding:0}
+.viewpill{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:5px 11px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.viewpill.on{background:#fff4d6;border-color:#e2b23c;color:#5b4300}
+.viewband{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 16px;background:#fff4d6;color:#5b4300;font-size:13px;border-bottom:1px solid #f0d58a}
+.viewband button{border:1px solid #e2b23c;background:#fffaf0;color:#5b4300;border-radius:8px;padding:4px 10px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+@media (max-width:640px){.viewpill{padding:5px 8px;font-size:12px}}
