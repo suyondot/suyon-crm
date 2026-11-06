@@ -1,5 +1,6 @@
 // Envíos a provincia (Shalom / Olva): registro desde formularios, cruce con la guía, «ya recogió», ajustes e importación
 import { now, fail, clip, localDay } from './util.js';
+import { addSpend } from './saldo.js';
 import { cfgOf, normPhone, priceFor, insertOrder, getOrder, addEvent, shape } from './orders.js';
 import { setOrderStatus } from './automations.js';
 import { strip } from './catalogo.js';
@@ -352,6 +353,7 @@ export async function readGuides(env, store, files) {
     `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 1, ?, ?, ?)
      ON CONFLICT (store_id, day) DO UPDATE SET calls = calls + 1, in_tokens = in_tokens + excluded.in_tokens, out_tokens = out_tokens + excluded.out_tokens, cost = cost + excluded.cost`
   ).bind(store.id, localDay(now(), store.timezone || 'America/Lima'), inTok, outTok, cost).run().catch(() => {});
+  await addSpend(env, 'anthropic', cost, store.timezone);
   const text = (data.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('');
   const a = text.indexOf('[');
   const b = text.lastIndexOf(']');

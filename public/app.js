@@ -551,6 +551,7 @@ function render() {
       <button class="store-top" data-act="stores" aria-label="Cambiar tienda"><span>${st ? esc(storeLabel(st)) : 'Elegir tienda'}</span><span class="caret">▾</span></button>
       <h1>${titles[S.view]}</h1>
       <span class="grow"></span>
+      ${S.me.user.is_admin && S.me.ia_saldo ? saldoPill(S.me.ia_saldo) : ''}
       ${co?.role === 'dueno' && co.plan && ['trial', 'grace'].includes(co.plan.state) ? `<button class="planpill ${co.plan.state === 'grace' || co.plan.days_left <= 3 ? 'warn' : ''}" data-nav="config" data-tab="miplan">${co.plan.state === 'trial' ? `Prueba gratis · ${co.plan.days_left} ${co.plan.days_left === 1 ? 'día' : 'días'}` : 'Tu plan venció · renovar'}</button>` : ''}
     </header>
     <div class="content" id="content"></div>
@@ -567,6 +568,45 @@ function render() {
   else renderConfig();
   drawStoreMenu();
   updateTitle();
+}
+
+// Saldo de la IA (Claude / OpenAI) en la barra de arriba, solo para el administrador
+function saldoPill(x) {
+  const ps = x.proveedores.filter((p) => p.key);
+  if (!ps.length) return '';
+  const bajo = ps.some((p) => p.bajo);
+  const txt = ps.map((p) => `${p.name} ${p.configurado ? `$${p.saldo.toFixed(2)}` : '—'}`).join(' · ');
+  return `<button class="saldopill${bajo ? ' warn' : ''}" data-act="saldo" title="Saldo de la IA: toca para actualizarlo">🤖 ${esc(txt)}</button>`;
+}
+function openSaldo() {
+  const x = S.me.ia_saldo;
+  const wrap = document.createElement('div');
+  wrap.className = 'pmodal';
+  const row = (p) => `<div class="sdrow"><div><b>${esc(p.name)}</b>${p.key ? '' : ' <small class="note">(sin clave)</small>'}
+      <div class="note">${p.configurado ? `Quedan <b>US$${p.saldo.toFixed(2)}</b> · gastado US$${p.gastado.toFixed(2)} desde que lo pusiste${p.dias != null ? ` · alcanza para unos <b>${p.dias} días</b>` : ''}` : 'Todavía no pusiste tu saldo.'}<br>Últimos 30 días: US$${p.ultimos_30.toFixed(2)}</div></div>
+      <label class="note">Saldo que ves ahora (US$)<input type="number" step="0.01" min="0" data-sd="${p.id}" placeholder="${p.configurado ? p.saldo.toFixed(2) : 'ej. 10.00'}"></label></div>`;
+  wrap.innerHTML = `<div class="pmbox" role="dialog" aria-modal="true" aria-label="Saldo de la IA"><header class="pmh"><div><h2>🤖 Saldo de la IA</h2><span class="note">Claude y OpenAI no dejan leer el saldo desde otro sistema. Por eso: escribe aquí el saldo que ves en tu cuenta y desde ahí el sistema resta lo que va gastando (bot, notas de voz, ortografía, fotos de guías).</span></div><button class="iconbtn" data-sdx aria-label="Cerrar">✕</button></header>
+    <div class="pmbody">${x.proveedores.map(row).join('')}
+      <div class="field" style="max-width:260px"><label>Avisarme (en rojo) cuando quede menos de US$</label><input type="number" step="0.5" min="0" id="sdal" value="${x.alerta}"></div>
+      <p class="note">Dónde ver tu saldo: Claude → console.anthropic.com → Billing («Credit balance»). OpenAI → platform.openai.com → Settings → Billing. Cada vez que recargues, vuelve aquí y pon el saldo nuevo.</p>
+      <div class="regrow"><button class="send" data-sdok>Guardar</button></div></div></div>`;
+  document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  wrap.addEventListener('mousedown', (ev) => ev.target === wrap && close());
+  wrap.querySelector('[data-sdx]').onclick = close;
+  wrap.querySelector('[data-sdok]').onclick = async () => {
+    try {
+      let r = null;
+      for (const i of wrap.querySelectorAll('[data-sd]')) if (i.value !== '') r = await api('PATCH', '/admin/ia-saldo', { provider: i.dataset.sd, saldo: i.value });
+      r = await api('PATCH', '/admin/ia-saldo', { alerta: Number($('#sdal').value) });
+      S.me.ia_saldo = r;
+      close();
+      toast('Saldo guardado');
+      render();
+    } catch (e) {
+      toast(e.message, 5000);
+    }
+  };
 }
 
 function storeLabel(s) {
@@ -2418,6 +2458,9 @@ document.addEventListener('click', async (e) => {
     return;
   }
   switch (d.act) {
+    case 'saldo':
+      openSaldo();
+      break;
     case 'stores':
       S.storeMenu = !S.storeMenu;
       return drawStoreMenu();

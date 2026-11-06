@@ -1564,6 +1564,19 @@ try {
     assert.deepEqual(fixIds({}, 'JHORDAN SUYON\n73559594\n987 654 321'), { celular: '987654321', dni: '73559594' });
     assert.deepEqual(fixIds({}, 'ce 001234567890'), { dni: '001234567890' });
   });
+  await step('saldo de la IA: pongo el saldo y se descuenta lo que gasta el sistema', async () => {
+    let r = await call('PATCH', '/api/admin/ia-saldo', { provider: 'anthropic', saldo: '10.00' });
+    assert.equal(r.proveedores.find((p) => p.id === 'anthropic').saldo, 10);
+    const me = await call('GET', '/api/me');
+    const st = me.stores[0];
+    const ch = (await call('GET', `/api/stores/${st.id}/chats`)).chats[0];
+    await call('POST', `/api/chats/${ch.id}/messages`, { text: 'hola amiga, esta listo tu pedido' });
+    r = await call('GET', '/api/admin/ia-saldo');
+    const a = r.proveedores.find((p) => p.id === 'anthropic');
+    assert.ok(a.saldo < 10 && a.saldo > 9.99, String(a.saldo));
+    assert.ok(me.ia_saldo, 'va en /api/me para el admin');
+    assert.equal((await call('PATCH', '/api/admin/ia-saldo', { provider: 'anthropic', saldo: 'abc' })).status, 400);
+  });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos', '/planes']) assert.equal((await fetch(BASE + p)).status, 200);
     const planes = await (await fetch(BASE + '/planes')).text();

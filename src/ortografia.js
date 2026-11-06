@@ -2,6 +2,7 @@
 // Regla de oro: solo se aceptan cambios que NO cambian las palabras (mismo texto sin tildes, sin mayúsculas y sin signos).
 // Si la IA tarda, falla o cambia alguna palabra, se manda tal cual lo escribió la asesora.
 import { now, localDay } from './util.js';
+import { addSpend } from './saldo.js';
 
 const MODEL = 'claude-haiku-5-5';
 const PROMPT = `Corrige la ortografía de este mensaje de WhatsApp en español peruano que una vendedora le escribe a una clienta.
@@ -37,6 +38,7 @@ export async function fixSpelling(env, store, text) {
       `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 1, ?, ?, ?)
        ON CONFLICT (store_id, day) DO UPDATE SET calls = calls + 1, in_tokens = in_tokens + excluded.in_tokens, out_tokens = out_tokens + excluded.out_tokens, cost = cost + excluded.cost`
     ).bind(store.id, localDay(now(), store.timezone || 'America/Lima'), inTok, outTok, (inTok * 0.1 + outTok * 0.5) / 1e6).run().catch(() => {});
+    await addSpend(env, 'anthropic', (inTok * 0.1 + outTok * 0.5) / 1e6, store.timezone);
   } catch {
     return text;
   }

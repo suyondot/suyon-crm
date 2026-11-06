@@ -534,6 +534,11 @@ export const MIGRATIONS = [
     name: 'corregir ortografía de los mensajes del equipo (por tienda, encendido)',
     sql: [`ALTER TABLE stores ADD COLUMN autocorrect INTEGER NOT NULL DEFAULT 1`],
   },
+  {
+    id: 19,
+    name: 'gasto de IA por proveedor y día (para el saldo de Claude / OpenAI)',
+    sql: [`CREATE TABLE ia_spend (provider TEXT NOT NULL, day TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, PRIMARY KEY (provider, day))`],
+  },
 ];
 
 let ready = null;

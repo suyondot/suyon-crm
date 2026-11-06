@@ -7,6 +7,7 @@ import { draftFromChat, insertOrder, cfgOf } from './orders.js';
 import { agenciesNear, agenciesIn, agencyOptions } from './shalom.js';
 import { onOrderCreated } from './automations.js';
 import { storeBlocked, loadPlan, priceText } from './billing.js';
+import { addSpend } from './saldo.js';
 
 const MIN = 60e3;
 const MAX_STEPS = 40;
@@ -815,6 +816,7 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
       `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 1, ?, ?, ?)
        ON CONFLICT (store_id, day) DO UPDATE SET calls = calls + 1, in_tokens = in_tokens + excluded.in_tokens, out_tokens = out_tokens + excluded.out_tokens, cost = cost + excluded.cost`
     ).bind(store.id, today(store.timezone), out.inTok, out.outTok, cost).run();
+    if (!settings.ia_secret || ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'].includes(settings.ia_secret)) await addSpend(env, price.provider, cost, store.timezone);
     const p = parseReply(out.text, caseIds);
     if (p.valid && (p.mensajes.length || p.caso)) reply = p;
     else lastErr = { raw: clip(out.text, 1500) };

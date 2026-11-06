@@ -5,6 +5,7 @@ import { requireUser, companyFor, createSession } from './auth.js';
 import { loadPlan, savePlan, billingOf, statusOf, addPayment, usageOf, priceOf, optionsOf } from './billing.js';
 import { loadLanding, setVideo, removeVideo, addTestimonio, removeTestimonio } from './landing-data.js';
 import { loadShalom, saveShalom, shalomGet, syncAgencies, findAgencies, agencyStats, track, baseOf } from './shalom.js';
+import { loadSaldo, setSaldo } from './saldo.js';
 import { loadAgenda, saveAgenda, freeSlots, bookDemo, dayLabel, timeLabel, gcalLink, DEMO_STATUS } from './agenda.js';
 
 const r = new Hono();
@@ -272,6 +273,22 @@ r.post('/admin/shalom/rastrear', async (c) => {
 r.get('/shalom/agencias', async (c) => {
   await requireUser(c);
   return c.json({ agencias: await findAgencies(c.env, c.req.query('q') || '', 20) });
+});
+
+
+// Saldo de IA de las claves del sistema (solo admin)
+r.get('/admin/ia-saldo', async (c) => {
+  await requireAdmin(c);
+  return c.json(await loadSaldo(c.env));
+});
+r.patch('/admin/ia-saldo', async (c) => {
+  await requireAdmin(c);
+  try {
+    return c.json(await setSaldo(c.env, await c.req.json()));
+  } catch (e) {
+    if (e.status) fail(e.status, e.message);
+    throw e;
+  }
 });
 
 export default r;

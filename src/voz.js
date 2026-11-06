@@ -1,5 +1,6 @@
 // Notas de voz → texto (OpenAI). La asesora lee el texto debajo del audio y el bot / la IA lo entienden.
 import { now, clip, localDay } from './util.js';
+import { addSpend } from './saldo.js';
 
 export const VOZ_MODEL = 'gpt-4o-mini-transcribe';
 export const VOZ_PRICE_MIN = 0.003; // US$ por minuto (aprox.)
@@ -35,6 +36,7 @@ export async function transcribe(env, store, msgId, { notify } = {}) {
       `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 0, 0, 0, ?)
        ON CONFLICT (store_id, day) DO UPDATE SET cost = cost + excluded.cost`
     ).bind(store.id, localDay(now(), store.timezone), min * VOZ_PRICE_MIN).run();
+    await addSpend(env, 'openai', min * VOZ_PRICE_MIN, store.timezone);
     await env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE id = ?').bind(store.id).run();
     return text;
   } catch (e) {

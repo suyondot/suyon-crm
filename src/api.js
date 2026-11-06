@@ -13,6 +13,7 @@ import pedidosApi from './api-pedidos.js';
 import billingApi from './api-billing.js';
 import enviosApi from './api-envios.js';
 import { fixSpelling } from './ortografia.js';
+import { loadSaldo } from './saldo.js';
 import { loadPlan } from './billing.js';
 import { signupInfo, connectSignup } from './signup.js';
 
@@ -55,9 +56,11 @@ async function mePayload(c) {
   const demos = a.user.is_admin
     ? (await c.env.DB.prepare("SELECT COUNT(*) AS n FROM demos WHERE status = 'nueva' AND starts_at > ?").bind(Date.now()).first().catch(() => null))?.n || 0
     : 0;
+  const iaSaldo = a.user.is_admin ? await loadSaldo(c.env).catch(() => null) : null;
   return {
     user: { id: a.user.id, name: a.user.name, email: a.user.email, is_admin: !!a.user.is_admin },
     demos_nuevas: demos,
+    ia_saldo: iaSaldo,
     companies: a.companies,
     stores: a.stores.map(publicStore),
     roles: ROLES,
