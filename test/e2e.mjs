@@ -1277,9 +1277,9 @@ try {
     assert.match(clave.link, /\/clave\/[\w-]+$/);
     assert.equal(clave.email, 'ana@alumna.pe');
     let bot = await as('GET', `/api/stores/${s1.store_id}/bot`);
-    assert.match(bot.settings.ia_prompt, /Vendes SOLO Cápsulas de colágeno/);
+    assert.match(bot.settings.ia_prompt, /Vendes Cápsulas de colágeno\./);
     assert.match(bot.settings.ia_prompt, /S\/129\.90/);
-    assert.match(bot.settings.ia_prompt, /adelanto de S\/20/);
+    assert.match(bot.settings.ia_prompt, /separas con S\/20/);
     assert.match(bot.settings.ia_knowledge, /Cuántas al día/);
     assert.equal(bot.rubro, 'simple');
     assert.deepEqual(bot.template_assets.map((x) => x.key), A.assets.map((x) => x.key));

@@ -109,6 +109,22 @@ r.post('/stores/:id/asistente', async (c) => {
   return c.json(await payload(c.env, fresh));
 });
 
+// Rehace SOLO el prompt y el conocimiento con las respuestas guardadas (no toca el flujo ni los archivos)
+r.post('/stores/:id/asistente/prompt', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const ans = parse(st.asistente).respuestas;
+  if (!ans) fail(400, 'Esta tienda no pasó por el asistente.');
+  const rubro = st.rubro || ans.rubro || 'ropa';
+  let a;
+  try {
+    a = cleanAsistente(ans, rubro);
+  } catch (er) {
+    fail(400, er.message);
+  }
+  await saveSettings(c.env, st.id, { ia_prompt: promptAsistente(a, rubro), ia_knowledge: knowledgeAsistente(a) });
+  return c.json({ ok: true });
+});
+
 // Termina el asistente (o lo salta): ya entra al panel
 r.post('/stores/:id/asistente/listo', async (c) => {
   const st = await storeFor(c, c.req.param('id'), 'config');

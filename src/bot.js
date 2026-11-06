@@ -107,11 +107,11 @@ export function recognize(text, options) {
 
 export async function loadSettings(env, storeId) {
   const row = await env.DB.prepare('SELECT * FROM bot_settings WHERE store_id = ?').bind(storeId).first();
-  const st = await env.DB.prepare('SELECT s.timezone, s.language, s.hour12, co.plan_status FROM stores s LEFT JOIN companies co ON co.id = s.company_id WHERE s.id = ?').bind(storeId).first();
+  const st = await env.DB.prepare('SELECT s.timezone, s.language, s.hour12, s.order_cfg, co.plan_status FROM stores s LEFT JOIN companies co ON co.id = s.company_id WHERE s.id = ?').bind(storeId).first();
   const saved = Object.fromEntries(Object.entries(row || {}).filter(([k, v]) => v != null || DEFAULT_SETTINGS[k] == null));
   // Las tiendas de Jordan (empresas sin cobro) usan su prompt «Ventas pantalón» por defecto; las de alumnos, uno genérico
   const own = !st?.plan_status || st.plan_status === 'free';
-  return { ...DEFAULT_SETTINGS, ...saved, timezone: st?.timezone || DEFAULT_TZ, language: st?.language || 'es', hour12: st?.hour12 ?? 1, store_id: storeId, __own: own };
+  return { ...DEFAULT_SETTINGS, ...saved, timezone: st?.timezone || DEFAULT_TZ, language: st?.language || 'es', hour12: st?.hour12 ?? 1, store_id: storeId, __own: own, __sin: cfgOf({ order_cfg: st?.order_cfg }).sin_cobertura };
 }
 
 export async function loadFlow(env, flowId) {
@@ -528,7 +528,7 @@ export function entregaDia(t, tz, { corte_h = 13, entrega_sab = 1, entrega_dom =
 // Variables que se pueden usar en el prompt con {llave}
 export const PROMPT_VARS = [
   ['ahora', 'Fecha y hora de la tienda'], ['fecha', 'Fecha de hoy'], ['hora', 'Hora actual'], ['dia', 'Día de la semana'],
-  ['entrega', 'Día de entrega en Lima (HOY / MAÑANA / el LUNES)'], ['horario_entrega', 'Horario de entrega en Lima'],
+  ['entrega', 'Día de entrega en Lima (HOY / MAÑANA / el LUNES)'], ['horario_entrega', 'Horario de entrega en Lima'], ['sin_cobertura', 'Distritos de Lima sin motorizado (Pedidos)'],
   ['etiquetas', 'Etiquetas de la clienta'], ['yape', 'Yape / Plin'], ['titular', 'A nombre de'], ['bcp', 'Cuenta BCP'], ['cci', 'CCI'],
   ['talla', 'Talla que guardó el bot'], ['colores', 'Colores elegidos'], ['cantidad', 'Cantidad'], ['destino', 'Destino'], ['distrito', 'Distrito'],
   ['nombre', 'Nombre para el pedido'], ['celular', 'Celular para el pedido'], ['dni', 'DNI'], ['direccion', 'Dirección'], ['sede_shalom', 'Sede Shalom'],
@@ -549,6 +549,7 @@ function fillPrompt(text, settings, labels, vars) {
     dia: DIAS[p.dow],
     entrega: entregaDia(now(), tz, settings),
     horario_entrega: settings.entrega_horario || DEFAULT_SETTINGS.entrega_horario,
+    sin_cobertura: settings.__sin || 'ninguno',
     etiquetas: labels.length ? labels.join(', ') : 'ninguna',
     yape: settings.pay_yape || '[FALTA YAPE]',
     titular: settings.pay_titular || '[FALTA TITULAR]',
