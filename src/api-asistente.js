@@ -7,6 +7,7 @@ import { kindForMime } from './whatsapp.js';
 import { saveSettings, validateGraph } from './api-bot.js';
 import { cleanAsistente, promptAsistente, knowledgeAsistente, flowAsistente, assetsFor, parseTallas, REF_KEYS, REF_FROM_STORE } from './bot-template.js';
 import { cfgOf } from './orders.js';
+import { preguntasProducto } from './asistente-preguntas.js';
 
 const r = new Hono();
 const body = async (c) => {
@@ -107,6 +108,16 @@ r.post('/stores/:id/asistente', async (c) => {
   c.set('access', undefined);
   const fresh = await storeFor(c, st.id, 'config');
   return c.json(await payload(c.env, fresh));
+});
+
+// Preguntas de su producto (paso «Detalles»): la IA las piensa según lo que vende; si no, las fijas de su tipo
+r.post('/stores/:id/asistente/preguntas', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const b = await body(c);
+  const producto = clip(String(b.producto || '').trim(), 60);
+  if (!producto) fail(400, 'Escribe primero qué producto vendes.');
+  const rubro = RUBROS.includes(b.rubro) ? b.rubro : st.rubro || 'ropa';
+  return c.json(await preguntasProducto(c.env, st, { rubro, producto, descripcion: clip(String(b.descripcion || ''), 800), tela: clip(String(b.tela || ''), 200), ya: (Array.isArray(b.ya) ? b.ya : []).slice(0, 15).map((q) => clip(String(q), 150)) }));
 });
 
 // Termina el asistente (o lo salta): ya entra al panel

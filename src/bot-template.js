@@ -518,6 +518,11 @@ export function cleanAsistente(b = {}, rubro = 'simple') {
     adelanto: Math.max(0, Math.min(500, Math.round(Number(b.adelanto ?? 30) || 0))),
     faq: s(b.faq, 3000), garantia: s(b.garantia, 300), trato: b.trato === 'neutral' ? 'neutral' : 'cercano',
     palabra: s(b.palabra, 80),
+    // Respuestas a las preguntas de su producto (paso «Detalles»)
+    detalles: (Array.isArray(b.detalles) ? b.detalles : [])
+      .map((d) => ({ q: s(d?.q, 150), a: s(d?.a, 400) }))
+      .filter((d) => d.q && d.a)
+      .slice(0, 12),
   };
   if (rubro === 'ropa') {
     a.tallas = s(b.tallas, 400);
@@ -540,25 +545,67 @@ function preciosText(a, rubro) {
   return ks.map((k) => `${k === best && k > 1 ? '🔥' : '💰'} ${k} ${unidad(rubro, k)}: ${soles(a.precios[k])}${k > 1 ? ` → ${soles(a.precios[k] / k)} c/u` : ''}${k === best && k > 1 ? ' ⭐' : ''}`).join('\n');
 }
 
+// Guion sugerido para la nota de voz, con sus propios datos
+export function guionAudio(a = {}, rubro = 'ropa') {
+  const ks = Object.keys(a.precios || {}).map(Number).filter((k) => a.precios[k] > 0).sort((x, y) => x - y);
+  const best = ks.length > 1 ? ks[ks.length - 1] : ks[0];
+  const ben = lines(a.beneficios).slice(0, 2).map((x) => x.replace(/[.]$/, '').toLowerCase());
+  const prod = a.producto || (rubro === 'ropa' ? 'la prenda' : 'el producto');
+  const promo = best ? (best > 1 ? `Hoy llevando ${best} te sale a ${soles(a.precios[best] / best)} cada ${rubro === 'ropa' ? 'una' : 'uno'}` : `Hoy está a ${soles(a.precios[best])}`) : 'Hoy tenemos promoción';
+  const envio = a.envio && !/^env[ií]o gratis$/i.test(a.envio.trim()) ? a.envio.replace(/[.]$/, '') : 'y el envío es gratis';
+  const cierre = rubro === 'ropa' ? '¿Qué talla usas? Te mando los colores que me quedan en tu talla.' : '¿Cuántos te separo?';
+  return `¡Hola! Te escribo de ${a.marca || 'la tienda'} 😊 Vi que te ${/^nuestr[oa]s$/.test(nuestro(prod)) ? 'interesaron' : 'interesó'} ${/^(el|la|los|las|un|una) /i.test(prod) ? prod : `${nuestro(prod)} ${prod.charAt(0).toLowerCase() + prod.slice(1)}`}.${ben.length ? ` ${ben.length > 1 ? `${cap(ben[0])} y ${ben[1]}` : cap(ben[0])}.` : ''} ${promo}, ${envio}. ${cierre} Escríbeme y te ayudo.`;
+}
+const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
+// «nuestro vestido», «nuestra cartera», «nuestras zapatillas» (por la terminación de la primera palabra)
+function nuestro(prod) {
+  const w = String(prod).trim().split(/\s+/)[0].toLowerCase();
+  if (/as$/.test(w)) return 'nuestras';
+  if (/s$/.test(w)) return 'nuestros';
+  if (/(a|ión|dad)$/.test(w)) return 'nuestra';
+  return 'nuestro';
+}
+
+const FORMATO = {
+  image: 'Foto JPG o PNG, hasta 5 MB. Mejor vertical o cuadrada.',
+  video: 'Video MP4, vertical, de 15 a 40 segundos, hasta 16 MB.',
+  audio: 'Nota de voz OGG (la que graba WhatsApp o el botón 🎙 de aquí), de 30 a 40 segundos. También sirve MP3 o M4A, pero le llega como archivo de audio y no como nota de voz.',
+  mix: 'Foto (JPG o PNG, hasta 5 MB) o video MP4 vertical (hasta 16 MB).',
+};
+
 // Archivos que el asistente le pide al alumno. ref = clave de la imagen de referencia (Panel Suyon → Referencias).
+// tipo = formato que se acepta; idea = cómo hacerlo; guion = qué decir (nota de voz).
 export function assetsFor(rubro, a = {}) {
-  const tallas = rubro === 'ropa' ? parseTallas(a.tallas) : [];
+  const ropa = rubro === 'ropa';
+  const tallas = ropa ? parseTallas(a.tallas) : [];
   const L = [];
-  const add = (key, desc, need, ref, cuando) => L.push({ key, desc, need, ref, cuando });
-  add('precios', rubro === 'ropa' ? 'Imagen de abordaje: tu prenda con los precios de la promoción' : 'Imagen de abordaje: tu producto con los precios de la promoción', 'si', `${rubro}:precios`, 'Primer mensaje, apenas te escriben');
-  if (rubro === 'ropa') {
-    add('tabla-tallas', 'Tabla de tallas', 'si', 'ropa:tabla-tallas', 'La IA la manda si duda de su talla');
-    for (const t of tallas) add(`colores-${t.value}`, `Colores disponibles en talla ${t.value}`, 'si', 'ropa:colores', 'Apenas dice su talla');
+  const add = (key, desc, need, ref, cuando, tipo, idea, guion) => L.push({ key, desc, need, ref, cuando, tipo, formato: FORMATO[tipo], idea, ...(guion ? { guion } : {}) });
+  const ks = Object.keys(a.precios || {}).map(Number).filter((k) => a.precios[k] > 0).sort((x, y) => x - y);
+  const promo = ks.length ? ks.map((k) => `${k} × ${soles(a.precios[k])}`).join(' · ') : '1 × S/89 · 2 × S/139 · 3 × S/175';
+  add('precios', ropa ? 'Imagen de abordaje: tu prenda con los precios de la promoción' : 'Imagen de abordaje: tu producto con los precios de la promoción', 'si', `${rubro}:precios`, 'Primer mensaje, apenas te escriben', 'image',
+    `Foto clara de ${ropa ? 'la prenda puesta' : 'tu producto'} y, en letras grandes, tu promoción: ${promo}. Si es envío gratis, ponlo también.`);
+  if (ropa) {
+    add('tabla-tallas', 'Tabla de tallas', 'si', 'ropa:tabla-tallas', 'La IA la manda si duda de su talla', 'image',
+      `Una tabla con cada talla (${tallas.map((t) => t.value).join(', ') || 'S, M, L'}) y sus medidas en cm: cintura, cadera y largo. Si usas talla de jean, ponla al lado.`);
+    for (const t of tallas) add(`colores-${t.value}`, `Colores disponibles en talla ${t.value}`, 'si', 'ropa:colores', 'Apenas dice su talla', 'image',
+      `Una sola imagen con todos los colores que tienes en talla ${t.value}, cada uno con su nombre debajo (${a.colores || 'Negro, Beige…'}). Si se acaba un color, cambias esta foto.`);
   } else {
-    add('producto', 'Foto del producto de cerca (detalles, empaque)', 'recomendado', 'simple:producto', 'La IA la manda si quiere ver más');
+    add('producto', 'Foto del producto de cerca (detalles, empaque)', 'recomendado', 'simple:producto', 'La IA la manda si quiere ver más', 'image',
+      'Tu producto de cerca, con buena luz: detalles, textura y cómo viene empacado.');
   }
-  add('audio-seguimiento', 'Nota de voz tuya invitando a comprar (30 a 40 segundos)', 'recomendado', `${rubro}:audio-seguimiento`, 'Seguimiento de 40 min si no responde');
-  add(rubro === 'ropa' ? 'video-puesto' : 'video-producto', rubro === 'ropa' ? 'Video «Así se ve puesto»' : 'Video del producto en uso', 'recomendado', `${rubro}:video`, 'Seguimiento de 3 h y cuando la IA lo necesite');
-  add('fotos-pedidos', 'Foto de pedidos listos para enviar', 'recomendado', `${rubro}:fotos-pedidos`, 'Seguimiento de 15 h (da confianza)');
-  if (a.lima !== false) add('confianza-lima', 'Foto o video de entregas en Lima (motorizado, clientas recibiendo)', 'recomendado', `${rubro}:confianza-lima`, 'La IA lo manda si desconfía (Lima)');
+  add('audio-seguimiento', 'Nota de voz tuya invitando a comprar (30 a 40 segundos)', 'recomendado', `${rubro}:audio-seguimiento`, 'Seguimiento de 40 min si no responde', 'audio',
+    'Habla como si le escribieras a una clienta: tranquila, con tu voz y sin leer. Puedes usar este ejemplo y cambiarlo a tu forma:', guionAudio(a, rubro));
+  add(ropa ? 'video-puesto' : 'video-producto', ropa ? 'Video «Así se ve puesto»' : 'Video del producto en uso', 'recomendado', `${rubro}:video`, 'Seguimiento de 3 h y cuando la IA lo necesite', 'video',
+    ropa ? 'Graba la prenda puesta de frente, de lado y de espalda. Muestra la tela de cerca y cómo estira o cae. Con buena luz, sin música fuerte.' : `Muestra ${a.producto || 'tu producto'} en uso: cómo se usa, de cerca, y el resultado. Con buena luz, sin música fuerte.`);
+  add('fotos-pedidos', 'Foto de pedidos listos para enviar', 'recomendado', `${rubro}:fotos-pedidos`, 'Seguimiento de 15 h (da confianza)', 'image',
+    'Varios paquetes listos con su etiqueta o guía. Tapa los nombres y celulares de tus clientas.');
+  if (a.lima !== false) add('confianza-lima', 'Foto o video de entregas en Lima (motorizado, clientas recibiendo)', 'recomendado', `${rubro}:confianza-lima`, 'La IA lo manda si desconfía (Lima)', 'mix',
+    'Tu motorizado entregando un pedido o una clienta recibiendo (con su permiso). Que se vea que es real.');
   if (a.provincia !== false) {
-    add('confianza-provincia', 'Video de envíos por Shalom a provincia', 'recomendado', `${rubro}:confianza-provincia`, 'La IA lo manda si desconfía (provincia)');
-    add('foto-despacho', 'Foto de despacho en la agencia', 'recomendado', `${rubro}:foto-despacho`, 'Recordatorio si no manda la captura');
+    add('confianza-provincia', 'Video de envíos por Shalom a provincia', 'recomendado', `${rubro}:confianza-provincia`, 'La IA lo manda si desconfía (provincia)', 'mix',
+      'Graba cuando dejas tus paquetes en la agencia Shalom: la fila de paquetes y los tickets. Tapa los datos de tus clientas.');
+    add('foto-despacho', 'Foto de despacho en la agencia', 'recomendado', `${rubro}:foto-despacho`, 'Recordatorio si no manda la captura', 'image',
+      'Foto de los paquetes del día en la agencia, con los tickets. Así la clienta ve que despachas todos los días.');
   }
   return L;
 }
@@ -601,7 +648,7 @@ Mensajes cortos: de 1 a 3 líneas cada uno, máximo 3 mensajes por respuesta. Un
 Nunca inventes precios, promociones, stock, colores, tallas ni plazos que no estén aquí.
 
 ## PRODUCTO
-${a.producto}${a.descripcion ? `\n${a.descripcion}` : ''}${a.tela ? `\nTela / material: ${a.tela}` : ''}${a.beneficios ? `\nBeneficios:\n${lines(a.beneficios).map((x) => `- ${x}`).join('\n')}` : ''}${ropa ? `\nTallas: ${tallas.map((t) => t.label).join(' · ')}\nColores: ${a.colores}` : ''}${a.garantia ? `\nGarantía / cambios: ${a.garantia}` : ''}
+${a.producto}${a.descripcion ? `\n${a.descripcion}` : ''}${a.tela ? `\nTela / material: ${a.tela}` : ''}${a.beneficios ? `\nBeneficios:\n${lines(a.beneficios).map((x) => `- ${x}`).join('\n')}` : ''}${ropa ? `\nTallas: ${tallas.map((t) => t.label).join(' · ')}\nColores: ${a.colores}` : ''}${a.garantia ? `\nGarantía / cambios: ${a.garantia}` : ''}${a.detalles?.length ? `\nDetalles (responde con esto si te preguntan):\n${a.detalles.map((d) => `- ${d.q} → ${d.a}`).join('\n')}` : ''}
 
 ## PRECIOS
 ${preciosText(a, rubro)}

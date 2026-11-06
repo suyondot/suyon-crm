@@ -1371,6 +1371,14 @@ body[data-rubro="simple"] .pit{grid-template-columns:minmax(0,1fr) 64px auto}
 .asis-need{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--line);color:var(--muted)}
 .asis-need.req{background:color-mix(in srgb,#7A1F35 14%,var(--surface));color:var(--fg)}
 .asis-mine{display:flex;align-items:center;gap:8px;font-size:13px;color:#2e8b57;font-weight:600}
+.asis-idea{margin:2px 0 0;font-size:13px;line-height:1.45}
+.asis-guion{width:100%;border-left:3px solid #7A1F35;background:color-mix(in srgb,#7A1F35 6%,var(--surface));border-radius:0 10px 10px 0;padding:8px 12px;display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.asis-guion p{margin:0;font-size:13.5px;line-height:1.5;font-style:italic}
+.asis-gl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
+.asis-fmt{font-size:12.5px;color:var(--muted);line-height:1.4}
+.asis-fmt b{font-size:12.5px;color:var(--fg)}
+.asis-btns{display:flex;gap:8px;flex-wrap:wrap}
+.asis-recon{background:#c62828!important}
 @media (max-width:640px){
   .asis{padding:14px 12px 40px}
   .asis-form{padding:16px}

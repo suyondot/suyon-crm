@@ -1719,6 +1719,23 @@ try {
     assert.equal(after.settings.ia_prompt, before.settings.ia_prompt, 'su prompt no cambia');
     assert.equal(after.flows.length, before.flows.length, 'no crea flujo');
     assert.equal((await call('GET', '/api/me')).stores[0].rubro, 'ropa', 'su tienda sigue siendo de ropa');
+    // Detalles: preguntas según el producto (vestido → largo, forro…), nunca de precio ni envío
+    const { preguntasBase } = await import('../src/asistente-preguntas.js');
+    assert.match(preguntasBase('ropa', 'Vestido de fiesta').map((x) => x.q).join(' '), /largo/i);
+    assert.match(preguntasBase('simple', 'Cápsulas de colágeno').map((x) => x.q).join(' '), /contenido/i);
+    const PQ = await call('POST', `/api/stores/${st.id}/asistente/preguntas`, { rubro: 'ropa', producto: 'Vestido de fiesta' });
+    assert.ok(PQ.preguntas.length >= 3, JSON.stringify(PQ));
+    assert.ok(!PQ.preguntas.some((x) => /precio|env[ií]o/i.test(x.q)));
+    assert.equal((await call('POST', `/api/stores/${st.id}/asistente/preguntas`, { producto: '' })).status, 400);
+    const pv2 = await call('POST', `/api/stores/${st.id}/asistente?preview=1`, { rubro: 'simple', marca: 'Lumi', producto: 'Zapatillas urbanas', beneficios: 'Suela antideslizante', precios: { 1: 99, 2: 179 }, detalles: [{ q: '¿La horma?', a: 'Normal' }] });
+    assert.deepEqual(pv2.respuestas.detalles, [{ q: '¿La horma?', a: 'Normal' }]);
+    const aud = pv2.assets.find((x) => x.key === 'audio-seguimiento');
+    assert.match(aud.guion, /Lumi/);
+    assert.match(aud.guion, /nuestras zapatillas urbanas/);
+    assert.match(aud.formato, /OGG/);
+    assert.ok(pv2.assets.every((x) => x.formato && x.idea), 'cada archivo trae formato e idea');
+    const { promptAsistente } = await import('../src/bot-template.js');
+    assert.match(promptAsistente(cleanAsistente({ producto: 'Zapatillas', precios: { 1: 99 }, detalles: [{ q: '¿La horma?', a: 'Normal' }] }, 'simple'), 'simple'), /¿La horma\? → Normal/);
     // una tienda nueva de ropa nace con el asistente pendiente
     const ns = await call('POST', `/api/companies/${st.company_id}/stores`, { name: 'Prueba ropa', rubro: 'ropa' });
     const nst = ns.stores.find((x) => x.id === ns.store_id);
