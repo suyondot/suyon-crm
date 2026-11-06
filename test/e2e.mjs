@@ -72,6 +72,7 @@ const meta = http.createServer(async (req, res) => {
         { id: 3, nombre: 'AREQUIPA / AREQUIPA / CAYMA / AREQUIPA CAYMA', lugar_over: 'AREQUIPA CAYMA', departamento: 'AREQUIPA', provincia: 'AREQUIPA', direccion: 'Av. Ejército 900', habilitado: false },
         { id: 4, nombre: 'LIMA / LIMA / MIRAFLORES / AV LARCO', lugar_over: 'AV LARCO', departamento: 'LIMA', provincia: 'LIMA', direccion: 'Av. Larco 100', habilitado: true },
         { id: 5, nombre: 'LIMA / LIMA / ANCON / ANCON CENTRO', lugar_over: 'ANCON CENTRO', departamento: 'LIMA', provincia: 'LIMA', direccion: 'Jr. Ancón 5', habilitado: true },
+        { id: 6, nombre: 'LIMA / LIMA / ATE-VITARTE / HUAYCAN', lugar_over: 'HUAYCAN', departamento: 'LIMA', provincia: 'LIMA', direccion: 'Av. J. C. Mariátegui 10', habilitado: true },
         // La Libertad: 12 agencias en 3 provincias (más de 10 → primero se pregunta la provincia)
         ...Array.from({ length: 12 }, (_, i) => {
           const [prov, dist] = i < 8 ? ['TRUJILLO', i < 5 ? 'TRUJILLO' : 'VICTOR LARCO'] : i < 11 ? ['PACASMAYO', 'PACASMAYO'] : ['CHEPEN', 'CHEPEN'];
@@ -1473,7 +1474,7 @@ try {
     assert.equal(pr.shape.items, 'lista de 2');
     assert.equal((await call('POST', '/api/admin/shalom/probar', { path: 'http://otro.com/x' })).status, 400, 'solo rutas del servicio');
     const sy = await call('POST', '/api/admin/shalom/agencias');
-    assert.equal(sy.total, 17);
+    assert.equal(sy.total, 18);
     let f = await call('GET', '/api/shalom/agencias?q=juliaca');
     assert.equal(f.agencias.length, 1);
     assert.equal(f.agencias[0].prov, 'SAN ROMÁN');
@@ -1540,6 +1541,13 @@ try {
     await conDatos(sm);
     sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'mejor por Shalom, Miraflores' });
     assert.ok(sm.messages.some((m) => /Agencias Shalom en MIRAFLORES/.test(m.body || '')), 'pidió Shalom: ofrece agencias de Lima');
+    // «Ate» (cobertura parcial): sin pedir Shalom no ofrece agencias; si pide Shalom, encuentra ATE-VITARTE
+    await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
+    await conDatos(await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' }));
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'soy de Ate' });
+    assert.ok(!sm.messages.some((m) => /Agencias Shalom en/.test(m.body || '')), 'Ate: primero pregunta en qué parte');
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'quiero por shalom' });
+    assert.ok(sm.messages.some((m) => /Agencias Shalom en ATE-VITARTE/.test(m.body || '')), 'Ate + Shalom: lista de Ate-Vitarte');
     // Cobertura parcial (Ate después del Real Plaza…): no es agencia hasta saber en qué parte está
     const { zonasSin, modoFor, DEFAULT_CFG } = await import('../src/orders.js');
     assert.equal(zonasSin(DEFAULT_CFG.sin_cobertura).find((z) => z.name === 'ate').parcial, true);

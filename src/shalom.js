@@ -202,7 +202,15 @@ async function index(env) {
   });
   // Lugares conocidos (distrito, provincia, departamento) para encontrarlos dentro del texto
   const places = new Map();
-  for (const r of rows) for (const lv of ['dist', 'prov', 'dep']) if (r.n[lv] && r.n[lv].length > 2) places.set(`${lv}:${r.n[lv]}`, { lv, name: r.n[lv] });
+  for (const r of rows) {
+    for (const lv of ['dist', 'prov', 'dep']) {
+      const full = r.n[lv];
+      if (!full || full.length <= 2) continue;
+      places.set(`${lv}:${full}`, { lv, name: full, full });
+      // «ATE-VITARTE» también se encuentra si la clienta escribe solo «Ate» o «Vitarte»
+      if (/[-/]/.test(full)) for (const part of full.split(/\s*[-/]\s*/)) if (part.length > 2 && !places.has(`${lv}:${part}`)) places.set(`${lv}:${part}`, { lv, name: part, full });
+    }
+  }
   IDX = { at: st.at, n: st.n, rows, places: [...places.values()].sort((a, b) => b.name.length - a.name.length) };
   return IDX;
 }
@@ -221,7 +229,7 @@ export async function agenciesNear(env, text, sinCobertura = '', quiereAgencia =
   // Zonas de Lima sin cobertura completa; las parciales («Ate (después del Real Plaza…)») solo si eligió agencia
   const sin = zonasSin(sinCobertura).filter((z) => !z.parcial || quiereAgencia).map((z) => z.name);
   // Lugares de los que hay agencias según lo encontrado (distrito primero)
-  const matchRows = (p) => ix.rows.filter((r) => r.ok && r.n[p.lv] === p.name);
+  const matchRows = (p) => ix.rows.filter((r) => r.ok && r.n[p.lv] === (p.full || p.name));
   const deps = new Set(hits.filter((h) => h.lv === 'dep').map((h) => h.name));
   for (const lv of ['dist', 'prov', 'dep']) {
     for (const p of hits.filter((h) => h.lv === lv)) {
