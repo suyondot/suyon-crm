@@ -13,6 +13,8 @@ import { runJobs } from './bot.js';
 import { runOrderJobs } from './automations.js';
 import { trackDue } from './rastreo.js';
 import { handleShopify } from './shopify.js';
+import { tokenReminders } from './signup.js';
+import { notify } from './bot.js';
 
 const app = new Hono();
 
@@ -128,5 +130,6 @@ export default {
       env.DB.prepare('DELETE FROM webhook_log WHERE received_at < ?').bind(t - 14 * 864e5),
       env.DB.prepare('DELETE FROM notifications WHERE created_at < ? AND read_at IS NOT NULL').bind(t - 60 * 864e5),
     ]);
+    await tokenReminders(env, notify).catch((e) => console.error('token', e));
   },
 };

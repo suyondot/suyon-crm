@@ -2135,6 +2135,16 @@ function startSignup(st, coex) {
   });
 }
 
+// Permiso de Meta con fecha de vencimiento (Conectar con un clic: 30 o 60 días)
+function tokenExpHTML(st) {
+  if (!st.token_exp) return '';
+  const dias = Math.ceil((st.token_exp - Date.now()) / 864e5);
+  const fecha = new Date(st.token_exp).toLocaleDateString('es-PE', { timeZone: st.timezone || 'America/Lima', day: 'numeric', month: 'long', year: 'numeric' });
+  if (dias <= 0) return `<div class="err" style="margin:0 0 12px">Venció el permiso de Meta (${esc(fecha)}): el número ya no manda mensajes. Toca «Conectar WhatsApp» arriba con el mismo número.</div>`;
+  if (dias <= 7) return `<div class="warnbox" style="margin:0 0 12px">El permiso de Meta vence en ${dias} ${dias === 1 ? 'día' : 'días'} (${esc(fecha)}). Toca «Conectar WhatsApp» arriba con el mismo número: toma 1 minuto y no se pierde nada.</div>`;
+  return `<p class="note" style="margin:-4px 0 12px">Permiso de Meta vigente hasta el ${esc(fecha)}. Te avisamos 7 días antes para renovarlo.</p>`;
+}
+
 function cfgNumero() {
   const st = store();
   const body = $('#cfgbody');
@@ -2147,7 +2157,7 @@ function cfgNumero() {
     <div class="card esconn" id="esconn"><h3>Conectar con un clic</h3><span class="spin"></span></div>
     <div class="card"><h3>Conexión</h3>
       ${st.status === 'activo'
-        ? `<p class="sub">Conectado como <b>${esc(st.verified_name || '—')}</b> · <span class="mono">${esc(st.phone_display || '')}</span></p>`
+        ? `<p class="sub">Conectado como <b>${esc(st.verified_name || '—')}</b> · <span class="mono">${esc(st.phone_display || '')}</span></p>${tokenExpHTML(st)}`
         : `<p class="sub">Pon los identificadores de abajo, toca «Guardar» y luego «Conectar número». Si no sabes el de la cuenta, déjalo vacío: el CRM lo busca solo.</p>`}
       ${st.connect_error ? `<div class="err" style="margin-bottom:12px">${esc(st.connect_error)}</div>` : ''}
       ${S.connSteps ? `<ul class="stlist" style="margin-bottom:12px">${S.connSteps.steps.map((x) => `<li><span class="${/^(Cuenta|El token|No se pudo)/.test(x) ? 'n' : /^Info/.test(x) ? 'y' : 'y'}">${/^(Cuenta|El token|No se pudo)/.test(x) ? '•' : /^Info/.test(x) ? 'ℹ' : '✓'}</span><span style="overflow-wrap:anywhere">${esc(x)}</span></li>`).join('')}${S.connSteps.ok ? '' : `<li><span class="n">✗</span><span>${esc(S.connSteps.error)}</span></li>`}</ul>` : ''}

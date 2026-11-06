@@ -548,6 +548,11 @@ export const MIGRATIONS = [
       `ALTER TABLE stores ADD COLUMN asistente TEXT`,
     ],
   },
+  {
+    id: 21,
+    name: 'cuándo vence el permiso de Meta de la tienda (Conectar con un clic)',
+    sql: [`ALTER TABLE stores ADD COLUMN token_exp INTEGER`],
+  },
 ];
 
 let ready = null;

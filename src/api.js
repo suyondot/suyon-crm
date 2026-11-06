@@ -47,7 +47,7 @@ function publicStore(s) {
   if (s.role === 'dueno') {
     Object.assign(out, {
       phone_number_id: s.phone_number_id, waba_id: s.waba_id, token_secret: s.token_secret,
-      read_receipts: s.read_receipts, last_webhook_at: s.last_webhook_at, connect_error: s.connect_error,
+      read_receipts: s.read_receipts, last_webhook_at: s.last_webhook_at, connect_error: s.connect_error, token_exp: s.token_enc ? s.token_exp || null : null,
     });
   }
   return out;

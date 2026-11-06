@@ -106,6 +106,7 @@ const meta = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '770000000001/subscribed_apps') return json(200, { success: true });
     if (req.method === 'POST' && p === '880000000001/register') return json(200, { success: /^\d{6}$/.test(body?.pin || '') });
     if (req.method === 'GET' && p === '880000000001') return json(200, { display_phone_number: '+51 955 000 001', verified_name: 'Tienda Alumna', quality_rating: 'GREEN', id: '880000000001' });
+    if (req.method === 'GET' && p === 'debug_token') return json(200, { data: { app_id: 'APP123', expires_at: Math.floor(Date.now() / 1000) + 60 * 86400 } });
     return json(404, { error: { code: 100, message: 'Unknown path ' + p } });
   }
   if (auth !== 'Bearer test-token') return json(401, { error: { code: 190, message: 'Invalid OAuth access token' } });
@@ -1182,6 +1183,10 @@ try {
     assert.equal(st.status, 'activo');
     assert.equal(st.connected_via, 'embedded');
     assert.equal(st.verified_name, 'Tienda Alumna');
+    assert.ok(st.token_exp > Date.now() + 59 * 864e5, 'guarda cuándo vence el permiso de Meta (60 días)');
+    assert.ok(r.steps.some((x) => /vence el/.test(x)));
+    const { tokenReminders } = await import('../src/signup.js');
+    assert.equal(typeof tokenReminders, 'function');
     const reg = calls.filter((x) => x.path === '880000000001/register').pop();
     assert.ok(/^\d{6}$/.test(reg.body.pin));
     // el token quedó guardado cifrado y se usa después (Probar conexión)
