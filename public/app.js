@@ -641,13 +641,13 @@ function render() {
   const roleName = st ? S.me.roles[st.role] : '';
   root().innerHTML = `
   <nav class="side" aria-label="Principal">
-    <button class="brand" data-act="stores" aria-haspopup="true" aria-label="Cambiar tienda"><span class="brand-mark">${LOGO}</span><span class="bt"><b>Control Total</b><small>${st ? esc(storeLabel(st)) : 'Sin tienda'}</small></span><span class="caret">▾</span></button>
+    <button class="brand" data-act="stores" aria-haspopup="true" aria-label="Cambiar tienda"><span class="brand-mark">${LOGO}</span><span class="bt"><b>Control Total</b><small>${st ? `<i class="sdot" style="background:${esc(st.color)}"></i>${esc(storeLabel(st))}` : 'Sin tienda'}</small></span><span class="caret">▾</span></button>
     ${navItems().map(([v, l, ic, c]) => `<button class="navbtn" data-nav="${v}" ${S.view === v ? 'aria-current="page"' : ''}>${ic}<span>${l}</span>${c ? `<span class="cnt">${c > 99 ? '99+' : c}</span>` : ''}</button>`).join('')}
     <div class="side-foot"><button data-nav="config" data-tab="cuenta"><b>${esc(S.me.user.name)}</b>${roleName ? ' · ' + esc(roleName) : ''}<br>Mi cuenta</button></div>
   </nav>
   <main class="main">
     <header class="topbar">
-      <button class="store-top" data-act="stores" aria-label="Cambiar tienda"><span>${st ? esc(storeLabel(st)) : 'Elegir tienda'}</span><span class="caret">▾</span></button>
+      <button class="store-top" data-act="stores" aria-label="Cambiar tienda"><span>${st ? `<i class="sdot" style="background:${esc(st.color)}"></i>${esc(storeLabel(st))}` : 'Elegir tienda'}</span><span class="caret">▾</span></button>
       <h1>${titles[S.view]}</h1>
       <span class="grow"></span>
       ${S.me.user.is_admin && st ? `<button class="viewpill ${S.preview ? 'on' : ''}" data-act="vercomo" title="Ver la app como la ve un alumno, sin cambiar tu tienda">👁 ${S.preview ? `${S.preview.canal === 'shopify' ? 'Shopify' : 'Mensajes'} · ${S.preview.rubro === 'simple' ? 'Sin variantes' : 'Ropa'}` : 'Ver como'}</button>` : ''}
@@ -755,8 +755,10 @@ function openSaldo() {
   };
 }
 
+// Arriba sale SOLO el WhatsApp elegido (nombre + número), para que la asesora sepa en cuál está
 function storeLabel(s) {
-  return `${company(s.company_id)?.name || ''} · ${s.name}`;
+  const num = String(s.phone_display || '').replace(/^\+51\s*/, '');
+  return `${s.name}${num ? ` · ${num}` : ''}`;
 }
 
 function updateBadges() {
