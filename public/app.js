@@ -9,6 +9,7 @@ const LOGO = '<svg viewBox="38 90 400 332" aria-hidden="true" fill="none" stroke
 import { initPedidos, renderPedidos, resetPedidos, fichaPedidos, renderPedidosConfig } from './pedidos.js';
 import { initEnvios, renderEnvios, resetEnvios } from './envios.js';
 import { initAsistente, renderAsistente, resetAsistente, rubroPicker } from './asistente.js';
+import { initCarritos, renderCarritos, resetCarritos } from './carritos.js';
 import { initPanel, renderMiPlan, renderPaywall, renderPanel } from './panel.js';
 
 /* =================== Utilidades =================== */
@@ -19,6 +20,7 @@ const H = 3600e3;
 const isTouch = matchMedia('(pointer:coarse)').matches;
 
 const ICON = {
+  cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.4 11h10.2L20 8H6.2"/><circle cx="9" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>',
   truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h11v10H2z"/><path d="M13 9h4l4 4v3h-8"/><circle cx="6" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg>',
   chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>',
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>',
@@ -487,6 +489,7 @@ function enterStore() {
   resetReportes();
   resetPedidos();
   resetEnvios();
+  resetCarritos();
   if (S.storeId) pref.set('store', S.storeId);
   if (S.view === 'chats' && store() && !canChats()) S.view = 'pedidos';
   render();
@@ -529,6 +532,7 @@ function navItems() {
   if (canChats() || !store()) items.push(['chats', 'Chats', ICON.chat, S.unread[S.storeId] || 0]);
   if (store() && canChats()) items.push(['clientes', 'Clientes', ICON.users, 0]);
   if (store()) items.push(['pedidos', 'Pedidos', ICON.box, 0]);
+  if (store()?.canal === 'shopify' && canChats()) items.push(['carritos', 'Carritos', ICON.cart, 0]);
   if (store()) items.push(['envios', 'Envíos', ICON.truck, 0]);
   if (store() && canChats()) items.push(['avisos', 'Avisos', ICON.bell, S.avisos[S.storeId] || 0]);
   if (owner() || (!S.me.stores.length && S.me.companies.some((c) => c.role === 'dueno'))) items.push(['config', 'Configuración', ICON.gear, 0]);
@@ -586,6 +590,7 @@ window.addEventListener('ct:asistente', () => {
 function render() {
   if (asisOn()) return renderAsis();
   if (S.view === 'asis') S.view = 'chats';
+  if (S.view === 'carritos' && store()?.canal !== 'shopify') S.view = 'pedidos';
   const st = store();
   document.body.dataset.rubro = st?.rubro || 'ropa';
   const co = currentCompany();
@@ -593,7 +598,7 @@ function render() {
     S.view = 'config';
     S.cfgTab = co.role === 'dueno' ? 'miplan' : 'cuenta';
   }
-  const titles = { chats: 'Chats', clientes: 'Clientes', reportes: 'Reportes', avisos: 'Avisos', pedidos: 'Pedidos', envios: 'Envíos provincia', panel: 'Panel Suyon', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
+  const titles = { chats: 'Chats', clientes: 'Clientes', reportes: 'Reportes', avisos: 'Avisos', pedidos: 'Pedidos', envios: 'Envíos provincia', carritos: 'Carritos abandonados', panel: 'Panel Suyon', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
   const roleName = st ? S.me.roles[st.role] : '';
   root().innerHTML = `
   <nav class="side" aria-label="Principal">
@@ -620,6 +625,7 @@ function render() {
   else if (S.view === 'reportes') renderReportes(content);
   else if (S.view === 'pedidos') renderPedidos(content);
   else if (S.view === 'envios') renderEnvios(content);
+  else if (S.view === 'carritos') renderCarritos(content);
   else if (S.view === 'panel' && S.me.user.is_admin) renderPanel(content);
   else if (co?.plan?.blocked && co.role !== 'dueno' && S.cfgTab !== 'cuenta') renderPaywall(content, co);
   else renderConfig();
@@ -2735,6 +2741,11 @@ initPedidos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, listTim
 initEnvios({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, canChats });
 initPanel({ api, esc, toast });
 initAsistente({ api, esc, toast, LOGO });
+initCarritos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, goConfig(tab) {
+  S.view = 'config';
+  S.cfgTab = tab;
+  render();
+} });
 
 function applyTheme(t) {
   if (t === 'auto') delete document.documentElement.dataset.theme;

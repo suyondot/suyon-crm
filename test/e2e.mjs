@@ -1006,6 +1006,26 @@ try {
     await wait(800);
     await call('POST', '/__test/jobs?shift=' + 31 * 60e3);
     await until(async () => (await call('GET', `/api/stores/${store.id}/avisos`)).events.some((e) => /No se mandó «Carrito abandonado/.test(e.title)));
+    // sección Carritos: la clienta que dejó su compra a medias
+    let K = await call('GET', `/api/stores/${store.id}/carritos?f=todos`);
+    const kk = K.carritos.find((x) => x.nombre === 'Noa');
+    assert.ok(kk, JSON.stringify(K));
+    assert.equal(kk.total, 89);
+    assert.equal(kk.items[0].talla, 'XS');
+    assert.equal(K.aviso.on, true);
+    assert.ok(K.resumen.total >= 1);
+    assert.equal((await call('GET', `/api/stores/${store.id}/carritos?q=noa`)).carritos.length, 1);
+    const sendNow = await call('POST', `/api/carritos/${kk.id}/aviso`);
+    assert.equal(sendNow.status, 400, 'el número de prueba no está conectado: explica el motivo');
+    assert.ok(sendNow.error);
+    // reporte de tiendas Shopify: pedidos de la web, cancelados y carritos
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date());
+    const W = await call('GET', `/api/stores/${store.id}/reporte-web?desde=${today}&hasta=${today}`);
+    assert.ok(W.totales.web >= 1, JSON.stringify(W.totales));
+    assert.ok(W.totales.cancelados >= 1);
+    assert.ok(W.carritos.abandonados >= 1);
+    assert.ok(W.productos.some((x) => /Pantalón/i.test(x.name)));
+    assert.equal(W.series.length, 24);
     // si la tienda vuelve a «por mensajes», lo que mande Shopify no crea pedidos
     await call('PATCH', `/api/stores/${store.id}`, { canal: 'mensajes' });
     const before = (await call('GET', `/api/stores/${store.id}/pedidos?vista=pendientes`)).pedidos.length;

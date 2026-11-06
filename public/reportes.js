@@ -4,7 +4,9 @@ export function initReportes(ctx) {
   H = ctx;
 }
 const e = (s) => H.esc(s);
-const R = { range: 'hoy', desde: null, hasta: null, data: null, metric: 'ventas', storeId: null, loading: false };
+const R = { range: 'hoy', desde: null, hasta: null, data: null, metric: 'ventas', wmetric: 'pedidos', storeId: null, canal: null, loading: false };
+const web = () => H.store()?.canal === 'shopify';
+const money = (n) => `S/${Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 2 })}`;
 const fmt = (n) => Number(n || 0).toLocaleString('es-PE');
 const pct = (x) => (x == null ? '—' : `${(x * 100).toFixed(x > 0 && x < 0.1 ? 1 : 0)} %`);
 
@@ -28,8 +30,9 @@ export function resetReportes() {
 }
 
 export async function renderReportes(content) {
-  if (R.storeId !== H.S.storeId) {
+  if (R.storeId !== H.S.storeId || R.canal !== web()) {
     R.storeId = H.S.storeId;
+    R.canal = web();
     R.data = null;
   }
   const [d0, d1] = rangeDates();
@@ -62,7 +65,8 @@ async function load() {
   const [desde, hasta] = R.range === 'rango' ? [R.desde, R.hasta] : rangeDates();
   R.loading = true;
   try {
-    R.data = await H.api('GET', `/stores/${H.S.storeId}/reporte?desde=${desde}&hasta=${hasta}`);
+    R.data = await H.api('GET', `/stores/${H.S.storeId}/${web() ? 'reporte-web' : 'reporte'}?desde=${desde}&hasta=${hasta}`);
+    R.data._web = web();
   } catch (er) {
     const b = H.$('#repbody');
     if (b) b.innerHTML = `<div class="err">${e(er.message)}</div>`;
@@ -106,6 +110,7 @@ function draw() {
   const box = H.$('#repbody');
   const d = R.data;
   if (!box || !d) return;
+  if (d._web) return drawWeb(box, d);
   const t = d.totales;
   const when = H.$('#repwhen');
   if (when) when.textContent = d.desde === d.hasta ? new Date(d.desde + 'T12:00').toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' }) : `${d.desde.slice(8)}/${d.desde.slice(5, 7)} al ${d.hasta.slice(8)}/${d.hasta.slice(5, 7)}`;
@@ -146,7 +151,12 @@ function draw() {
     R.metric = b.dataset.rm;
     draw();
   };
+  chartTips(box);
+}
+
+function chartTips(box) {
   const chart = box.querySelector('.vchart');
+  if (!chart) return;
   const tip = chart.querySelector('.vtip');
   const show = (col) => {
     if (!col) return (tip.hidden = true);
@@ -159,4 +169,64 @@ function draw() {
   chart.addEventListener('mouseover', (ev) => show(ev.target.closest('.vcol')));
   chart.addEventListener('focusin', (ev) => show(ev.target.closest('.vcol')));
   chart.addEventListener('mouseleave', () => show(null));
+}
+
+// Tiendas que venden por Shopify: pedidos de la web, confirmados por WhatsApp y carritos abandonados
+function drawWeb(box, d) {
+  const t = d.totales;
+  const k = d.carritos;
+  const when = H.$('#repwhen');
+  if (when) when.textContent = d.desde === d.hasta ? new Date(d.desde + 'T12:00').toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' }) : `${d.desde.slice(8)}/${d.desde.slice(5, 7)} al ${d.hasta.slice(8)}/${d.hasta.slice(5, 7)}`;
+  const lp = t.lima + t.provincia;
+  const names = [['pedidos', 'Pedidos'], ['confirmados', 'Confirmados'], ['carritos', 'Carritos abandonados']];
+  const series = d.series.map((x) => ({ ...x }));
+  box.innerHTML = `
+    <div class="rtiles">
+      ${tile('Pedidos recibidos', fmt(t.pedidos), `${fmt(t.web)} de la web${t.manual ? ` · ${fmt(t.manual)} a mano` : ''}`, 'hi')}
+      ${tile('Confirmados', fmt(t.confirmados), `${pct(t.tasa_confirma)} de los pedidos`)}
+      ${tile('Por confirmar', fmt(t.por_confirmar), 'esperan respuesta de la clienta')}
+      ${tile('Cancelados', fmt(t.cancelados), t.pedidos ? `${Math.round((t.cancelados / t.pedidos) * 100)} % de los pedidos` : '—')}
+      ${tile('Vendido', money(t.monto), t.ticket ? `ticket promedio ${money(t.ticket)}` : '—')}
+      ${tile('Entregados', fmt(t.entregados), t.confirmados ? `${pct(t.tasa_entrega)} de los confirmados${t.perdidos ? ` · ${fmt(t.perdidos)} rechazados` : ''}` : '—')}
+      ${tile('Carritos abandonados', fmt(k.abandonados), k.abandonados ? `${money(k.monto_perdido)} sin recuperar` : 'nadie dejó su compra a medias')}
+      ${tile('Carritos recuperados', fmt(k.recuperados), k.abandonados ? `${pct(k.tasa)} · ${money(k.monto_recuperado)}` : '—')}
+      ${tile('Lima', fmt(t.lima), lp ? `${Math.round((t.lima / lp) * 100)} % de los pedidos` : '—')}
+      ${tile('Provincia', fmt(t.provincia), lp ? `${Math.round((t.provincia / lp) * 100)} % de los pedidos` : '—')}
+    </div>
+    <section class="rcard rwide"><div class="rch"><h3>${d.oneDay ? 'Por hora' : 'Por día'}</h3>
+      <div class="seg sm" role="tablist">${names.map(([key, l]) => `<button data-rw="${key}" aria-pressed="${R.wmetric === key}">${l}</button>`).join('')}</div></div>
+      ${vbarsWeb(series, R.wmetric, Object.fromEntries(names))}</section>
+    <div class="rgrid">
+      <section class="rcard"><h3>Productos más vendidos</h3><p class="rsub">Unidades en pedidos no cancelados</p>${hbars(d.productos, { unit: ' unidades' })}</section>
+      <section class="rcard"><h3>Promociones</h3><p class="rsub">Cuántas unidades llevó cada clienta</p>${hbars(d.promos, { unit: ' pedidos' })}</section>
+      <section class="rcard only-ropa"><h3>Tallas</h3><p class="rsub">Unidades por talla</p>${hbars(d.tallas, { unit: ' unidades' })}</section>
+      <section class="rcard only-ropa"><h3>Colores</h3><p class="rsub">Unidades por color</p>${hbars(d.colores, { unit: ' unidades' })}</section>
+      <section class="rcard"><h3>Distritos y ciudades</h3><p class="rsub">A dónde se envió más</p>${hbars(d.lugares, { unit: ' pedidos' })}</section>
+      <section class="rcard"><h3>Carritos abandonados</h3><p class="rsub">Qué pasó con cada uno</p>${hbars([
+        { name: 'Volvieron y compraron', value: k.recuperados },
+        { name: 'Se les avisó, no compraron', value: Math.max(0, k.avisados - k.recuperados_aviso) },
+        { name: 'Sin aviso todavía', value: Math.max(0, k.abandonados - k.avisados - (k.recuperados - k.recuperados_aviso)) },
+      ].filter((x) => x.value), { unit: ' carritos', empty: 'No hubo carritos abandonados' })}</section>
+      <section class="rcard"><h3>Avisos por WhatsApp</h3><p class="rsub">Mensajes automáticos que salieron</p>${hbars(d.avisos, { unit: ' mensajes', empty: 'No salió ningún aviso (enciéndelos en Configuración → Shopify)' })}</section>
+    </div>
+    <p class="note rnote">Pedidos = los que entraron en este periodo (de tu web o hechos a mano). Confirmados = los que pasaron de «Nuevo» (la clienta tocó «Sí, confirmo» o tu asesora lo confirmó). Carrito recuperado = la clienta dejó su compra a medias y después compró.</p>`;
+  box.querySelector('.rch .seg').onclick = (ev) => {
+    const b = ev.target.closest('[data-rw]');
+    if (!b) return;
+    R.wmetric = b.dataset.rw;
+    draw();
+  };
+  chartTips(box);
+}
+
+function vbarsWeb(series, metric, names) {
+  const vals = series.map((s) => s[metric] || 0);
+  const m = Math.max(...vals, 1);
+  const step = series.length > 16 ? Math.ceil(series.length / 10) : series.length > 12 ? 2 : 1;
+  const ticks = [m, Math.round(m / 2)].filter((v, i, a) => v > 0 && a.indexOf(v) === i);
+  const name = names[metric].toLowerCase();
+  return `<div class="vchart" role="img" aria-label="${e(name)} por ${series.length === 24 ? 'hora' : 'día'}">
+    <div class="vgrid">${ticks.map((t) => `<span style="bottom:${(t / m) * 100}%"><em>${fmt(t)}</em></span>`).join('')}</div>
+    <div class="vcols">${series.map((s, i) => `<div class="vcol" tabindex="0" data-tip="${e(s.label)} · ${fmt(s[metric])} ${e(name)}"><i style="height:${s[metric] ? Math.max(2, (s[metric] / m) * 100) : 0}%"></i><span>${i % step === 0 ? e(s.label) : ''}</span></div>`).join('')}</div>
+    <div class="vtip" hidden></div></div>`;
 }

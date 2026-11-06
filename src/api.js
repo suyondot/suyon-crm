@@ -13,6 +13,7 @@ import pedidosApi from './api-pedidos.js';
 import billingApi from './api-billing.js';
 import enviosApi from './api-envios.js';
 import asistenteApi from './api-asistente.js';
+import carritosApi from './api-carritos.js';
 import { fixSpelling } from './ortografia.js';
 import { loadSaldo } from './saldo.js';
 import { loadPlan } from './billing.js';
@@ -1215,5 +1216,6 @@ api.route('/', pedidosApi);
 api.route('/', billingApi);
 api.route('/', enviosApi);
 api.route('/', asistenteApi);
+api.route('/', carritosApi);
 
 export default api;

@@ -182,4 +182,110 @@ r.get('/stores/:id/reporte', async (c) => {
   });
 });
 
+/* ---------- Reporte de tiendas que venden por Shopify (su web) ---------- */
+// Lo que importa: pedidos que entran de la web, cuántos se confirman por WhatsApp, carritos abandonados y recuperados.
+const CONFIRMADOS = ['confirmado', 'en_ruta', 'reprogramado', 'entregado', 'rechazado', 'validado', 'enviado', 'en_camino', 'en_agencia', 'falta_abonar', 'recogido', 'no_recogido'];
+const AUTO_NAMES = { confirmar: 'Confirmar pedido', adelanto: 'Pedir adelanto', agendado: 'Agendado', en_ruta: 'En ruta', enviado: 'Enviado', en_agencia: 'Llegó a la agencia', entregado: 'Entregado', recompra: 'Volver a comprar', carrito: 'Carrito olvidado' };
+
+r.get('/stores/:id/reporte-web', async (c) => {
+  const st = await storeFor(c, c.req.param('id'));
+  const tz = st.timezone || 'America/Lima';
+  const q = c.req.query();
+  const today = localDay(now(), tz);
+  const re = /^\d{4}-\d{2}-\d{2}$/;
+  const desde = re.test(q.desde || '') ? q.desde : today;
+  const hasta = re.test(q.hasta || '') ? q.hasta : desde;
+  if (hasta < desde) fail(400, 'La fecha final es antes que la inicial.');
+  const t0 = dayStart(desde, tz);
+  const t1 = dayStart(hasta, tz) + DAY;
+  if (t1 - t0 > 93 * DAY) fail(400, 'Elige como máximo 3 meses.');
+  const oneDay = t1 - t0 <= DAY + 3600e3;
+  const db = c.env.DB;
+  const buckets = [];
+  if (oneDay) for (let h = 0; h < 24; h++) buckets.push({ key: String(h), label: `${h}h` });
+  else for (let t = t0; t < t1; t += DAY) {
+    const d = localDay(t + 3600e3, tz);
+    buckets.push({ key: d, label: d.slice(8) + '/' + d.slice(5, 7) });
+  }
+  const bucketOf = (t) => (oneDay ? String(localParts(t, tz).h) : localDay(t, tz));
+  const [orders, carts, autos] = await Promise.all([
+    db.prepare(`SELECT id, source, modo, status, items, unidades, total, distrito, ciudad, created_at FROM orders
+      WHERE store_id = ? AND created_at >= ? AND created_at < ? LIMIT 20000`).bind(st.id, t0, t1).all(),
+    db.prepare(`SELECT k.id, k.total, k.sent_at, k.order_id, k.created_at, o.total AS order_total FROM carts k LEFT JOIN orders o ON o.id = k.order_id
+      WHERE k.store_id = ? AND k.created_at >= ? AND k.created_at < ? LIMIT 20000`).bind(st.id, t0, t1).all(),
+    db.prepare(`SELECT json_extract(extra, '$.auto') AS k, COUNT(*) AS n FROM messages
+      WHERE store_id = ? AND direction = 'out' AND created_at >= ? AND created_at < ? AND extra LIKE '%"auto":%' GROUP BY k`).bind(st.id, t0, t1).all(),
+  ]);
+  const series = new Map(buckets.map((b) => [b.key, { pedidos: 0, confirmados: 0, carritos: 0 }]));
+  const T = { pedidos: 0, web: 0, manual: 0, confirmados: 0, por_confirmar: 0, cancelados: 0, entregados: 0, perdidos: 0, monto: 0, unidades: 0, lima: 0, provincia: 0 };
+  const productos = new Map();
+  const tallas = new Map();
+  const colores = new Map();
+  const promos = new Map();
+  const lugares = new Map();
+  for (const o of orders.results) {
+    const b = series.get(bucketOf(o.created_at));
+    T.pedidos++;
+    if (o.source === 'shopify') T.web++;
+    else T.manual++;
+    if (b) b.pedidos++;
+    if (o.status === 'cancelado') {
+      T.cancelados++;
+      continue;
+    }
+    if (['nuevo', 'por_pagar'].includes(o.status)) T.por_confirmar++;
+    if (CONFIRMADOS.includes(o.status)) {
+      T.confirmados++;
+      if (b) b.confirmados++;
+    }
+    if (['entregado', 'recogido'].includes(o.status)) T.entregados++;
+    if (['rechazado', 'no_recogido'].includes(o.status)) T.perdidos++;
+    T.monto += Number(o.total) || 0;
+    const dest = o.modo === 'lima' ? 'Lima' : 'Provincia';
+    T[dest === 'Lima' ? 'lima' : 'provincia']++;
+    let items = [];
+    try { items = JSON.parse(o.items || '[]') || []; } catch {}
+    const qty = o.unidades || items.reduce((a, it) => a + (Number(it.cantidad) || 0), 0) || 1;
+    T.unidades += qty;
+    count(promos, qty >= 5 ? '5 o más' : `${qty} ${qty === 1 ? 'unidad' : 'unidades'}`);
+    for (const it of items) {
+      const n = Number(it.cantidad) || 1;
+      count(productos, title(it.producto || '') || 'Sin nombre', n);
+      if (it.talla) count(tallas, tallaOf(it.talla) || String(it.talla).toUpperCase(), n);
+      if (it.color) count(colores, colorsOf(it.color)[0] || title(it.color), n);
+    }
+    const lugar = title(dest === 'Lima' ? o.distrito || '' : o.ciudad || o.distrito || '');
+    count(lugares, lugar ? `${lugar}${dest === 'Provincia' ? ' (prov.)' : ''}` : 'Sin dato');
+  }
+  const K = { abandonados: carts.results.length, avisados: 0, recuperados: 0, recuperados_aviso: 0, monto_recuperado: 0, monto_perdido: 0 };
+  for (const k of carts.results) {
+    const b = series.get(bucketOf(k.created_at));
+    if (b) b.carritos++;
+    if (k.sent_at) K.avisados++;
+    if (k.order_id) {
+      K.recuperados++;
+      if (k.sent_at) K.recuperados_aviso++;
+      K.monto_recuperado += Number(k.order_total ?? k.total) || 0;
+    } else K.monto_perdido += Number(k.total) || 0;
+  }
+  const vivos = T.pedidos - T.cancelados;
+  return c.json({
+    desde, hasta, oneDay, tz, store: st.name,
+    totales: {
+      ...T, monto: Math.round(T.monto * 100) / 100,
+      ticket: vivos ? Math.round((T.monto / vivos) * 100) / 100 : null,
+      tasa_confirma: vivos ? T.confirmados / vivos : null,
+      tasa_entrega: T.confirmados ? T.entregados / T.confirmados : null,
+    },
+    carritos: { ...K, monto_recuperado: Math.round(K.monto_recuperado * 100) / 100, monto_perdido: Math.round(K.monto_perdido * 100) / 100, tasa: K.abandonados ? K.recuperados / K.abandonados : null },
+    avisos: autos.results.filter((x) => x.k).map((x) => ({ name: AUTO_NAMES[x.k] || x.k, value: x.n })).sort((a, b) => b.value - a.value),
+    series: buckets.map((b) => ({ label: b.label, ...series.get(b.key) })),
+    productos: top(productos, 10),
+    tallas: ['XS', 'S', 'M', 'L', 'XL'].filter((t) => tallas.has(t)).map((t) => ({ name: t, value: tallas.get(t) })).concat(top(tallas, 10).filter((x) => !['XS', 'S', 'M', 'L', 'XL'].includes(x.name))),
+    colores: top(colores, 10),
+    promos: [...promos.entries()].sort((a, b) => parseInt(a[0]) - parseInt(b[0])).map(([name, value]) => ({ name, value })),
+    lugares: top(lugares, 10),
+  });
+});
+
 export default r;
