@@ -539,6 +539,15 @@ export const MIGRATIONS = [
     name: 'gasto de IA por proveedor y día (para el saldo de Claude / OpenAI)',
     sql: [`CREATE TABLE ia_spend (provider TEXT NOT NULL, day TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, PRIMARY KEY (provider, day))`],
   },
+  {
+    id: 20,
+    name: 'qué vende la tienda (ropa / sin variantes) y asistente de inicio',
+    sql: [
+      `ALTER TABLE stores ADD COLUMN rubro TEXT NOT NULL DEFAULT 'ropa'`,
+      `ALTER TABLE stores ADD COLUMN setup INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE stores ADD COLUMN asistente TEXT`,
+    ],
+  },
 ];
 
 let ready = null;

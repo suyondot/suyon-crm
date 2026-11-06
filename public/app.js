@@ -8,6 +8,7 @@ import { initReportes, renderReportes, resetReportes } from './reportes.js';
 const LOGO = '<svg viewBox="38 90 400 332" aria-hidden="true" fill="none" stroke-linecap="round"><path d="M304 168A128 128 0 1 0 304 344" stroke="#fff" stroke-width="60"/><path d="M248 206H396M322 206V350" stroke="#F2B6C4" stroke-width="54"/></svg>';
 import { initPedidos, renderPedidos, resetPedidos, fichaPedidos, renderPedidosConfig } from './pedidos.js';
 import { initEnvios, renderEnvios, resetEnvios } from './envios.js';
+import { initAsistente, renderAsistente, resetAsistente, rubroPicker } from './asistente.js';
 import { initPanel, renderMiPlan, renderPaywall, renderPanel } from './panel.js';
 
 /* =================== Utilidades =================== */
@@ -330,6 +331,8 @@ async function showRegister() {
       <div class="field"><label for="phone">Tu WhatsApp</label><input id="phone" name="phone" inputmode="tel" autocomplete="tel" placeholder="9xx xxx xxx"></div>
       <div class="field"><label for="email">Tu correo</label><input id="email" name="email" type="email" required autocomplete="email"></div>
       <div class="field"><label for="pw">Contraseña (mínimo 8)</label><input id="pw" name="password" type="password" minlength="8" required autocomplete="new-password"></div>
+      <div class="field"><label>¿Cómo vendes?</label>${canalPicker('mensajes')}</div>
+      <div class="field"><label>¿Qué vendes?</label>${rubroPicker('ropa')}</div>
       <input name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0">
       <div class="err" hidden></div>
       <button class="send" type="submit">Crear mi cuenta gratis</button>
@@ -531,8 +534,47 @@ function navItems() {
   return items;
 }
 
-function render() {
+// Asistente de inicio: tienda nueva (setup = 1) o abierto desde Bot Suyon AI
+function asisOn() {
   const st = store();
+  return !!st && owner() && !planBlocked() && (S.asis || st.setup === 1);
+}
+
+function renderAsis() {
+  const st = store();
+  if (S.view === 'asis' && root().querySelector('.asis') && S.asisStore === st.id) return; // ya está en pantalla: no se borra lo escrito
+  S.view = 'asis';
+  S.asisStore = st.id;
+  renderAsistente(root(), st, (hecho) => {
+    const from = S.asis;
+    S.asis = false;
+    S.asisStore = null;
+    st.setup = 0;
+    resetBot();
+    if (from === 'bot') {
+      S.view = 'config';
+      S.cfgTab = 'bot';
+    } else if (!st.phone_number_id) {
+      S.view = 'config';
+      S.cfgTab = 'numero';
+    } else S.view = 'chats';
+    render();
+    if (S.view === 'chats') loadChats();
+    toast(hecho ? (st.phone_number_id ? '¡Listo! Tu bot está armado (apagado). Enciéndelo en Bot Suyon AI cuando quieras.' : '¡Listo! Tu bot está armado. Ahora conecta tu número de WhatsApp.') : 'Puedes armar tu bot cuando quieras en Configuración → Bot Suyon AI → ✨ Asistente.');
+  });
+}
+
+window.addEventListener('ct:asistente', () => {
+  S.asis = 'bot';
+  resetAsistente();
+  render();
+});
+
+function render() {
+  if (asisOn()) return renderAsis();
+  if (S.view === 'asis') S.view = 'chats';
+  const st = store();
+  document.body.dataset.rubro = st?.rubro || 'ropa';
   const co = currentCompany();
   if (co?.plan?.blocked && !['config', 'panel'].includes(S.view)) {
     S.view = 'config';
@@ -1691,6 +1733,7 @@ function addStoreModal() {
       ${cos.length > 1 ? `<div class="field"><label for="nco">Empresa</label><select id="nco" name="company">${cos.map((c) => `<option value="${c.id}" ${c.id === def ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>` : `<input type="hidden" name="company" value="${def}">`}
       <div class="field"><label for="nname">Nombre de la tienda</label><input id="nname" name="name" required placeholder="Ej: Pantalón de rayas"></div>
       <div class="field"><label>¿Cómo vende esta tienda?</label>${canalPicker('mensajes')}</div>
+      <div class="field"><label>¿Qué vende?</label>${rubroPicker(store()?.rubro || 'ropa')}</div>
       <div class="field"><label>Color</label><div class="swatches" id="nsw">${STORE_COLORS.map((col, i) => `<button type="button" data-swatch="${col}" aria-pressed="${i === 0}" style="background:${col}" aria-label="Color ${i + 1}"></button>`).join('')}</div></div>
       <div class="err" hidden></div>
       <div class="row"><button type="button" class="iconbtn" data-close>Cancelar</button><button class="send" type="submit">Crear tienda</button></div>
@@ -1703,7 +1746,7 @@ function addStoreModal() {
     $$('#nsw button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
   };
   formHandler($('#nf'), async (d) => {
-    const r = await api('POST', `/companies/${d.company}/stores`, { name: d.name, color, canal: d.canal });
+    const r = await api('POST', `/companies/${d.company}/stores`, { name: d.name, color, canal: d.canal, rubro: d.rubro });
     setMe(r);
     closeModal();
     S.storeMenu = false;
@@ -1781,6 +1824,10 @@ function cfgGeneral() {
     <div class="card"><h3>Cómo vende esta tienda</h3>
       <p class="sub">Decide qué ves en Configuración: con mensajes, la pestaña <b>Pedidos</b>; con Shopify, la pestaña <b>Shopify</b> para conectar tu web. Los pedidos siempre caen en la sección <b>Pedidos</b>, con precios en ${esc(cur.symbol)} y la hora de ${esc(tzName(st.timezone))}.</p>
       ${canalPicker(st.canal || 'mensajes')}
+    </div>
+    <div class="card"><h3>Qué vende esta tienda</h3>
+      <p class="sub">Con <b>ropa</b> ves tallas y colores en Pedidos, Envíos y Reportes. Con <b>un producto sin variantes</b> se esconden. Para rehacer tu bot con preguntas: Bot Suyon AI → ✨ Asistente.</p>
+      ${rubroPicker(st.rubro || 'ropa')}
     </div>
     <div class="err" hidden></div>
     <div class="savebar"><span class="note"></span><button class="send" type="submit">Guardar</button></div>
@@ -2613,6 +2660,7 @@ initReportes({ api, esc, $, S, store });
 initPedidos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, listTime, canChats });
 initEnvios({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, canChats });
 initPanel({ api, esc, toast });
+initAsistente({ api, esc, toast, LOGO });
 
 function applyTheme(t) {
   if (t === 'auto') delete document.documentElement.dataset.theme;

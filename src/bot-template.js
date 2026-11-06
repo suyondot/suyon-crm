@@ -473,3 +473,243 @@ export function flowVentasCT(web = 'https://suyon-crm.storesuyo.workers.dev') {
     ],
   };
 }
+
+/* =================== Asistente de inicio («Arma tu bot») =================== */
+// Para alumnos: responden preguntas sobre su producto y con eso se arma el prompt, el conocimiento y el flujo,
+// en el MISMO orden del abordaje de Jordan: foto + precios → pregunta → seguimientos (15 min texto, 40 min audio,
+// 3 h video, 15 h fotos de pedidos) → IA → asesora. Dos rubros: ropa (tallas y colores) y simple (sin variantes).
+
+const lines = (s) => String(s || '').split('\n').map((x) => x.trim()).filter(Boolean);
+const soles = (n) => `S/${Number(n) % 1 ? Number(n).toFixed(2) : Number(n)}`;
+const err = (m) => Object.assign(new Error(m), { status: 400 });
+
+// Tallas que escribió el alumno: «S · Jean 28-30», «M», o «S, M, L» en una línea
+export function parseTallas(text) {
+  const parts = String(text || '').split(/\n|,(?![^(]*\))/).map((x) => x.trim()).filter(Boolean).slice(0, 10);
+  const out = [];
+  for (const p of parts) {
+    const code = p.split(/\s*[·:(]\s*|\s+-\s+/)[0].trim().toUpperCase().slice(0, 10);
+    if (!code || out.some((t) => t.value === code)) continue;
+    const words = new Set([code.toLowerCase(), `talla ${code.toLowerCase()}`, `soy ${code.toLowerCase()}`]);
+    for (const w of (TALLAS.find((t) => t.value === code)?.words || [])) words.add(w);
+    const rest = p.slice(code.length);
+    for (const m of rest.matchAll(/(\d{1,3})\s*(?:-|a|al)\s*(\d{1,3})/g)) {
+      const [x, y] = [Number(m[1]), Number(m[2])];
+      if (y >= x && y - x <= 15) for (let n = x; n <= y; n++) words.add(String(n));
+    }
+    for (const m of rest.matchAll(/\b\d{1,3}\b/g)) words.add(m[0]);
+    out.push({ value: code, label: p.slice(0, 60), words: [...words] });
+  }
+  return out;
+}
+
+export function cleanAsistente(b = {}, rubro = 'simple') {
+  const s = (v, n) => String(v ?? '').trim().slice(0, n);
+  const yes = (v, d) => (v === undefined ? d : v === true || v === 1 || v === '1' || v === 'si');
+  const precios = {};
+  for (const k of ['1', '2', '3', '4']) {
+    const v = Number(String(b.precios?.[k] ?? '').replace(',', '.'));
+    if (v > 0) precios[k] = Math.round(v * 100) / 100;
+  }
+  const a = {
+    marca: s(b.marca, 60), producto: s(b.producto, 60), descripcion: s(b.descripcion, 800), beneficios: s(b.beneficios, 800),
+    precios, envio: s(b.envio, 120) || 'Envío gratis',
+    lima: yes(b.lima, true), provincia: yes(b.provincia, true),
+    adelanto: Math.max(0, Math.min(500, Math.round(Number(b.adelanto ?? 30) || 0))),
+    faq: s(b.faq, 3000), garantia: s(b.garantia, 300), trato: b.trato === 'neutral' ? 'neutral' : 'cercano',
+    palabra: s(b.palabra, 80),
+  };
+  if (rubro === 'ropa') {
+    a.tallas = s(b.tallas, 400);
+    a.colores = s(b.colores, 400);
+    a.tela = s(b.tela, 200);
+    if (!parseTallas(a.tallas).length) throw err('Escribe las tallas que vendes (ej: S, M, L).');
+    if (!a.colores) throw err('Escribe los colores que vendes.');
+  }
+  if (!a.producto) throw err('Escribe el nombre de tu producto.');
+  if (!a.precios['1']) throw err('Pon al menos el precio por 1 unidad.');
+  if (!a.lima && !a.provincia) throw err('Marca si vendes en Lima, en provincia o en los dos.');
+  return a;
+}
+
+const unidad = (rubro, n) => (rubro === 'ropa' ? (n === 1 ? 'prenda' : 'prendas') : n === 1 ? 'unidad' : 'unidades');
+
+function preciosText(a, rubro) {
+  const ks = Object.keys(a.precios).map(Number).sort((x, y) => x - y);
+  const best = ks.length > 1 ? ks[ks.length - 1] : 0;
+  return ks.map((k) => `${k === best && k > 1 ? '🔥' : '💰'} ${k} ${unidad(rubro, k)}: ${soles(a.precios[k])}${k > 1 ? ` → ${soles(a.precios[k] / k)} c/u` : ''}${k === best && k > 1 ? ' ⭐' : ''}`).join('\n');
+}
+
+// Archivos que el asistente le pide al alumno. ref = clave de la imagen de referencia (Panel Suyon → Referencias).
+export function assetsFor(rubro, a = {}) {
+  const tallas = rubro === 'ropa' ? parseTallas(a.tallas) : [];
+  const L = [];
+  const add = (key, desc, need, ref, cuando) => L.push({ key, desc, need, ref, cuando });
+  add('precios', rubro === 'ropa' ? 'Imagen de abordaje: tu prenda con los precios de la promoción' : 'Imagen de abordaje: tu producto con los precios de la promoción', 'si', `${rubro}:precios`, 'Primer mensaje, apenas te escriben');
+  if (rubro === 'ropa') {
+    add('tabla-tallas', 'Tabla de tallas', 'si', 'ropa:tabla-tallas', 'La IA la manda si duda de su talla');
+    for (const t of tallas) add(`colores-${t.value}`, `Colores disponibles en talla ${t.value}`, 'si', 'ropa:colores', 'Apenas dice su talla');
+  } else {
+    add('producto', 'Foto del producto de cerca (detalles, empaque)', 'recomendado', 'simple:producto', 'La IA la manda si quiere ver más');
+  }
+  add('audio-seguimiento', 'Nota de voz tuya invitando a comprar (30 a 40 segundos)', 'recomendado', `${rubro}:audio-seguimiento`, 'Seguimiento de 40 min si no responde');
+  add(rubro === 'ropa' ? 'video-puesto' : 'video-producto', rubro === 'ropa' ? 'Video «Así se ve puesto»' : 'Video del producto en uso', 'recomendado', `${rubro}:video`, 'Seguimiento de 3 h y cuando la IA lo necesite');
+  add('fotos-pedidos', 'Foto de pedidos listos para enviar', 'recomendado', `${rubro}:fotos-pedidos`, 'Seguimiento de 15 h (da confianza)');
+  if (a.lima !== false) add('confianza-lima', 'Foto o video de entregas en Lima (motorizado, clientas recibiendo)', 'recomendado', `${rubro}:confianza-lima`, 'La IA lo manda si desconfía (Lima)');
+  if (a.provincia !== false) {
+    add('confianza-provincia', 'Video de envíos por Shalom a provincia', 'recomendado', `${rubro}:confianza-provincia`, 'La IA lo manda si desconfía (provincia)');
+    add('foto-despacho', 'Foto de despacho en la agencia', 'recomendado', `${rubro}:foto-despacho`, 'Recordatorio si no manda la captura');
+  }
+  return L;
+}
+
+// De qué archivo de la tienda de Jordan sale cada referencia («Tomar de mi tienda»)
+export const REF_FROM_STORE = {
+  'ropa:precios': 'precios', 'ropa:tabla-tallas': 'tabla-tallas', 'ropa:colores': 'colores-M', 'ropa:audio-seguimiento': 'audio-talla',
+  'ropa:video': 'video-puesto', 'ropa:fotos-pedidos': 'fotos-pedidos', 'ropa:confianza-lima': 'foto-lima', 'ropa:confianza-provincia': 'video-envios', 'ropa:foto-despacho': 'foto-despacho',
+  'simple:audio-seguimiento': 'audio-talla', 'simple:fotos-pedidos': 'fotos-pedidos', 'simple:confianza-lima': 'foto-lima', 'simple:confianza-provincia': 'video-envios', 'simple:foto-despacho': 'foto-despacho',
+};
+export const REF_KEYS = [
+  ['ropa:precios', 'Ropa · Abordaje (foto + precios)'], ['ropa:tabla-tallas', 'Ropa · Tabla de tallas'], ['ropa:colores', 'Ropa · Colores de una talla'],
+  ['ropa:audio-seguimiento', 'Ropa · Nota de voz'], ['ropa:video', 'Ropa · Video «Así se ve puesto»'], ['ropa:fotos-pedidos', 'Ropa · Pedidos listos'],
+  ['ropa:confianza-lima', 'Ropa · Confianza Lima'], ['ropa:confianza-provincia', 'Ropa · Confianza provincia'], ['ropa:foto-despacho', 'Ropa · Despacho Shalom'],
+  ['simple:precios', 'Sin variantes · Abordaje (producto + promoción)'], ['simple:producto', 'Sin variantes · Producto de cerca'],
+  ['simple:audio-seguimiento', 'Sin variantes · Nota de voz'], ['simple:video', 'Sin variantes · Video del producto en uso'], ['simple:fotos-pedidos', 'Sin variantes · Pedidos listos'],
+  ['simple:confianza-lima', 'Sin variantes · Confianza Lima'], ['simple:confianza-provincia', 'Sin variantes · Confianza provincia'], ['simple:foto-despacho', 'Sin variantes · Despacho Shalom'],
+];
+
+export function promptAsistente(a, rubro) {
+  const ropa = rubro === 'ropa';
+  const tallas = ropa ? parseTallas(a.tallas) : [];
+  const trato = a.trato === 'cercano' ? 'Trato cercano y cálido, de tú, con 1 emoji por mensaje como máximo.' : 'Trato amable y respetuoso, de tú, sin apodos y con pocos emojis.';
+  const destinos = a.lima && a.provincia ? 'si es para Lima o provincia, y su distrito o ciudad' : a.lima ? 'su distrito de Lima' : 'su ciudad o provincia';
+  let n = 0;
+  const paso = (x) => `${++n}. ${x}`;
+  const pasos = [
+    ropa ? paso('Si todavía no sabes su talla, pregúntala (tallas: ' + tallas.map((t) => t.label).join(' · ') + '). Si duda, adjunta la tabla de tallas.') : null,
+    ropa ? paso('Con la talla, pregunta qué colores le gustan (colores: ' + a.colores + '). Si pide un color que no está, ofrece los que sí hay.') : null,
+    paso(`Pregunta cuántas ${unidad(rubro, 2)} quiere y recomienda la promoción más grande cuando dude.`),
+    paso(`Pregunta ${destinos}.`),
+    a.lima ? paso(`LIMA (contra entrega: paga al recibir): pide en UN solo mensaje nombre y apellido, celular, dirección y referencia. Con los datos manda el FORMULARIO LIMA y pregunta si está todo correcto. Llega {entrega}, {horario_entrega}. Si su distrito no tiene cobertura, va por agencia como provincia.`) : null,
+    a.provincia ? paso(`${a.lima ? 'PROVINCIA o Lima sin cobertura' : 'PROVINCIA'} (agencia Shalom${a.adelanto ? `, separa con un adelanto de ${soles(a.adelanto)} y el resto lo paga al recoger` : ''}): pide en UN solo mensaje nombre y apellido, DNI y celular. Luego pregunta en qué agencia recoge (el sistema le manda la lista para tocar). Con la agencia elegida manda el FORMULARIO SHALOM y, en otro mensaje, el PAGO${a.adelanto ? ' DEL ADELANTO' : ''}. Después espera la captura.`) : null,
+  ].filter(Boolean);
+  const item = ropa ? `[cantidad] ${a.producto} · Talla [talla] · [colores]` : `${a.producto} × [cantidad]`;
+  return `AHORA (hora de la tienda): {ahora}
+
+Eres la asesora de ventas por WhatsApp de ${a.marca || 'la tienda'}. Vendes SOLO ${a.producto}. ${trato}
+Mensajes cortos: de 1 a 3 líneas cada uno, máximo 3 mensajes por respuesta. Una pregunta a la vez. Termina casi siempre con una pregunta o con el siguiente paso.
+Nunca inventes precios, promociones, stock, colores, tallas ni plazos que no estén aquí.
+
+## PRODUCTO
+${a.producto}${a.descripcion ? `\n${a.descripcion}` : ''}${a.tela ? `\nTela / material: ${a.tela}` : ''}${a.beneficios ? `\nBeneficios:\n${lines(a.beneficios).map((x) => `- ${x}`).join('\n')}` : ''}${ropa ? `\nTallas: ${tallas.map((t) => t.label).join(' · ')}\nColores: ${a.colores}` : ''}${a.garantia ? `\nGarantía / cambios: ${a.garantia}` : ''}
+
+## PRECIOS
+${preciosText(a, rubro)}
+${a.envio}.
+No hay otros descuentos. Si pide un precio menor, usa el caso "persona".
+
+## CÓMO VENDES (en este orden; si ya tienes un dato, no lo vuelvas a pedir)
+${pasos.join('\n')}
+
+## FORMULARIOS (cópialos tal cual, cambiando lo que está entre [ ])
+${a.lima ? `FORMULARIO LIMA:
+Envío para: Lima 📦
+➡️ Nombre: [nombre y apellido]
+➡️ Celular: [celular]
+➡️ Dirección: [dirección] · Referencia: [referencia]
+➡️ Distrito: [distrito]
+✅ ${item}
+💰 Total: S/[total] (pagas al recibir)
+🚚 Llega: {entrega}, {horario_entrega}
+
+` : ''}${a.provincia ? `FORMULARIO SHALOM:
+🚚 Envío Shalom: [ciudad]
+➡️ Nombre: [nombre y apellido]
+➡️ DNI: [DNI]
+➡️ CEL: [celular]
+➡️ Sede: [sede elegida]
+✅ ${item}
+💰 Monto total: S/[total]${a.adelanto ? `\nAdelanto: ${soles(a.adelanto)}\nMonto restante: S/[total - ${a.adelanto}] (lo pagas al recoger)` : ''}
+
+PAGO (mensaje aparte, después del formulario):
+👉 Yape / Plin: {yape}
+A nombre de: {titular}
+Envíame la captura para separar tu pedido 📦
+(Solo si pide transferencia: BCP {bcp} · CCI {cci} · a nombre de {titular})
+
+` : ''}## ARCHIVOS (adjúntalos por su clave cuando ayuden; solo si están en ARCHIVOS DISPONIBLES)
+${ropa ? '- tabla-tallas: si duda de su talla.\n- video-puesto: si quiere ver cómo queda puesto.\n' : '- producto: si quiere ver el producto de cerca.\n- video-producto: si quiere verlo en uso.\n'}${a.lima ? '- confianza-lima: si es de Lima y desconfía o pregunta cómo entregan.\n' : ''}${a.provincia ? '- confianza-provincia: si es de provincia y desconfía o pregunta cómo envían.\n' : ''}- fotos-pedidos: si duda de que la tienda sea real.
+
+## REGLAS
+- Si pregunta algo que no está aquí ni en CONOCIMIENTO, dile que lo consultas y usa el caso "persona".
+- No hables de otros productos ni de temas ajenos a la compra.
+- No pidas datos de tarjeta ni contraseñas.`;
+}
+
+export function knowledgeAsistente(a) {
+  const faq = lines(a.faq);
+  return faq.length ? `PREGUNTAS FRECUENTES (respóndelas con esta información, cortito):\n${faq.join('\n')}` : '';
+}
+
+// El flujo en el orden del abordaje de Jordan
+export function flowAsistente(a, rubro) {
+  const ropa = rubro === 'ropa';
+  const tallas = ropa ? parseTallas(a.tallas) : [];
+  const o = (kind, asset, caption) => ({ kind, asset, opcional: true, ...(caption ? { caption } : {}) });
+  const nombre = a.producto;
+  const cerc = a.trato === 'cercano';
+  const promoOpts = Object.keys(a.precios).map(Number).sort((x, y) => x - y).map((k) => `${k} ${unidad(rubro, k)} · ${soles(a.precios[k])}`);
+  const tallaOpts = tallas.map((t) => t.label.slice(0, 60));
+  const preguntaTalla = { ...t(`¿Qué talla usas? ${cerc ? '🤗 ' : ''}Elígela aquí abajo 👇`), opciones: tallaOpts, boton: 'Elegir mi talla' };
+  const preguntaCant = { ...t(`¿Cuántas ${unidad(rubro, 2)} te gustaría? ${cerc ? '😊' : ''}`.trim()), opciones: promoOpts.slice(0, 10), boton: 'Elegir' };
+  const cases = [];
+  if (a.provincia) cases.push({ id: 'yape_sede', label: 'Pagó + agencia', send_reply: true, next: 'compro',
+    when: 'La clienta ya dio sus datos, ya eligió su agencia de Shalom y ACABA DE ENVIAR la captura (foto) de su pago. Sin la foto de la captura NO es este caso.' });
+  if (a.lima) cases.push({ id: 'lima_ok', label: 'Lima confirmó', send_reply: true, next: 'compro',
+    when: 'La clienta es de Lima con cobertura (pago contra entrega), ya recibió el FORMULARIO LIMA y confirma que sus datos están correctos (sí, correcto, ok o similar). NO aplica a provincia ni a agencia.' });
+  cases.push({ id: 'persona', label: 'Pide persona o reclamo', send_reply: true, next: 'asesora',
+    when: 'La clienta pide EXPRESAMENTE hablar con una persona, tiene un reclamo de un pedido que ya recibió, pide un precio menor o pregunta algo que no está en tu información. NO aplica si solo duda o pregunta precios o envíos.' });
+  if (a.provincia) cases.push({ id: 'yape_luego', label: 'Pago más tarde', send_reply: true, next: 'yape_pendiente',
+    when: 'La clienta dice que pagará o enviará la captura más tarde (ej: "te yapeo en un rato", "más tarde pago").' });
+  const nodes = [
+    { id: 'inicio', type: 'start', x: 360, y: 40, title: 'Clienta nueva', trigger: { new_chat: true, ads: 'all', ad_ids: [], keywords: a.palabra ? [a.palabra] : [] }, labels: [], next: 'precios' },
+    { id: 'precios', type: 'send', x: 360, y: 190, title: 'Producto y precios',
+      items: [{ kind: 'image', asset: 'precios' }, t(`✨ ${nombre} ✨\n\n${preciosText(a, rubro)}\n\n🚚 ${a.envio}\n✅ Compra 100% segura`)], next: 'seg' },
+    { id: 'seg', type: 'action', x: 360, y: 360, title: 'Inicia seguimiento', ops: [{ op: 'start_seq', seq: 'seg_venta' }], next: 'pregunta' },
+  ];
+  if (ropa) {
+    nodes.push(
+      { id: 'pregunta', type: 'send', x: 360, y: 490, title: '¿Qué talla usas?', items: [preguntaTalla], wait: true, save_to: 'respuesta', next: 'reconocer' },
+      { id: 'reconocer', type: 'recognize', x: 360, y: 640, title: 'Reconocer talla', from: 'respuesta', var: 'talla', options: tallas.map(({ value, words }) => ({ value, words })), next: 'etiqueta_talla', next_other: 'ia' },
+      { id: 'etiqueta_talla', type: 'action', x: 360, y: 790, title: 'Etiqueta Talla X', ops: [{ op: 'add_label', label: 'Talla {talla}' }], next: 'colores' },
+      { id: 'colores', type: 'send', x: 360, y: 920, title: 'Colores de su talla',
+        items: [{ kind: 'image', asset: 'colores-{talla}' }, t(`¡Perfecto! ${cerc ? '😍 ' : ''}Estos son los colores disponibles en talla {talla} 👇 ¿Cuáles te gustan más?`)],
+        wait: true, save_to: 'respuesta', next: 'ia' },
+    );
+  } else {
+    nodes.push({ id: 'pregunta', type: 'send', x: 360, y: 490, title: '¿Cuántas quiere?', items: [preguntaCant], wait: true, save_to: 'respuesta', next: 'ia' });
+  }
+  const y0 = ropa ? 1110 : 660;
+  nodes.push(
+    { id: 'ia', type: 'ia', x: 360, y: y0, title: `IA · Ventas ${nombre}`.slice(0, 60), cases, next: 'bucle', next_error: 'error_ia' },
+    { id: 'bucle', type: 'send', x: 40, y: y0 + 190, title: 'Bucle IA (espera respuesta)', items: [], wait: true, save_to: 'respuesta', next: 'ia' },
+    { id: 'compro', type: 'handoff', x: 780, y: y0 - 180, title: 'Asesora · COMPRÓ', labels: ['ASESOR', 'COMPRÓ'], reason: 'Compró: validar pago o agendar' },
+    { id: 'asesora', type: 'handoff', x: 780, y: y0 - 30, title: 'Asesora · ASESOR', labels: ['ASESOR'], reason: 'Pidió persona o caso especial' },
+    { id: 'error_ia', type: 'send', x: 360, y: y0 + 230, title: 'Si la IA falla', items: [t(`Estamos validando tu consulta ${cerc ? '😊 ' : ''}En un momento te respondo.`)], next: 'asesora' },
+  );
+  if (a.provincia) nodes.push({ id: 'yape_pendiente', type: 'action', x: 780, y: y0 + 120, title: 'Pago pendiente', ops: [{ op: 'add_label', label: 'YAPE PENDIENTE' }, { op: 'start_seq', seq: 'rec_pago' }], next: 'bucle' });
+  const pide = ropa ? 'Solo dime tu talla y te muestro tus colores 👇' : `Dime cuántas ${unidad(rubro, 2)} quieres y te ayudo 👇`;
+  const sequences = [
+    { id: 'seg_venta', name: 'Seguimiento de venta', cancel_on: 'reply', steps: [
+      { after_min: 15, items: [ropa ? { ...t(`Para mostrarte los colores que tenemos en tu talla, solo respóndeme con tu talla 👇`), opciones: tallaOpts, boton: 'Elegir mi talla' } : { ...t(`¿Te quedó alguna duda sobre ${nombre}? ${pide}`), opciones: promoOpts.slice(0, 10), boton: 'Elegir' }] },
+      { after_min: 40, items: [o('audio', 'audio-seguimiento')] },
+      { after_min: 180, from_h: 8, to_h: 22, items: [o('video', ropa ? 'video-puesto' : 'video-producto'), ropa ? { ...t(`Así se ve puesto ${cerc ? '😍' : ''}\n\n¿Qué talla usas? Te muestro tus colores 👇`), opciones: tallaOpts, boton: 'Elegir mi talla' } : t(`Así funciona ${nombre} ${cerc ? '😍' : ''}\n\n${pide}`)] },
+      { after_min: 900, from_h: 8, to_h: 22, items: [o('image', 'fotos-pedidos'), t(`Estos son algunos pedidos que salieron esta semana 📦\n\nTodavía puedes separar el tuyo: ${a.envio.toLowerCase()} 🚚\n\n${pide}`)] },
+    ] },
+  ];
+  if (a.provincia) sequences.push({ id: 'rec_pago', name: 'Recordatorio de pago', cancel_on: 'image', steps: [
+    { after_min: 60, from_h: 8, to_h: 22, items: [t(`No te olvides de enviarme la captura de tu pago para separar tu pedido ${cerc ? '🙌' : ''}`.trim())] },
+    { after_min: 180, from_h: 8, to_h: 22, items: [o('image', 'foto-despacho'), t('Así estamos despachando hoy por Shalom 📦 Envíame la captura y tu pedido sale en el próximo despacho.')] },
+  ] });
+  return { v: 1, start: 'inicio', nodes, sequences };
+}

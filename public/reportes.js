@@ -125,9 +125,9 @@ function draw() {
       <div class="seg sm" role="tablist">${metricNames.map(([k, l]) => `<button data-rm="${k}" aria-pressed="${R.metric === k}">${l}</button>`).join('')}</div></div>
       ${vbars(d.series, R.metric)}</section>
     <div class="rgrid">
-      <section class="rcard"><h3>Tallas más vendidas</h3><p class="rsub">Pantalones por talla</p>${hbars(d.tallas, { unit: ' pantalones' })}</section>
-      <section class="rcard"><h3>Colores más vendidos</h3><p class="rsub">Pantalones por color</p>${hbars(d.colores, { unit: ' pantalones' })}</section>
-      <section class="rcard"><h3>Promociones</h3><p class="rsub">Cuántos pantalones llevó cada clienta</p>${hbars(d.promos, { unit: ' ventas' })}</section>
+      <section class="rcard only-ropa"><h3>Tallas más vendidas</h3><p class="rsub">Pantalones por talla</p>${hbars(d.tallas, { unit: ' pantalones' })}</section>
+      <section class="rcard only-ropa"><h3>Colores más vendidos</h3><p class="rsub">Pantalones por color</p>${hbars(d.colores, { unit: ' pantalones' })}</section>
+      <section class="rcard"><h3>Promociones</h3><p class="rsub">${H.store?.()?.rubro === 'simple' ? 'Cuántas unidades llevó cada clienta' : 'Cuántos pantalones llevó cada clienta'}</p>${hbars(d.promos, { unit: ' ventas' })}</section>
       <section class="rcard"><h3>Distritos y ciudades</h3><p class="rsub">Dónde se vendió más</p>${hbars(d.lugares, { unit: ' ventas' })}</section>
     </div>
     <section class="rcard rwide"><h3>Anuncios</h3><p class="rsub">Qué anuncio trajo conversaciones, cuántas ventas se confirmaron y cuántas se entregaron</p>

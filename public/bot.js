@@ -145,7 +145,8 @@ function draw(body = C.$('#cfgbody')) {
   const subs = [['flujo', 'Flujo'], ['sim', 'Probar'], ['seg', 'Seguimientos'], ['ia', 'IA Suyon'], ['files', 'Archivos']];
   const missing = B.data.template_assets.filter((a) => !a.ok).length;
   body.innerHTML = `
-  <div class="ph"><div><h2>Bot Suyon AI</h2><p>Tu flujo de Botcake, aquí. Lo gratis (precios, talla, colores) va sin IA; la IA entra después, con tu mismo prompt.</p></div><span class="grow"></span>
+  <div class="ph"><div><h2>Bot Suyon AI</h2><p>${B.data.asistente || B.data.rubro === 'simple' ? 'Tu bot: lo gratis (foto, precios y la primera pregunta) va sin IA; la IA entra después con lo que respondiste en el asistente.' : 'Tu flujo de Botcake, aquí. Lo gratis (precios, talla, colores) va sin IA; la IA entra después, con tu mismo prompt.'}</p></div><span class="grow"></span>
+    <button class="iconbtn" data-bact="asis" title="Responde preguntas de tu producto y se arma tu bot, tu IA y la lista de fotos y videos">✨ Asistente</button>
     <label class="bswitch"><input type="checkbox" id="bon" ${st.bot_on ? 'checked' : ''}><span>${st.bot_on ? 'Bot encendido' : 'Bot apagado'}</span></label></div>
   <div class="card bwho"><div class="field" style="flex:1 1 220px"><label for="baud">Responde a</label>
       <select id="baud"><option value="equipo" ${st.audience !== 'todas' ? 'selected' : ''}>Solo números de prueba</option><option value="todas" ${st.audience === 'todas' ? 'selected' : ''}>Todas las clientas</option></select></div>
@@ -189,9 +190,10 @@ function flowBar() {
 function drawFlow() {
   const box = C.$('#bsub');
   if (!B.flow) {
+    const ropaJordan = B.data.rubro !== 'simple';
     box.innerHTML = `<div class="card empty" style="gap:10px"><b>Todavía no hay flujos en esta tienda</b>
-      <span>La plantilla trae tu flujo «ventas pantalón» de Botcake: precios, talla (todas las frases), colores por talla, IA con tu prompt, casos especiales y los 2 seguimientos.</span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="send" data-bact="tpl">Crear desde «Ventas pantalón»</button>${C.S.me?.user?.is_admin ? '<button class="iconbtn" data-bact="tplct" title="Tu asistente para vender Control Total: responde dudas del plan y manda el enlace de la demo">Crear «Ventas Control Total»</button>' : ''}<button class="iconbtn" data-bact="blank">Flujo vacío</button></div></div>`;
+      <span>${ropaJordan ? 'Responde unas preguntas de tu producto y se arma tu bot en el orden que funciona: foto y precios, pregunta, seguimientos, IA y asesora. O usa la plantilla «Ventas pantalón».' : 'Responde unas preguntas de tu producto y se arma tu bot en el orden que funciona: foto y precios, pregunta, seguimientos, IA y asesora.'}</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="send" data-bact="asis">✨ Armar mi bot con preguntas</button>${ropaJordan ? '<button class="iconbtn" data-bact="tpl">Plantilla «Ventas pantalón»</button>' : ''}${C.S.me?.user?.is_admin ? '<button class="iconbtn" data-bact="tplct" title="Tu asistente para vender Control Total: responde dudas del plan y manda el enlace de la demo">Crear «Ventas Control Total»</button>' : ''}<button class="iconbtn" data-bact="blank">Flujo vacío</button></div></div>`;
     return;
   }
   box.innerHTML = `${flowBar()}
@@ -1162,6 +1164,9 @@ document.addEventListener('click', async (ev) => {
       case 'zfit':
         B.zoom = null;
         return applyZoom();
+      case 'asis':
+        if (B.dirty && !confirm('Tienes cambios sin guardar en el flujo. ¿Abrir el asistente igual?')) return;
+        return window.dispatchEvent(new CustomEvent('ct:asistente'));
       case 'tpl':
       case 'tplct':
       case 'blank': {
@@ -1175,6 +1180,7 @@ document.addEventListener('click', async (ev) => {
         const admin = C.S.me?.user?.is_admin;
         const ans = admin
           ? prompt('¿Qué plantilla? Escribe 1, 2 o 3:\n1 = Ventas pantalón\n2 = Ventas Control Total (tu asistente para vender el sistema)\n3 = Flujo vacío', '1')
+          : B.data.rubro === 'simple' ? '3'
           : confirm('¿Crear desde la plantilla «Ventas pantalón»? (Cancelar = flujo vacío)') ? '1' : '3';
         if (ans === null) return;
         const tpl = { 1: 'pantalon', 2: 'ventas_ct' }[String(ans).trim()] || null;

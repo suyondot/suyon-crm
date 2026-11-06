@@ -7,7 +7,7 @@ import { kindForMime, SEND_RULES } from './whatsapp.js';
 import {
   NODE_TYPES, IA_MODELS, PROMPT_VARS, entregaDia, loadSettings, loadFlow, flowStats, startFlow, cancelJobs, testIA, addLabel, onInbound, runJob,
 } from './bot.js';
-import { flowPantalon, PROMPT_PANTALON, KNOWLEDGE_PANTALON, TEMPLATE_ASSETS, flowVentasCT, PROMPT_VENTAS_CT, KNOWLEDGE_VENTAS_CT } from './bot-template.js';
+import { flowPantalon, PROMPT_PANTALON, KNOWLEDGE_PANTALON, TEMPLATE_ASSETS, assetsFor, flowVentasCT, PROMPT_VENTAS_CT, KNOWLEDGE_VENTAS_CT } from './bot-template.js';
 
 const r = new Hono();
 const body = async (c) => {
@@ -47,7 +47,7 @@ const SETTING_RULES = {
   voz_on: (v) => (v ? 1 : 0),
 };
 
-async function saveSettings(env, storeId, patch) {
+export async function saveSettings(env, storeId, patch) {
   const cur = await loadSettings(env, storeId);
   const next = { ...cur };
   for (const [k, fn] of Object.entries(SETTING_RULES)) if (k in patch) next[k] = fn(patch[k]);
@@ -75,7 +75,12 @@ r.get('/stores/:id/bot', async (c) => {
     settings: { ...settings, ia_prompt: settings.ia_prompt ?? PROMPT_PANTALON, ia_knowledge: settings.ia_knowledge ?? KNOWLEDGE_PANTALON },
     flows,
     assets,
-    template_assets: TEMPLATE_ASSETS.map(([key, desc]) => ({ key, desc, ok: assets.some((a) => a.key === key) })),
+    template_assets: (st.asistente
+      ? assetsFor(st.rubro || 'ropa', JSON.parse(st.asistente || '{}').respuestas || {}).map((a) => [a.key, `${a.desc}${a.need === 'si' ? '' : ' (opcional)'}`])
+      : TEMPLATE_ASSETS
+    ).map(([key, desc]) => ({ key, desc, ok: assets.some((a) => a.key === key) })),
+    rubro: st.rubro || 'ropa',
+    asistente: !!st.asistente,
     secrets: Object.fromEntries(secretNames.map((n) => [n, !!c.env[n]])),
     usage,
     today: today(st.timezone),
@@ -108,7 +113,7 @@ function cleanOpts(it) {
 
 function cleanItems(items) {
   return (Array.isArray(items) ? items : []).slice(0, 10).map((it) =>
-    it?.kind === 'text' ? { kind: 'text', text: str(it.text, 4096), ...cleanOpts(it) } : { kind: ['image', 'video', 'audio', 'document', 'file'].includes(it?.kind) ? it.kind : 'file', asset: str(it?.asset, 60), ...(it?.caption ? { caption: str(it.caption, 1024) } : {}) }
+    it?.kind === 'text' ? { kind: 'text', text: str(it.text, 4096), ...cleanOpts(it) } : { kind: ['image', 'video', 'audio', 'document', 'file'].includes(it?.kind) ? it.kind : 'file', asset: str(it?.asset, 60), ...(it?.caption ? { caption: str(it.caption, 1024) } : {}), ...(it?.opcional ? { opcional: true } : {}) }
   );
 }
 

@@ -95,13 +95,14 @@ export async function renderPanel(content) {
   draw(content);
 }
 
-const tabs = () => `<div class="seg pntabs" role="tablist">${[['empresas', 'Empresas'], ['demos', `Demos${PN.demos?.nuevas ? ` <span class="pnbadge">${PN.demos.nuevas}</span>` : ''}`], ['horarios', 'Horarios de demo'], ['pagina', 'Página pública'], ['shalom', 'Shalom']].map(([k, l]) => `<button data-ptab="${k}" aria-pressed="${PN.tab === k}">${l}</button>`).join('')}</div>`;
+const tabs = () => `<div class="seg pntabs" role="tablist">${[['empresas', 'Empresas'], ['demos', `Demos${PN.demos?.nuevas ? ` <span class="pnbadge">${PN.demos.nuevas}</span>` : ''}`], ['horarios', 'Horarios de demo'], ['pagina', 'Página pública'], ['refs', 'Referencias'], ['shalom', 'Shalom']].map(([k, l]) => `<button data-ptab="${k}" aria-pressed="${PN.tab === k}">${l}</button>`).join('')}</div>`;
 
 function draw(content) {
   if (PN.tab === 'demos') return drawDemos(content);
   if (PN.tab === 'horarios') return drawHorarios(content);
   if (PN.tab === 'pagina') return drawPagina(content);
   if (PN.tab === 'shalom') return drawShalom(content);
+  if (PN.tab === 'refs') return drawRefs(content);
   const d = PN.data;
   const p = d.plan;
   const rs = d.resumen;
@@ -542,5 +543,72 @@ async function drawShalom(content) {
         box.innerHTML = `<div class="err">${e(er.message)}</div>`;
       }
     }, 250);
+  };
+}
+
+/* ---------- Referencias: ejemplos que ven los alumnos en el asistente («Necesito estas fotos y videos») ---------- */
+async function drawRefs(content) {
+  let R0;
+  try {
+    R0 = await H.api('GET', '/admin/referencias');
+  } catch (er) {
+    H.toast(er.message, 5000);
+    return;
+  }
+  const prev = (k) => {
+    if (!k.mime) return '<span class="asis-ref none">Sin ejemplo</span>';
+    const src = `/api/referencias/${encodeURIComponent(k.key)}?v=${k.at || 0}`;
+    if (k.mime.startsWith('image/')) return `<img class="asis-ref" src="${src}" alt="" loading="lazy">`;
+    if (k.mime.startsWith('video/')) return `<video class="asis-ref" src="${src}" controls preload="metadata"></video>`;
+    return `<div class="asis-ref aud"><span>🎤</span><audio src="${src}" controls preload="none"></audio></div>`;
+  };
+  content.innerHTML = `<div class="page pnl">
+    <div class="ph"><div><h2>Panel Suyon</h2><p>Ejemplos que ven tus alumnos al final del asistente, al lado de cada foto o video que les pedimos.</p></div></div>
+    ${tabs()}
+    <div class="card"><h3>Tomar de una tienda</h3>
+      <p class="sub">Copia como ejemplo los archivos del bot de una tienda tuya (abordaje, tabla de tallas, colores, audio, video, pedidos, confianza Lima y provincia, despacho). Solo llena los que están vacíos.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><select id="rf-st">${R0.stores.map((x) => `<option value="${x.id}">${e(x.company)} · ${e(x.name)}</option>`).join('')}</select>
+        <button class="send" data-rf="copy" ${R0.stores.length ? '' : 'disabled'}>Tomar sus archivos</button>
+        <label class="note" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rf-rep"> Reemplazar también los que ya tienen ejemplo</label></div></div>
+    <div class="asis-files" style="margin-top:14px">${R0.keys.map((k) => `<div class="asis-file ${k.mime ? 'ok' : ''}"><figure>${prev(k)}</figure>
+      <div class="asis-fi"><b>${e(k.desc)}</b><span class="note mono">${e(k.key)}</span>
+        <input type="file" id="rf-${e(k.key.replace(':', '-'))}" accept="image/*,video/*,audio/*" hidden>
+        <div class="row" style="gap:6px"><button class="${k.mime ? 'iconbtn' : 'send'}" data-rf="up" data-key="${e(k.key)}">${k.mime ? 'Cambiar' : 'Subir ejemplo'}</button>${k.mime ? `<button class="iconbtn" data-rf="del" data-key="${e(k.key)}">Quitar</button>` : ''}</div></div></div>`).join('')}</div>
+  </div>`;
+  const root = content.querySelector('.pnl');
+  root.onclick = async (ev) => {
+    if (tabClick(ev, content)) return;
+    const b = ev.target.closest('[data-rf]');
+    if (!b) return;
+    try {
+      if (b.dataset.rf === 'copy') {
+        const r = await H.api('POST', '/admin/referencias/copiar', { store_id: Number(content.querySelector('#rf-st').value), reemplazar: content.querySelector('#rf-rep').checked });
+        H.toast(r.copiadas ? `Listo: ${r.copiadas} ejemplo(s) tomados` : 'No había nada nuevo que tomar');
+        return drawRefs(content);
+      }
+      if (b.dataset.rf === 'del') {
+        await H.api('DELETE', `/admin/referencias/${encodeURIComponent(b.dataset.key)}`);
+        return drawRefs(content);
+      }
+      if (b.dataset.rf === 'up') {
+        const inp = content.querySelector(`#rf-${b.dataset.key.replace(':', '-')}`);
+        inp.onchange = async () => {
+          const fd = new FormData();
+          fd.append('key', b.dataset.key);
+          fd.append('file', inp.files[0]);
+          H.toast('Subiendo…');
+          try {
+            await H.api('POST', '/admin/referencias', fd);
+            H.toast('Ejemplo guardado ✅');
+          } catch (er) {
+            H.toast(er.message, 5000);
+          }
+          drawRefs(content);
+        };
+        inp.click();
+      }
+    } catch (er) {
+      H.toast(er.message, 5000);
+    }
   };
 }

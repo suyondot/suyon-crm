@@ -220,6 +220,7 @@ export async function botSend(env, store, chat, item, { flowId, node, sender = '
   } else {
     const key = fill(item.asset, vars);
     asset = await assetFor(env, store.id, key);
+    if (!asset && item.opcional) return { ok: false, reason: 'archivo' }; // archivo opcional: si no lo subió, se salta sin aviso
     if (!asset) {
       await alertFor(env, store, fresh, { kind: 'archivo', chatId: null, title: `Falta subir el archivo «${key}»`, body: 'El bot se saltó ese archivo. Súbelo en Configuración → Bot Suyon AI → Archivos.', dedupe: true });
       return { ok: false, reason: 'archivo' };

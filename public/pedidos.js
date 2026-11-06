@@ -230,8 +230,8 @@ function drawEditor() {
       <section><div class="pmsec"><h3>Productos</h3><button type="button" class="iconbtn sm" data-madd>+ Producto</button></div>
         <div class="pitems">${items.map((it, i) => `<div class="pit" data-i="${i}">
           <input data-it="producto" value="${e(it.producto || '')}" placeholder="Producto" aria-label="Producto">
-          <select data-it="talla" aria-label="Talla"><option value="">Talla</option>${TALLAS.map((t) => `<option ${it.talla === t ? 'selected' : ''}>${t}</option>`).join('')}${it.talla && !TALLAS.includes(it.talla) ? `<option selected>${e(it.talla)}</option>` : ''}</select>
-          <input data-it="color" value="${e(it.color || '')}" list="pcolores" placeholder="Color" aria-label="Color">
+          <select data-it="talla" aria-label="Talla" class="only-ropa"><option value="">Talla</option>${TALLAS.map((t) => `<option ${it.talla === t ? 'selected' : ''}>${t}</option>`).join('')}${it.talla && !TALLAS.includes(it.talla) ? `<option selected>${e(it.talla)}</option>` : ''}</select>
+          <input data-it="color" value="${e(it.color || '')}" list="pcolores" placeholder="Color" aria-label="Color" class="only-ropa">
           <input data-it="cantidad" type="number" min="1" value="${it.cantidad || 1}" aria-label="Cantidad">
           <button type="button" class="iconbtn sm" data-mdel="${i}" aria-label="Quitar">×</button></div>`).join('')}</div>
         <datalist id="pcolores">${COLORES.map((c) => `<option>${c}</option>`).join('')}</datalist>

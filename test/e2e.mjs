@@ -1197,7 +1197,7 @@ try {
     };
     assert.equal((await as('GET', '/api/registro')).open, true);
     assert.equal((await as('POST', '/api/registro', { name: 'Ana', email: 'ana@alumna.pe', password: 'corta', company: 'Ana Store' })).status, 400);
-    let r = await as('POST', '/api/registro', { name: 'Ana', email: 'ana@alumna.pe', password: 'clave-segura-9', company: 'Ana Store', phone: '999 111 222' });
+    let r = await as('POST', '/api/registro', { name: 'Ana', email: 'ana@alumna.pe', password: 'clave-segura-9', company: 'Ana Store', phone: '999 111 222', canal: 'mensajes', rubro: 'simple' });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.equal((await as('POST', '/api/registro', { name: 'Ana', email: 'ana@alumna.pe', password: 'clave-segura-9', company: 'Otra' })).status, 409);
     me = await as('GET', '/api/me');
@@ -1206,8 +1206,58 @@ try {
     assert.equal(co.plan.state, 'trial');
     assert.equal(co.plan.days_left, 15);
     assert.equal(me.user.is_admin, false);
-    const s1 = await as('POST', `/api/companies/${co.id}/stores`, { name: 'Ana · Vestidos' });
-    assert.equal(s1.status, 200, JSON.stringify(s1));
+    // su primera tienda nace sola con lo que eligió, y con el asistente pendiente
+    assert.equal(me.stores.length, 1);
+    const s1 = { store_id: me.stores[0].id };
+    assert.equal(me.stores[0].rubro, 'simple');
+    assert.equal(me.stores[0].canal, 'mensajes');
+    assert.equal(me.stores[0].setup, 1);
+    assert.equal(me.stores[0].name, 'Ana Store');
+    const lb = await as('GET', `/api/stores/${s1.store_id}/labels`);
+    assert.ok(!lb.labels.some((l) => l.name.startsWith('Talla ')), 'sin variantes: sin etiquetas de talla');
+    // asistente: preguntas → bot, IA y precios
+    let A = await as('GET', `/api/stores/${s1.store_id}/asistente`);
+    assert.equal(A.respuestas, null);
+    assert.equal((await as('POST', `/api/stores/${s1.store_id}/asistente`, { producto: 'Cápsulas', precios: {} })).status, 400);
+    A = await as('POST', `/api/stores/${s1.store_id}/asistente`, {
+      marca: 'Ana Store', producto: 'Cápsulas de colágeno', descripcion: '60 cápsulas, 1 mes', beneficios: 'Piel\nUñas',
+      precios: { 1: '59', 2: '99', 3: '129.90' }, lima: true, provincia: true, adelanto: 20, faq: '¿Cuántas al día? → 2', trato: 'cercano', palabra: 'Quiero colágeno',
+    });
+    assert.ok(A.flow_id, JSON.stringify(A));
+    assert.equal(A.respuestas.producto, 'Cápsulas de colágeno');
+    assert.deepEqual(A.assets.map((x) => x.key), ['precios', 'producto', 'audio-seguimiento', 'video-producto', 'fotos-pedidos', 'confianza-lima', 'confianza-provincia', 'foto-despacho']);
+    assert.equal(A.assets[0].need, 'si');
+    let bot = await as('GET', `/api/stores/${s1.store_id}/bot`);
+    assert.match(bot.settings.ia_prompt, /Vendes SOLO Cápsulas de colágeno/);
+    assert.match(bot.settings.ia_prompt, /S\/129\.90/);
+    assert.match(bot.settings.ia_prompt, /adelanto de S\/20/);
+    assert.match(bot.settings.ia_knowledge, /Cuántas al día/);
+    assert.equal(bot.rubro, 'simple');
+    assert.deepEqual(bot.template_assets.map((x) => x.key), A.assets.map((x) => x.key));
+    let fl = await as('GET', `/api/bot/flows/${A.flow_id}`);
+    assert.equal(fl.flow.active, 0, 'nace apagado');
+    assert.equal(fl.flow.name, 'Ventas Cápsulas de colágeno');
+    const g = fl.flow.graph;
+    assert.deepEqual(g.sequences[0].steps.map((x) => x.after_min), [15, 40, 180, 900], 'mismo orden que el abordaje de Jordan');
+    assert.ok(g.sequences[0].steps[1].items[0].opcional, 'el audio es opcional');
+    assert.deepEqual(g.nodes.find((n) => n.type === 'ia').cases.map((c) => c.id), ['yape_sede', 'lima_ok', 'persona', 'yape_luego']);
+    assert.deepEqual(g.nodes.find((n) => n.id === 'inicio').trigger.keywords, ['Quiero colágeno']);
+    // probar en el simulador: precios (falta la foto → aviso) y la pregunta con botones
+    let sm = await as('POST', `/api/stores/${s1.store_id}/sim/reset`, { flow_id: A.flow_id });
+    sm = await as('POST', `/api/stores/${s1.store_id}/sim/send`, { text: 'hola' });
+    const outs = sm.messages.filter((m) => m.direction === 'out').map((m) => m.body || '');
+    assert.ok(outs.some((t) => /Cápsulas de colágeno/.test(t) && /S\/99/.test(t)), JSON.stringify(outs));
+    assert.ok(outs.some((t) => /Cuántas unidades/.test(t)), JSON.stringify(outs));
+    // la segunda vez, el asistente actualiza el mismo flujo (no crea otro)
+    const A2 = await as('POST', `/api/stores/${s1.store_id}/asistente`, { ...A.respuestas, precios: { 1: 49 }, provincia: false });
+    assert.equal(A2.flow_id, A.flow_id);
+    assert.ok(!A2.assets.some((x) => x.key === 'foto-despacho'), 'sin provincia no pide foto de despacho');
+    bot = await as('GET', `/api/stores/${s1.store_id}/bot`);
+    assert.equal(bot.flows.length, 1);
+    assert.doesNotMatch(bot.settings.ia_prompt, /FORMULARIO SHALOM/);
+    assert.equal((await as('POST', `/api/stores/${s1.store_id}/asistente/listo`)).ok, true);
+    me = await as('GET', '/api/me');
+    assert.equal(me.stores[0].setup, 0);
     let plan = await as('GET', `/api/companies/${co.id}/plan`);
     assert.equal(plan.plan.price.total, 25);
     assert.equal(plan.plan.price.currency, 'PEN');
@@ -1576,6 +1626,44 @@ try {
     assert.ok(a.saldo < 10 && a.saldo > 9.99, String(a.saldo));
     assert.ok(me.ia_saldo, 'va en /api/me para el admin');
     assert.equal((await call('PATCH', '/api/admin/ia-saldo', { provider: 'anthropic', saldo: 'abc' })).status, 400);
+  });
+  await step('asistente de ropa y referencias del Panel', async () => {
+    const { parseTallas, cleanAsistente, flowAsistente, assetsFor } = await import('../src/bot-template.js');
+    const T = parseTallas('S · Jean 28-30\nM\nL · 34 a 36');
+    assert.deepEqual(T.map((t) => t.value), ['S', 'M', 'L']);
+    assert.ok(T[0].words.includes('29') && T[2].words.includes('35'));
+    assert.deepEqual(parseTallas('S, M, L').map((t) => t.value), ['S', 'M', 'L']);
+    assert.throws(() => cleanAsistente({ producto: 'Jogger', precios: { 1: 69 }, tallas: 'S', colores: '' }, 'ropa'), /colores/);
+    const a = cleanAsistente({ producto: 'Jogger', precios: { 1: 69, 3: 159 }, tallas: 'S\nM', colores: 'Negro, Beige', lima: true, provincia: false }, 'ropa');
+    const g = flowAsistente(a, 'ropa');
+    assert.deepEqual(g.nodes.find((n) => n.type === 'recognize').options.map((o) => o.value), ['S', 'M']);
+    assert.ok(!g.nodes.some((n) => n.id === 'yape_pendiente'), 'sin provincia no hay pago pendiente');
+    assert.deepEqual(assetsFor('ropa', a).filter((x) => x.key.startsWith('colores-')).map((x) => x.key), ['colores-S', 'colores-M']);
+    // Panel: subir un ejemplo y tomar los de una tienda
+    const me = await call('GET', '/api/me');
+    const st = me.stores[0];
+    const fd = new FormData();
+    fd.append('key', 'simple:precios');
+    fd.append('file', new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])], { type: 'image/jpeg' }), 'ej.jpg');
+    assert.equal((await call('POST', '/api/admin/referencias', undefined, { form: fd })).ok, true);
+    let R = await call('GET', '/api/admin/referencias');
+    assert.equal(R.keys.find((k) => k.key === 'simple:precios').mime, 'image/jpeg');
+    const img = await call('GET', '/api/referencias/simple%3Aprecios', undefined, { raw: true });
+    assert.equal(img.status, 200);
+    assert.equal(img.headers.get('content-type'), 'image/jpeg');
+    const cp = await call('POST', '/api/admin/referencias/copiar', { store_id: st.id });
+    assert.ok(cp.copiadas >= 1, JSON.stringify(cp));
+    R = await call('GET', '/api/admin/referencias');
+    assert.ok(R.keys.find((k) => k.key === 'ropa:precios').mime, 'la foto de precios de Porte queda como ejemplo');
+    assert.equal((await call('DELETE', '/api/admin/referencias/simple%3Aprecios')).ok, true);
+    assert.equal((await call('GET', '/api/referencias/simple%3Aprecios')).status, 404);
+    // una tienda nueva de ropa nace con el asistente pendiente
+    const ns = await call('POST', `/api/companies/${st.company_id}/stores`, { name: 'Prueba ropa', rubro: 'ropa' });
+    const nst = ns.stores.find((x) => x.id === ns.store_id);
+    assert.equal(nst.rubro, 'ropa');
+    assert.equal(nst.setup, 1);
+    assert.equal((await call('POST', `/api/companies/${st.company_id}/stores`, { name: 'Mal', rubro: 'zapatos' })).status, 400);
+    await call('DELETE', `/api/stores/${ns.store_id}`).catch(() => {});
   });
   await step('páginas para Meta', async () => {
     for (const p of ['/privacidad', '/eliminar-datos', '/terminos', '/planes']) assert.equal((await fetch(BASE + p)).status, 200);

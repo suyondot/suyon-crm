@@ -55,7 +55,7 @@ export function cfgOf(store) {
   try {
     c = JSON.parse(store?.order_cfg || '{}') || {};
   } catch {}
-  return { ...DEFAULT_CFG, ...c, precios: { ...DEFAULT_CFG.precios, ...(c.precios || {}) } };
+  return { ...DEFAULT_CFG, ...c, precios: c.precios && Object.keys(c.precios).length ? { ...c.precios } : { ...DEFAULT_CFG.precios } };
 }
 
 export function priceFor(units, cfg) {

@@ -64,14 +64,15 @@ const cfg = () => EV.data?.cfg || { productos: [], extras: [], remitentes: [], d
 const isExtra = (it) => cfg().extras.some((x) => x.nombre.toLowerCase() === String(it.producto || '').toLowerCase());
 const mainItems = (x) => x.items.filter((it) => !isExtra(it));
 const isOpen = (x) => ABIERTOS.includes(x.status);
+const ropa = () => H.store()?.rubro !== 'simple';
 const isDV = (x) => isOpen(x) && x.status !== 'falta_abonar' && days(sent(x)) >= cfg().dias_devolver;
 const isRR = (x) => isOpen(x) && x.status !== 'falta_abonar' && days(sent(x)) >= cfg().dias_aviso && !isDV(x);
 const miss = (x) => {
   const r = [];
   const mi = mainItems(x);
   if (!mi.length) r.push('producto');
-  if (mi.some((it) => !it.color)) r.push('colores');
-  if (mi.some((it) => !it.talla)) r.push('tallas');
+  if (ropa() && mi.some((it) => !it.color)) r.push('colores');
+  if (ropa() && mi.some((it) => !it.talla)) r.push('tallas');
   if (!x.total) r.push('ticket');
   return r;
 };
@@ -290,7 +291,9 @@ function detHTML(x) {
   let h = `<div class="gmny"><label>Producto${sel(`data-k="p" data-id="${id}"`, [...prods, 'Otro'], producto)}</label>
     <label>Promo<select data-k="pr" data-id="${id}"><option value="">—</option>${[1, 2, 3, 4].map((k) => `<option value="${k}" ${!my && n === k ? 'selected' : ''}>Por ${k}</option>`).join('')}<option value="M" ${my ? 'selected' : ''}>Mayorista</option></select></label>
     ${my ? `<label>Cantidad<input type="number" inputmode="numeric" min="5" max="50" data-k="mq" data-id="${id}" value="${n}"></label>` : ''}</div>`;
-  if (!producto || !n) h += '<div class="gmny"><span>Elige producto y promo para escoger los colores</span></div>';
+  if (!ropa()) {
+    // producto sin variantes: no hay colores ni tallas
+  } else if (!producto || !n) h += '<div class="gmny"><span>Elige producto y promo para escoger los colores</span></div>';
   else if (!p || !p.colores?.length) {
     h += `<div class="gmny"><label class="wide">Colores (separa con coma)<input type="text" data-k="clt" data-id="${id}" value="${e(units.map((u) => u.color).filter(Boolean).join(', '))}"></label></div>
       <div class="gmny"><label class="wide">Tallas (separa con coma)<input type="text" data-k="tlt" data-id="${id}" value="${e(units.map((u) => u.talla).filter(Boolean).join(', '))}"></label></div>`;
@@ -550,8 +553,8 @@ function prodRep(g) {
   let h = `<section class="rcard"><h3>Productos (guías enviadas)</h3>
     <div class="pchips" style="margin:8px 0">${[['all', 'Todos'], ...prods.map((p) => [p, p])].map(([k, t]) => `<button data-epf="${e(k)}" class="${EV.pf === k ? 'on' : ''}">${e(t)}</button>`).join('')}</div>
     <div class="repgrid"><div><h4>Promoción</h4><div class="lst">${rows(srt(pc), sum(pc))}</div></div>
-    <div><h4>Colores (unidades)</h4><div class="lst">${rows(srt(cc), sum(cc))}</div></div>
-    <div><h4>Tallas (unidades)</h4><div class="lst">${rows(trow, sum(tc))}</div></div>`;
+    <div class="only-ropa"><h4>Colores (unidades)</h4><div class="lst">${rows(srt(cc), sum(cc))}</div></div>
+    <div class="only-ropa"><h4>Tallas (unidades)</h4><div class="lst">${rows(trow, sum(tc))}</div></div>`;
   for (const ex of cfg().extras) {
     const L = (x) => x.items.filter((it) => it.producto.toLowerCase() === ex.nombre.toLowerCase());
     const wp = sel.filter((x) => L(x).length);

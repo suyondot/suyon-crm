@@ -2,7 +2,7 @@
 import { Hono } from 'hono';
 import {
   now, fail, randomToken, sha256hex, hashPassword, safeEqual, cleanEmail, validEmail, clip,
-  ROLES, DEFAULT_LABELS, LABEL_COLORS, HttpError, windowOpen, GENERAL, localDay,
+  ROLES, DEFAULT_LABELS, LABEL_COLORS, RUBROS, insertStore, HttpError, windowOpen, GENERAL, localDay,
 } from './util.js';
 import { createSession, destroySession, currentUser, requireUser, checkPassword, loadAccess, storeFor, companyFor, chatFor } from './auth.js';
 import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES, getProfile, setProfile, setProfilePhoto, VERTICALS } from './whatsapp.js';
@@ -12,6 +12,7 @@ import reportesApi from './api-reportes.js';
 import pedidosApi from './api-pedidos.js';
 import billingApi from './api-billing.js';
 import enviosApi from './api-envios.js';
+import asistenteApi from './api-asistente.js';
 import { fixSpelling } from './ortografia.js';
 import { loadSaldo } from './saldo.js';
 import { loadPlan } from './billing.js';
@@ -40,7 +41,7 @@ function publicStore(s) {
   const out = {
     id: s.id, company_id: s.company_id, name: s.name, color: s.color, phone_display: s.phone_display,
     status: s.status, verified_name: s.verified_name, role: s.role, rev: s.rev,
-    timezone: s.timezone, country: s.country, currency: s.currency, language: s.language, hour12: s.hour12, autocorrect: s.autocorrect ?? 1, canal: s.canal || 'mensajes', connected_via: s.connected_via || null,
+    timezone: s.timezone, country: s.country, currency: s.currency, language: s.language, hour12: s.hour12, autocorrect: s.autocorrect ?? 1, canal: s.canal || 'mensajes', rubro: s.rubro || 'ropa', setup: s.setup || 0, connected_via: s.connected_via || null,
   };
   if (s.role === 'dueno') {
     Object.assign(out, {
@@ -416,6 +417,11 @@ function storeInput(b, partial) {
     if (!CANALES.includes(b.canal)) fail(400, 'Elige cómo vende la tienda: por mensajes o por Shopify.');
     out.canal = b.canal;
   }
+  // Qué vende: ropa (tallas y colores) o un producto sin variantes
+  if ('rubro' in b) {
+    if (!RUBROS.includes(b.rubro)) fail(400, 'Elige qué vende la tienda: ropa o producto sin variantes.');
+    out.rubro = b.rubro;
+  }
   if (out.phone_number_id && out.waba_id && out.phone_number_id === out.waba_id) {
     fail(400, 'Los dos identificadores son iguales. El de la cuenta de WhatsApp Business es otro número: lo ves en la dirección del Administrador de WhatsApp (asset_id=…).');
   }
@@ -429,13 +435,7 @@ api.post('/companies/:id/stores', async (c) => {
   if (s.phone_number_id && (await db.prepare('SELECT 1 FROM stores WHERE phone_number_id = ?').bind(s.phone_number_id).first())) {
     fail(409, 'Ese número ya está en otra tienda.');
   }
-  const r = await db.prepare(
-    'INSERT INTO stores (company_id, name, color, phone_display, phone_number_id, waba_id, token_secret, canal, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(co.id, s.name, s.color || '#7A1F35', s.phone_display ?? null, s.phone_number_id ?? null, s.waba_id ?? null, s.token_secret || 'WA_TOKEN', s.canal || 'mensajes', now()).run();
-  const storeId = r.meta.last_row_id;
-  await db.batch(DEFAULT_LABELS.map(([name, color, auto], i) =>
-    db.prepare('INSERT INTO labels (store_id, name, color, auto, sort, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(storeId, name, color, auto, i, now())
-  ));
+  const storeId = await insertStore(db, co.id, s);
   c.set('access', undefined);
   return c.json({ ...(await mePayload(c)), store_id: storeId });
 });
@@ -1214,5 +1214,6 @@ api.route('/', reportesApi);
 api.route('/', pedidosApi);
 api.route('/', billingApi);
 api.route('/', enviosApi);
+api.route('/', asistenteApi);
 
 export default api;

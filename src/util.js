@@ -111,6 +111,21 @@ export const DEFAULT_LABELS = [
   ['🔥 URGENTE', '--t-wine', 0],
 ];
 
+export const RUBROS = ['ropa', 'simple'];
+
+// Crea una tienda con sus etiquetas de inicio. setup = 1 → al entrar, el dueño ve el asistente de inicio.
+export async function insertStore(db, companyId, s) {
+  const r = await db.prepare(
+    'INSERT INTO stores (company_id, name, color, phone_display, phone_number_id, waba_id, token_secret, canal, rubro, setup, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)'
+  ).bind(companyId, s.name, s.color || '#7A1F35', s.phone_display ?? null, s.phone_number_id ?? null, s.waba_id ?? null, s.token_secret || 'WA_TOKEN', s.canal || 'mensajes', s.rubro || 'ropa', now()).run();
+  const storeId = r.meta.last_row_id;
+  const labels = DEFAULT_LABELS.filter(([name]) => s.rubro !== 'simple' || !name.startsWith('Talla '));
+  await db.batch(labels.map(([name, color, auto], i) =>
+    db.prepare('INSERT INTO labels (store_id, name, color, auto, sort, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(storeId, name, color, auto, i, now())
+  ));
+  return storeId;
+}
+
 export const LABEL_COLORS = ['--t-grey', '--t-yellow', '--t-orange', '--t-green', '--t-blue', '--t-wine', '--bad', '--t-purple', '--t-teal'];
 
 // Se puede responder libremente: 24 h desde su último mensaje, o 72 h si llegó por anuncio

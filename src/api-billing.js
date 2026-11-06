@@ -1,6 +1,6 @@
 // Registro de alumnos, «Mi plan» y Panel Suyon (solo administrador)
 import { Hono } from 'hono';
-import { now, fail, hashPassword } from './util.js';
+import { now, fail, hashPassword, insertStore, RUBROS } from './util.js';
 import { requireUser, companyFor, createSession } from './auth.js';
 import { loadPlan, savePlan, billingOf, statusOf, addPayment, usageOf, priceOf, optionsOf } from './billing.js';
 import { loadLanding, setVideo, removeVideo, addTestimonio, removeTestimonio } from './landing-data.js';
@@ -55,6 +55,12 @@ r.post('/registro', async (c) => {
   const co = await db.prepare("INSERT INTO companies (name, created_at, plan_status, trial_ends_at, owner_user_id, contact_phone, created_via) VALUES (?, ?, 'trial', ?, ?, ?, 'registro')")
     .bind(company, t, t + p.trial_days * DAY, userId, phone).run();
   await db.prepare("INSERT INTO memberships (user_id, company_id, role, all_stores, created_at) VALUES (?, ?, 'dueno', 1, ?)").bind(userId, co.meta.last_row_id, t).run();
+  // Su primera tienda nace con lo que eligió: cómo vende y qué vende. Al entrar le sale el asistente.
+  await insertStore(db, co.meta.last_row_id, {
+    name: company,
+    canal: b.canal === 'shopify' ? 'shopify' : 'mensajes',
+    rubro: RUBROS.includes(b.rubro) ? b.rubro : 'ropa',
+  });
   await createSession(c, userId);
   return c.json({ ok: true });
 });
