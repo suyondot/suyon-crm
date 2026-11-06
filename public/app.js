@@ -2170,6 +2170,7 @@ function startSignup(st, coex) {
           phone_number_id: session?.data?.phone_number_id || null,
           waba_id: session?.data?.waba_id || null,
           coexistencia: coex || session?.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+          page_url: location.href.split(/[?#]/)[0],
         });
         setMe(r);
         S.connSteps = { steps: r.steps || [], ok: r.ok, error: r.error };

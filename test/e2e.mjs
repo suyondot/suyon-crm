@@ -99,6 +99,12 @@ const meta = http.createServer(async (req, res) => {
   if (p === 'oauth/access_token') {
     // Registro insertado: el código de la ventana de Meta se cambia por el token de la tienda
     if (url.searchParams.get('client_id') !== 'APP123' || url.searchParams.get('client_secret') !== SECRET) return json(400, { error: { message: 'bad app' } });
+    // Código que Meta solo acepta con el mismo redirect_uri de la ventana (la raíz del dominio)
+    if (url.searchParams.get('code') === 'es-code-redirect00') {
+      const ru = url.searchParams.get('redirect_uri');
+      if (!ru || !/^http:\/\/(localhost|127\.0\.0\.1):\d+\/$/.test(ru)) return json(400, { error: { code: 100, error_subcode: 36008, message: 'Error validating verification code. Please make sure your redirect_uri is identical to the one you used in the OAuth dialog request' } });
+      return json(200, { access_token: 'es-token-1', token_type: 'bearer' });
+    }
     if (url.searchParams.get('code') !== 'es-code-1234567890') return json(400, { error: { message: 'This authorization code has expired' } });
     return json(200, { access_token: 'es-token-1', token_type: 'bearer' });
   }
@@ -1177,6 +1183,13 @@ try {
     let r = await call('POST', `/api/stores/${sid}/whatsapp/signup`, { code: 'es-code-expired000', phone_number_id: '880000000001', waba_id: '770000000001' });
     assert.equal(r.ok, false);
     assert.match(r.error, /30 segundos/);
+    // Meta pide el mismo redirect_uri de la ventana (subcódigo 36008): se prueba hasta dar con el correcto
+    const { redirectCandidates } = await import('../src/signup.js');
+    assert.deepEqual(redirectCandidates('https://x.com/config?a=1', 'https://x.com'), [null, 'https://x.com/config', 'https://x.com/', 'https://x.com', '']);
+    const nr = calls.length;
+    r = await call('POST', `/api/stores/${sid}/whatsapp/signup`, { code: 'es-code-redirect00', phone_number_id: '880000000001', waba_id: '770000000001', page_url: `${BASE}/configuracion` });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.ok(calls.slice(nr).filter((x) => x.path === 'oauth/access_token').length >= 2, 'reintentó con otro redirect_uri');
     r = await call('POST', `/api/stores/${sid}/whatsapp/signup`, { code: 'es-code-1234567890', phone_number_id: '880000000001', waba_id: '770000000001' });
     assert.equal(r.ok, true, JSON.stringify(r));
     const st = r.stores.find((x) => x.id === sid);
