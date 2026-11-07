@@ -877,6 +877,20 @@ try {
     const c = await chatOf('51911111112');
     const d = await call('GET', `/api/chats/${c.id}/pedido-borrador`);
     assert.equal(d.borrador.celular, '51911111112');
+    // Ficha del chat: «Copiar formulario» arma el formulario completo
+    const fm = await call('GET', `/api/chats/${c.id}/formulario`);
+    assert.equal(fm.status, 200, JSON.stringify(fm));
+    assert.match(fm.texto, /➡️ Nombre:/);
+    assert.match(fm.texto, /Monto total:/);
+    const { varsFromForm, colorQty, itemsFromVars, formText } = await import('../src/orders.js');
+    const vf = varsFromForm('Shalom: 🚚📦\n\n➡️ Nombre: Ana Ruiz\n➡️ DNI: 45678912\n➡️ CEL: 912345678\n➡️ Sede: [sede elegida]\n\nPedido: Vestido ✨\n✅ Cantidad: 3\n✅ Talla: M\n✅ Color: 2 Vino, Celeste bebé');
+    assert.equal(vf.dni, '45678912');
+    assert.equal(vf.colores, '2 Vino, Celeste bebé');
+    assert.equal(vf.sede_shalom, undefined, 'un hueco [..] no es dato');
+    assert.deepEqual(colorQty('2 Vino, celeste bebe', ['Negro', 'Vino', 'Celeste bebé']), [{ color: 'Vino', n: 2 }, { color: 'Celeste bebé', n: 1 }], 'colores propios de la tienda y cantidades');
+    const its = itemsFromVars({ colores: '2 Vino y Negro', talla: 'M' }, { producto: 'Vestido' });
+    assert.deepEqual(its.map((i) => [i.color, i.cantidad]), [['Vino', 2], ['Negro', 1]]);
+    assert.match(formText({ modo: 'agencia', nombre: 'Ana', dni: '1', celular: '51912345678', sede: 'X', items: its, total: 175, adelanto: 30 }, { producto: 'Vestido' }), /Color: 2 Vino, Negro[\s\S]*Adelanto: S\/30[\s\S]*Monto restante: S\/145/);
     let r = await call('POST', `/api/stores/${store.id}/pedidos`, { chat_id: c.id, modo: 'lima', nombre: 'Ana Pérez', celular: '911111112', distrito: 'Surco', direccion: 'Av. Primavera 123', items: [{ talla: 'M', color: 'Negro', cantidad: 1 }, { talla: 'M', color: 'Vino', cantidad: 1 }] });
     assert.equal(r.status, 200, JSON.stringify(r));
     limaOrder = r.pedido;

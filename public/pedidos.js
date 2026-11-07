@@ -166,10 +166,17 @@ export async function openPedido({ id, prefill, chatId, onSaved } = {}) {
   try {
     if (id) {
       const r = await H.api('GET', `/pedidos/${id}`);
-      Object.assign(M, { order: r.pedido, events: r.events, texto: r.texto });
+      Object.assign(M, { order: r.pedido, events: r.events, texto: r.texto, colores: r.colores });
+      // Le faltaban los colores: se ponen los que dijo la clienta (se pueden cambiar antes de guardar)
+      if (r.sugerido) {
+        M.order.items = r.sugerido.items;
+        for (const k of ['dni', 'sede', 'direccion']) if (!M.order[k] && r.sugerido[k]) M.order[k] = r.sugerido[k];
+        M.sugerido = true;
+      }
     } else if (chatId) {
       const r = await H.api('GET', `/chats/${chatId}/pedido-borrador`);
       M.order = { ...r.borrador, status: r.borrador.modo === 'agencia' ? 'por_pagar' : 'nuevo' };
+      M.colores = r.colores;
     } else {
       M.order = { modo: 'lima', status: 'nuevo', items: [{ talla: '', color: '', cantidad: 1 }], total: 0, adelanto: 0, ...prefill };
       if (M.order.modo === 'agencia') M.order.status = 'por_pagar';
@@ -228,13 +235,14 @@ function drawEditor() {
             ${o.guia && o.guia_codigo ? '<button type="button" class="iconbtn sm" data-mtrack style="margin-top:6px">Rastrear ahora</button>' : ''}<div data-mtrackout></div></div>` : ''}`}
       </div></section>
       <section><div class="pmsec"><h3>Productos</h3><button type="button" class="iconbtn sm" data-madd>+ Producto</button></div>
+        ${M.sugerido ? '<p class="okbox" style="margin:0 0 8px">✨ Puse los colores que eligió la clienta en el chat. Revísalos y toca <b>Guardar cambios</b>.</p>' : ''}
         <div class="pitems">${items.map((it, i) => `<div class="pit" data-i="${i}">
           <input data-it="producto" value="${e(it.producto || '')}" placeholder="Producto" aria-label="Producto">
           <select data-it="talla" aria-label="Talla" class="only-ropa"><option value="">Talla</option>${TALLAS.map((t) => `<option ${it.talla === t ? 'selected' : ''}>${t}</option>`).join('')}${it.talla && !TALLAS.includes(it.talla) ? `<option selected>${e(it.talla)}</option>` : ''}</select>
           <input data-it="color" value="${e(it.color || '')}" list="pcolores" placeholder="Color" aria-label="Color" class="only-ropa">
           <input data-it="cantidad" type="number" min="1" value="${it.cantidad || 1}" aria-label="Cantidad">
           <button type="button" class="iconbtn sm" data-mdel="${i}" aria-label="Quitar">×</button></div>`).join('')}</div>
-        <datalist id="pcolores">${COLORES.map((c) => `<option>${c}</option>`).join('')}</datalist>
+        <datalist id="pcolores">${(M.colores?.length ? M.colores : COLORES).map((c) => `<option>${e(c)}</option>`).join('')}</datalist>
         <div class="pmoney">
           <div class="field"><label>Total (S/)</label><input data-f="total" type="number" min="0" step="0.5" value="${o.total ?? 0}"></div>
           <div class="field"><label>Adelanto (S/)${o.modo === 'agencia' ? '' : ' · si pagó algo antes'}</label><input data-f="adelanto" type="number" min="0" step="0.5" value="${o.adelanto ?? 0}"></div><div class="field"><label>${o.modo === 'agencia' ? 'Saldo' : 'Paga al recibir'}</label><div class="mono pmsaldo">${money(Math.max(0, (o.total || 0) - (o.adelanto || 0)))}</div></div>

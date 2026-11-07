@@ -1522,7 +1522,6 @@ function renderFicha() {
       <dt>Nombre</dt><dd><input class="namein" id="cname" value="${esc(c.name || '')}" placeholder="${esc(c.profile_name || 'Ponle un nombre')}" aria-label="Nombre de la clienta"></dd>
       ${c.profile_name ? `<dt>En WhatsApp</dt><dd>${esc(c.profile_name)}</dd>` : ''}
       <dt>Celular</dt><dd class="mono" style="display:flex;gap:6px;align-items:center">${esc(fmtPhone(c.wa_id))}<button class="iconbtn" data-copy="${esc(c.wa_id.replace(/^51/, ''))}" aria-label="Copiar celular" style="padding:2px 6px">${ICON.copy}</button></dd>
-      <dt>Primer mensaje</dt><dd>${esc(new Date(c.created_at).toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short' }))}</dd>
     </dl></div>
     <div class="sec"><h3>Ventana de WhatsApp</h3><p class="note" style="margin:0"><b style="color:${w.canSend ? 'var(--ok)' : 'var(--muted)'}">${esc(w.label)}</b> · ${esc(w.title)}</p></div>
     ${botFicha(c)}

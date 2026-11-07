@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { now, fail, clip, localDay, tzOffset, randomToken } from './util.js';
 import { storeFor, chatFor, requireUser } from './auth.js';
 import {
-  MODOS, ESTADOS, FLUJO, VENDIDO, PERDIDO, cfgOf, DEFAULT_CFG, cleanOrder, insertOrder, getOrder, shape, draftFromChat, defaultEntrega, addEvent, orderText, firstStatus,
+  MODOS, ESTADOS, FLUJO, VENDIDO, PERDIDO, cfgOf, DEFAULT_CFG, cleanOrder, insertOrder, getOrder, shape, draftFromChat, formText, varsFromForm, storeColors, defaultEntrega, addEvent, orderText, firstStatus,
 } from './orders.js';
 import { loadAutos, saveAuto, submitTemplate, syncTemplates, setOrderStatus, onOrderCreated, AUTO_VARS } from './automations.js';
 import { ensureDataset } from './capi.js';
@@ -102,7 +102,18 @@ r.get('/pedidos/:id', async (c) => {
     'SELECT e.kind, e.detail, e.created_at, u.name AS user_name FROM order_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.order_id = ? ORDER BY e.id DESC LIMIT 100'
   ).bind(order.id).all();
   const s = await loadSettings(c.env, order.store_id);
-  return c.json({ pedido: shape(order), events, texto: orderText(order, { horario: s.entrega_horario }) });
+  const p = shape(order);
+  const store = await c.env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(order.store_id).first();
+  // Pedido sin colores (los creó la IA antes de guardarlos): se sugieren los del chat para no escribirlos a mano
+  let sugerido = null;
+  if (order.chat_id && !p.items.some((i) => String(i.color || '').trim())) {
+    const chat = await c.env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(order.chat_id).first();
+    if (chat) {
+      const d = draftFromChat(await chatConForm(c.env, chat), store);
+      if (d.items.some((i) => i.color)) sugerido = { items: d.items, dni: d.dni, sede: d.sede, direccion: d.direccion };
+    }
+  }
+  return c.json({ pedido: p, events, texto: orderText(order, { horario: s.entrega_horario }), sugerido, colores: storeColors(store) });
 });
 
 r.post('/stores/:id/pedidos', async (c) => {
@@ -123,9 +134,36 @@ r.post('/stores/:id/pedidos', async (c) => {
 
 r.get('/chats/:id/pedido-borrador', async (c) => {
   const { chat, store } = await chatFor(c, c.req.param('id'));
-  const d = draftFromChat(chat, store);
+  const d = draftFromChat(await chatConForm(c.env, chat), store);
   const e = await defaultEntrega(c.env, store);
-  return c.json({ borrador: { ...d, entrega: d.modo === 'agencia' ? null : e.dia }, horario: e.horario });
+  return c.json({ borrador: { ...d, entrega: d.modo === 'agencia' ? null : e.dia }, horario: e.horario, colores: storeColors(store) });
+});
+
+// Datos del bot + lo que falte del último formulario que mandó la IA
+async function chatConForm(env, chat) {
+  let v = {};
+  try {
+    v = JSON.parse(chat.bot_vars || '{}') || {};
+  } catch {}
+  if (!v.colores || !v.talla || !v.nombre || !v.dni || !v.direccion) {
+    const f = await env.DB.prepare("SELECT body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' ORDER BY id DESC LIMIT 1").bind(chat.id).first();
+    if (f?.body) for (const [k, x] of Object.entries(varsFromForm(f.body))) if (!v[k]) v[k] = x;
+  }
+  return { ...chat, bot_vars: JSON.stringify(v) };
+}
+
+// Formulario listo para copiar (ficha del chat): datos del bot + lo que falte del último formulario de la IA
+r.get('/chats/:id/formulario', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const d = draftFromChat(await chatConForm(c.env, chat), store);
+  const falta = [];
+  if (!d.nombre || d.nombre === chat.profile_name) falta.push('nombre');
+  if (d.modo === 'agencia') {
+    if (!d.dni) falta.push('DNI');
+    if (!d.sede) falta.push('sede');
+  } else if (!d.direccion) falta.push('dirección');
+  if (!d.items.some((i) => i.color)) falta.push('colores');
+  return c.json({ texto: formText(d, cfgOf(store)), falta, modo: d.modo });
 });
 
 r.get('/chats/:id/pedidos', async (c) => {

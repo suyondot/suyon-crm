@@ -4,7 +4,7 @@ import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay, Http
 import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON, PROMPT_GENERICO } from './bot-template.js';
 import { iaAllowed } from './billetera.js';
-import { draftFromChat, insertOrder, cfgOf } from './orders.js';
+import { draftFromChat, insertOrder, cfgOf, varsFromForm } from './orders.js';
 import { agenciesNear, agenciesIn, agencyOptions } from './shalom.js';
 import { onOrderCreated } from './automations.js';
 import { storeBlocked, loadPlan, priceText } from './billing.js';
@@ -424,6 +424,11 @@ export async function runFrom(env, ctx, store, chatId, flow, nodeId, vars, trigg
 
 async function orderFromBot(env, store, chatId, vars) {
   const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
+  // Si al bot le faltan colores/talla/datos, se toman del último formulario que mandó la IA
+  if (!vars.colores || !vars.talla || !vars.nombre || !vars.dni || !vars.direccion) {
+    const f = await env.DB.prepare("SELECT body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' ORDER BY id DESC LIMIT 1").bind(chatId).first();
+    if (f?.body) for (const [k, v] of Object.entries(varsFromForm(f.body))) if (!vars[k]) vars[k] = v;
+  }
   const draft = draftFromChat({ ...chat, bot_vars: JSON.stringify(vars) }, store);
   if (chat.sim) {
     const t = now();

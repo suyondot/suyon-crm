@@ -1284,9 +1284,9 @@ export function botFicha(c) {
     vars = JSON.parse(c.bot_vars || '{}');
   } catch {}
   const st = c.bot_paused ? 'Pausado: lo atiende la asesora' : c.bot_node ? (c.bot_wait === 2 ? 'La IA está respondiendo' : `Esperando en «${c.bot_node}»`) : c.handler === 'bot' ? 'Terminó el flujo' : 'Sin bot';
-  const kv = Object.entries(vars).filter(([k, v]) => v && k !== 'respuesta');
+  const hay = Object.entries(vars).some(([k, v]) => v && k !== 'respuesta');
   return `<div class="sec"><h3>Bot Suyon AI</h3><p class="note" style="margin:0 0 8px"><b style="color:${c.bot_paused ? 'var(--warn)' : c.bot_node ? 'var(--ok)' : 'var(--muted)'}">${e(st)}</b></p>
-    ${kv.length ? `<dl class="kv" style="margin-bottom:8px">${kv.map(([k, v]) => `<dt>${e(k)}</dt><dd>${e(v)}</dd>`).join('')}</dl>` : ''}
+    ${hay ? `<button class="btn primary" data-cbot="form" style="width:100%;margin-bottom:8px">📋 Copiar formulario</button>` : ''}
     <div style="display:flex;gap:6px;flex-wrap:wrap">${c.bot_paused ? `<button class="iconbtn" data-cbot="resume">Reanudar bot</button>` : c.bot_node ? `<button class="iconbtn" data-cbot="pause">Pausar bot</button>` : ''}<button class="iconbtn" data-cbot="start">Iniciar flujo desde el inicio</button></div></div>`;
 }
 
@@ -1295,6 +1295,16 @@ document.addEventListener('click', async (ev) => {
   if (!t || !C) return;
   const id = C.S.openId;
   const act = t.dataset.cbot;
+  if (act === 'form') {
+    try {
+      const r = await C.api('GET', `/chats/${id}/formulario`);
+      await navigator.clipboard.writeText(r.texto);
+      C.toast(r.falta.length ? `Copiado. Falta: ${r.falta.join(', ')}` : 'Formulario copiado ✅ Pégalo en tu grupo', 4000);
+    } catch (er) {
+      C.toast(er.message || 'No se pudo copiar', 4000);
+    }
+    return;
+  }
   if (act === 'start' && !confirm('El bot le mandará el flujo desde el inicio a este chat. ¿Seguir?')) return;
   try {
     await C.api('POST', `/chats/${id}/bot`, { action: act });

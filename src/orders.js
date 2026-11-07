@@ -112,16 +112,55 @@ export function cleanItems(items, cfg) {
 }
 
 // Arma los productos con lo que guardó el bot: «talla M · Negro y Beige · 3»
-export function itemsFromVars(v, cfg) {
+// Colores propios de la tienda (los que puso en el asistente); vacío = colores de Porte
+export function storeColors(store) {
+  try {
+    const a = JSON.parse(store?.asistente || '{}')?.respuestas?.colores || '';
+    return String(a).split(/,|\n|;/).map((x) => x.trim()).filter(Boolean).slice(0, 40);
+  } catch {
+    return [];
+  }
+}
+
+const sinTilde = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+// «2 Vino, Negro y celeste bebé» → [{color:'Vino', n:2}, {color:'Negro', n:1}, …]
+export function colorQty(text, own = []) {
+  const out = [];
+  const ownN = own.map((c) => [sinTilde(c), c]);
+  for (const part of String(text || '').split(/,|\sy\s|\+|\/|;|\n/)) {
+    const raw = part.trim().replace(/\(.*?\)/g, '').trim();
+    if (!raw) continue;
+    const m = raw.match(/^(\d+)\s*(?:x\s*)?(?:de\s+)?(.*)$/i) || raw.match(/^(.*?)\s*(?:x\s*)?(\d+)$/i);
+    let n = 1;
+    let name = raw;
+    if (m) {
+      const num = /^\d+$/.test(m[1]) ? m[1] : m[2];
+      n = Math.min(50, parseInt(num, 10) || 1);
+      name = /^\d+$/.test(m[1]) ? m[2] : m[1];
+    }
+    const sn = sinTilde(name);
+    if (!sn) continue;
+    let color;
+    if (ownN.length) {
+      const hit = ownN.find(([k]) => k === sn) || ownN.find(([k]) => sn.includes(k) || k.includes(sn));
+      color = hit ? hit[1] : name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+    } else color = colorsOf(name)[0];
+    if (color) out.push({ color: color.slice(0, 30), n });
+  }
+  return out;
+}
+
+export function itemsFromVars(v, cfg, own = []) {
   const talla = tallaOf(v.talla) || clip(v.talla || '', 20);
-  const cols = colorsOf(v.colores);
+  const cols = colorQty(v.colores, own);
   let qty = parseInt(String(v.cantidad || '').replace(/\D/g, ''), 10);
-  if (!qty || qty > 100) qty = cols.length || 1;
+  const sum = cols.reduce((a, c) => a + c.n, 0);
+  if (!qty || qty > 100) qty = sum || 1;
   if (!cols.length) return [{ producto: cfg.producto, talla, color: '', cantidad: qty }];
-  const each = cols.map(() => 1);
-  each[0] += Math.max(0, qty - cols.length);
+  if (qty > sum) cols[0].n += qty - sum;
   const map = new Map();
-  cols.forEach((c, i) => map.set(c, (map.get(c) || 0) + each[i]));
+  for (const c of cols) map.set(c.color, (map.get(c.color) || 0) + c.n);
   return [...map.entries()].map(([color, cantidad]) => ({ producto: cfg.producto, talla, color, cantidad }));
 }
 
@@ -245,6 +284,45 @@ export async function insertOrder(env, store, data, { userId = null, source = 'm
   }
 }
 
+// Lee un formulario que ya mandó la IA («✅ Color: Vino, Negro», «➡️ DNI: …») para completar lo que falte
+export function varsFromForm(text) {
+  const out = {};
+  const get = (re) => {
+    const m = String(text || '').match(re);
+    return m ? m[1].replace(/\*/g, '').trim() : '';
+  };
+  const map = {
+    colores: /colou?r(?:es)?\s*:\s*([^\n]+)/i,
+    talla: /talla\s*:\s*([^\n]+)/i,
+    cantidad: /cantidad\s*:\s*([^\n]+)/i,
+    nombre: /nombre(?: y apellido)?\s*:\s*([^\n]+)/i,
+    dni: /dni\s*:\s*([^\n]+)/i,
+    celular: /(?:cel(?:ular)?)\s*:\s*([^\n]+)/i,
+    direccion: /direcci[oó]n\s*:\s*([^\n]+)/i,
+    sede_shalom: /sede\s*:\s*([^\n]+)/i,
+  };
+  for (const [k, re] of Object.entries(map)) {
+    const v = get(re);
+    if (v && !/^\[.*\]$/.test(v)) out[k] = v.slice(0, 200);
+  }
+  return out;
+}
+
+// Formulario de la clienta para copiar y pegar (mismo formato que manda la IA)
+export function formText(d, cfg) {
+  const prod = cfg.producto || 'Producto';
+  const cant = units(d.items);
+  const tallas = [...new Set(d.items.map((i) => i.talla).filter(Boolean))].join(', ');
+  const cols = d.items.map((i) => (i.cantidad > 1 ? `${i.cantidad} ${i.color}` : i.color)).filter((x) => String(x).trim()).join(', ');
+  const pedido = [`Pedido: ${prod} ✨`, '', `✅ Cantidad: ${cant}`, tallas ? `✅ Talla: ${tallas}` : null, cols ? `✅ Color: ${cols}` : null].filter((x) => x !== null).join('\n');
+  if (d.modo === 'agencia') {
+    const adel = Number(d.adelanto) || 0;
+    return ['Shalom: 🚚📦', '', `➡️ Nombre: ${d.nombre || ''}`, `➡️ DNI: ${d.dni || ''}`, `➡️ CEL: ${String(d.celular || '').replace(/^51(?=9\d{8}$)/, '')}`, `➡️ Sede: ${d.sede || ''}`, '', pedido, '',
+      `Monto total: ${money(d.total)}`, ...(adel ? [`Adelanto: ${money(adel)}`, `Monto restante: ${money(Math.max(0, d.total - adel))}`] : [])].join('\n');
+  }
+  return ['Envío para: Lima 📦', '', `➡️ Nombre: ${d.nombre || ''}`, `➡️ CEL: ${String(d.celular || '').replace(/^51(?=9\d{8}$)/, '')}`, `➡️ Dirección: ${[d.direccion, d.distrito].filter(Boolean).join(', ')}`, '', pedido, '', `Monto total: ${money(d.total)}`].join('\n');
+}
+
 // Borrador desde la conversación: lo que guardó el bot + el chat
 export function draftFromChat(chat, store) {
   const cfg = cfgOf(store);
@@ -252,7 +330,7 @@ export function draftFromChat(chat, store) {
   try {
     v = JSON.parse(chat.bot_vars || '{}') || {};
   } catch {}
-  const items = itemsFromVars(v, cfg);
+  const items = itemsFromVars(v, cfg, storeColors(store));
   const modo = modoFor({ distrito: v.distrito, ciudad: v.destino && !/lima/i.test(v.destino) ? v.destino : '', provincia: '', sede: v.sede_shalom }, cfg);
   const u = units(items);
   return {
