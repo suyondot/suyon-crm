@@ -5,7 +5,7 @@ import { storeFor, chatFor, requireUser } from './auth.js';
 import { mediaKey } from './webhook.js';
 import { kindForMime, SEND_RULES } from './whatsapp.js';
 import {
-  NODE_TYPES, IA_MODELS, PROMPT_VARS, entregaDia, loadSettings, loadFlow, flowStats, startFlow, cancelJobs, testIA, addLabel, onInbound, runJob,
+  NODE_TYPES, IA_MODELS, PROMPT_VARS, entregaDia, loadSettings, loadFlow, flowStats, startFlow, cancelJobs, testIA, addLabel, onInbound, runJob, seguirBot,
 } from './bot.js';
 import { flowPantalon, PROMPT_PANTALON, KNOWLEDGE_PANTALON, PROMPT_GENERICO, TEMPLATE_ASSETS, assetsFor, flowVentasCT, PROMPT_VENTAS_CT, KNOWLEDGE_VENTAS_CT } from './bot-template.js';
 
@@ -292,8 +292,10 @@ r.post('/chats/:id/bot', async (c) => {
     // Borra lo que hizo el bot en este chat: datos guardados, paso y seguimientos (no toca la conversación)
     await cancelJobs(c.env, chat.id);
     await db.prepare('UPDATE chats SET bot_flow_id = NULL, bot_node = NULL, bot_wait = 0, bot_vars = NULL, bot_ag = NULL, updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
-  } else if (b.action === 'resume') {
-    await db.prepare("UPDATE chats SET bot_paused = 0, handler = 'bot', updated_at = ? WHERE id = ?").bind(now(), chat.id).run();
+  } else if (b.action === 'resume' || b.action === 'seguir') {
+    const r = await seguirBot(c.env, c.executionCtx, store, chat.id);
+    await bump(c.env, store.id);
+    return c.json(r);
   } else if (b.action === 'start') {
     const f = b.flow_id
       ? await db.prepare('SELECT id FROM bot_flows WHERE id = ? AND store_id = ?').bind(Number(b.flow_id), store.id).first()

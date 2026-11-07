@@ -138,6 +138,11 @@ button{cursor:pointer}
 .back{display:none}
 .window{font-size:12px;color:var(--ok);background:var(--ok-soft);padding:3px 8px;border-radius:20px;font-weight:600;white-space:nowrap}
 .window.off{color:var(--muted);background:var(--surface-2)}
+.botpill{font:inherit;font-size:12px;font-weight:700;white-space:nowrap;border:1px solid var(--ok);color:var(--ok);background:var(--ok-soft);padding:4px 10px;border-radius:20px;cursor:pointer}
+.botpill.off{border-color:#d9a400;color:#7a5a00;background:#fff4cc;animation:bpz 1.6s ease-in-out infinite}
+@keyframes bpz{50%{box-shadow:0 0 0 4px rgba(217,164,0,.18)}}
+@media (prefers-reduced-motion:reduce){.botpill.off{animation:none}}
+.bpz{font-size:11px;font-weight:700;color:#7a5a00;background:#fff4cc;padding:1px 7px;border-radius:10px;white-space:nowrap}
 .banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;background:var(--bad-soft);color:var(--bad);font-weight:600;font-size:13px;border-bottom:1px solid var(--line)}
 .banner.ia{background:var(--info-soft);color:var(--info)}
 .banner .grow{flex:1;min-width:180px}
@@ -442,6 +447,7 @@ body{margin:0}
   .conv-head{flex-wrap:nowrap;gap:8px;padding:8px 10px}
   .conv-head .t b,.conv-head .t span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
   .conv-head .window{order:0;font-size:11px;padding:2px 7px}
+  .conv-head .botpill{font-size:11px;padding:3px 8px}
   .conv-head .iconbtn{padding:6px 8px}
   .composer{padding:8px}
   .composer .iconbtn{min-width:38px;padding:0 7px}

@@ -1287,7 +1287,7 @@ export function botFicha(c) {
   const hay = Object.entries(vars).some(([k, v]) => v && k !== 'respuesta');
   return `<div class="sec"><h3>Bot Suyon AI</h3><p class="note" style="margin:0 0 8px"><b style="color:${c.bot_paused ? 'var(--warn)' : c.bot_node ? 'var(--ok)' : 'var(--muted)'}">${e(st)}</b></p>
     ${hay ? `<button class="btn primary" data-cbot="form" style="width:100%;margin-bottom:8px">📋 Copiar formulario</button>` : ''}
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${c.bot_paused ? `<button class="iconbtn" data-cbot="resume">Reanudar bot</button>` : c.bot_node ? `<button class="iconbtn" data-cbot="pause">Pausar bot</button>` : ''}<button class="iconbtn" data-cbot="start">Iniciar flujo desde el inicio</button></div></div>`;
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${c.bot_paused ? `<button class="iconbtn" data-cbot="resume">▶️ Seguir (contesta lo pendiente)</button>` : c.bot_node ? `<button class="iconbtn" data-cbot="pause">Pausar bot</button>` : ''}<button class="iconbtn" data-cbot="start">Iniciar flujo desde el inicio</button></div></div>`;
 }
 
 document.addEventListener('click', async (ev) => {
@@ -1306,16 +1306,21 @@ document.addEventListener('click', async (ev) => {
     return;
   }
   if (act === 'start' && !confirm('El bot le mandará el flujo desde el inicio a este chat. ¿Seguir?')) return;
+  if (act === 'pause' && t.classList.contains('botpill') && !confirm('¿Pausar el bot en este chat? Lo atiendes tú hasta que toques «Seguir».')) return;
   try {
-    await C.api('POST', `/chats/${id}/bot`, { action: act });
+    t.disabled = true;
+    const r = await C.api('POST', `/chats/${id}/bot`, { action: act });
     const c = C.S.chats.get(id);
     if (c) {
       if (act === 'pause') c.bot_paused = 1;
       if (act === 'resume') c.bot_paused = 0;
     }
-    C.toast({ start: 'Flujo iniciado', pause: 'Bot pausado', resume: 'Bot reanudado' }[act]);
+    C.toast(act === 'resume' ? (r.respondio ? '🤖 El bot retomó: está leyendo el chat y responde en unos segundos' : r.motivo || 'Bot reanudado') : { start: 'Flujo iniciado', pause: 'Bot pausado' }[act], 5000);
     C.renderFicha();
+    C.renderConvHead?.();
+    C.renderItems?.();
   } catch (er) {
+    t.disabled = false;
     C.toast(er.message, 5000);
   }
 });

@@ -904,7 +904,7 @@ function renderItems() {
       <span class="av" style="background:${avColor(x.id)}">${esc(initials(chatName(x)))}</span>
       <span style="min-width:0"><span class="nm">${esc(chatName(x))}</span>
         <span class="lm">${x.last_dir === 'out' ? 'Tú: ' : ''}${esc(x.last_preview || '')}</span>
-        ${labs.length || x.ad_id || pc ? `<span class="row">${pc ? '<span class="pcb">🟡 Por confirmar</span>' : ''}${x.ad_id ? '<span class="who ia">Anuncio</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
+        ${labs.length || x.ad_id || pc || x.bot_paused ? `<span class="row">${pc ? '<span class="pcb">🟡 Por confirmar</span>' : ''}${x.bot_paused && x.last_dir !== 'out' ? '<span class="bpz">⏸️ Bot en pausa</span>' : ''}${x.ad_id ? '<span class="who ia">Anuncio</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
       <span class="meta"><span>${listTime(x.last_msg_at)}</span>${x.unread ? `<span class="unread">${x.unread}</span>` : ''}</span>
     </button>`;
   }).join('') + (S.chatsMore && !S.q ? '<button class="iconbtn loadmore" data-act="morechats" style="margin:10px auto;display:flex">Cargar más</button>' : '');
@@ -1077,6 +1077,7 @@ function renderConvHead() {
     <span class="av" style="background:${avColor(c.id)};width:34px;height:34px;font-size:12px">${esc(initials(chatName(c)))}</span>
     <div class="t" style="min-width:0;flex:1"><b style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(chatName(c))}</b><span class="mono">${esc(fmtPhone(c.wa_id))}</span></div>
     <span class="window ${w.canSend ? '' : 'off'}" title="${esc(w.title)}">${esc(w.label)}</span>
+    ${c.bot_paused ? '<button class="botpill off" data-cbot="resume" title="El bot está en pausa: tócalo para que retome y conteste lo pendiente">⏸️ Bot en pausa · Seguir</button>' : c.bot_flow_id ? '<button class="botpill" data-cbot="pause" title="El bot atiende este chat. Toca para pausarlo">🤖 Bot</button>' : ''}
     <button class="iconbtn" data-act="ficha">${S.ficha ? 'Ocultar ficha' : 'Ficha'}</button>`;
 }
 
@@ -2807,7 +2808,7 @@ function refreshAvisos() {
   if (S.view === 'avisos' && $('#content')) renderAvisos($('#content'));
 }
 
-initBot({ api, esc, toast, $, $$, S, store, goChat, fmtPhone, listTime, renderFicha, refreshAvisos });
+initBot({ api, esc, toast, $, $$, S, store, goChat, fmtPhone, listTime, renderFicha, refreshAvisos, renderConvHead, renderItems });
 initClientes({
   api, esc, toast, $, $$, S, goChat, fmtPhone, listTime, tagHTML, owner,
   forgetMessages(id) {

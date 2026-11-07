@@ -198,7 +198,9 @@ async function index(env) {
     try {
       x = JSON.parse(r.raw || '{}');
     } catch {}
-    return { id: r.id, dep: r.dep, prov: r.prov, dist: r.dist, name: r.name, address: r.address, ok: x.habilitado !== false, horario: x.horario?.hora_atencion || null, n: { dep: norm(r.dep), prov: norm(r.prov), dist: norm(r.dist) } };
+    // Palabras propias del nombre de la agencia («QUILLABAMBA», «HUAYCAN»): sirven para encontrar pueblos que no son distrito
+    const lw = norm([r.name, String(x.nombre || '').split('/').pop()].join(' ')).split(/[^a-z0-9]+/).filter((w) => w.length >= 6 && !LUGAR_STOP.has(w));
+    return { id: r.id, dep: r.dep, prov: r.prov, dist: r.dist, name: r.name, address: r.address, ok: x.habilitado !== false, horario: x.horario?.hora_atencion || null, n: { dep: norm(r.dep), prov: norm(r.prov), dist: norm(r.dist) }, lw: [...new Set(lw)] };
   });
   // Lugares conocidos (distrito, provincia, departamento) para encontrarlos dentro del texto
   const places = new Map();
@@ -211,11 +213,14 @@ async function index(env) {
       if (/[-/]/.test(full)) for (const part of full.split(/\s*[-/]\s*/)) if (part.length > 2 && !places.has(`${lv}:${part}`)) places.set(`${lv}:${part}`, { lv, name: part, full });
     }
   }
+  for (const r of rows) for (const w of r.lw) if (![...['dist', 'prov', 'dep']].some((lv) => places.has(`${lv}:${w}`))) places.set(`lugar:${w}`, { lv: 'lugar', name: w, full: w });
   IDX = { at: st.at, n: st.n, rows, places: [...places.values()].sort((a, b) => b.name.length - a.name.length) };
   return IDX;
 }
 
 const isLimaDep = (d) => d === 'lima' || d === 'callao';
+// Palabras de nombres de agencia que no son un lugar
+const LUGAR_STOP = new Set(['terminal', 'centro', 'mercado', 'avenida', 'principal', 'paradero', 'estacion', 'agencia', 'sucursal', 'express', 'oficina', 'carretera', 'panamericana', 'grande', 'hospital', 'colegio', 'municipalidad', 'aeropuerto', 'universidad', 'universitaria', 'parque', 'mercedes', 'plazuela', 'cercado', 'urbanizacion', 'esquina', 'puente', 'antigua', 'antiguo', 'segunda', 'primera', 'tercera', 'frente', 'cuadra', 'interior', 'galeria', 'comercial', 'industrial', 'santa', 'santo']);
 const W = (name) => new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`);
 
 // Busca un lugar de provincia en el texto y devuelve sus agencias. Lima con cobertura → null (el bot no se mete).
@@ -229,10 +234,20 @@ export async function agenciesNear(env, text, sinCobertura = '', quiereAgencia =
   // Zonas de Lima sin cobertura completa; las parciales («Ate (después del Real Plaza…)») solo si eligió agencia
   const sin = zonasSin(sinCobertura).filter((z) => !z.parcial || quiereAgencia).map((z) => z.name);
   // Lugares de los que hay agencias según lo encontrado (distrito primero)
-  const matchRows = (p) => ix.rows.filter((r) => r.ok && r.n[p.lv] === (p.full || p.name));
+  const matchRows = (p) => ix.rows.filter((r) => r.ok && (p.lv === 'lugar' ? r.lw.includes(p.name) : r.n[p.lv] === (p.full || p.name)));
   const deps = new Set(hits.filter((h) => h.lv === 'dep').map((h) => h.name));
-  for (const lv of ['dist', 'prov', 'dep']) {
-    for (const p of hits.filter((h) => h.lv === lv)) {
+  // «Cusco», «Arequipa», «Piura» son a la vez departamento, provincia y distrito: se toma el más grande
+  // (así se pregunta la zona y no se manda solo la agencia del distrito). Lima y Callao: la provincia (sus distritos).
+  const RANK = { lugar: 0, dist: 1, prov: 2, dep: 3 };
+  const best = new Map();
+  for (const h of hits) {
+    const cap = isLimaDep(h.name) ? RANK.prov : RANK.dep;
+    if (RANK[h.lv] > cap) continue;
+    if (!best.has(h.name) || RANK[best.get(h.name)] < RANK[h.lv]) best.set(h.name, h.lv);
+  }
+  const usable = hits.filter((h) => best.get(h.name) === h.lv);
+  for (const lv of ['lugar', 'dist', 'prov', 'dep']) {
+    for (const p of usable.filter((h) => h.lv === lv)) {
       let rows = matchRows(p);
       // Si dijo también un departamento, quedarse con ese (Miraflores de Arequipa ≠ Miraflores de Lima)
       const nonLimaDeps = [...deps].filter((d) => !isLimaDep(d));
@@ -246,7 +261,7 @@ export async function agenciesNear(env, text, sinCobertura = '', quiereAgencia =
       }
       const title = (r, k) => r[k];
       // Muchas agencias (dijo solo «Piura» o «La Libertad»): primero se pregunta la provincia o el distrito
-      if (rows.length > 10 && lv !== 'dist') {
+      if (rows.length > 10 && lv !== 'dist' && lv !== 'lugar') {
         const next = lv === 'dep' ? 'prov' : 'dist';
         const groups = new Map();
         for (const r of rows) groups.set(title(r, next), (groups.get(title(r, next)) || 0) + 1);
@@ -255,8 +270,8 @@ export async function agenciesNear(env, text, sinCobertura = '', quiereAgencia =
         return { kind: 'zonas', nivel: next === 'prov' ? 'provincia' : 'distrito', lugar, dep: rows[0].dep, total: rows.length, zonas: zonas.slice(0, 10), mas: zonas.length > 10 };
       }
       const pick = rows.slice(0, 10);
-      const lugar = lv === 'dep' ? pick[0].dep : lv === 'prov' ? `${pick[0].prov} (${pick[0].dep})` : `${pick[0].dist} (${pick[0].dep})`;
-      return { kind: 'agencias', lugar, total: rows.length, agencias: pick.map(({ n, ...r }) => r) };
+      const lugar = lv === 'dep' ? pick[0].dep : lv === 'prov' ? `${pick[0].prov} (${pick[0].dep})` : lv === 'lugar' ? `${p.name.toUpperCase()} (${pick[0].dep})` : `${pick[0].dist} (${pick[0].dep})`;
+      return { kind: 'agencias', lugar, total: rows.length, agencias: pick.map(({ n, lw, ...r }) => r) };
     }
   }
   return null;
@@ -271,7 +286,7 @@ export async function agenciesIn(env, nivel, name, dep) {
   if (!rows.length) return null;
   const pick = rows.slice(0, 10);
   const lugar = lv === 'prov' ? `${pick[0].prov} (${pick[0].dep})` : `${pick[0].dist} (${pick[0].dep})`;
-  return { kind: 'agencias', lugar, total: rows.length, agencias: pick.map(({ n, ...r }) => r) };
+  return { kind: 'agencias', lugar, total: rows.length, agencias: pick.map(({ n, lw, ...r }) => r) };
 }
 
 // Opciones para tocar en WhatsApp: título ≤ 24 y descripción ≤ 72, títulos sin repetir

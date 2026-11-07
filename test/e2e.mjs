@@ -43,6 +43,7 @@ const meta = http.createServer(async (req, res) => {
     const last = body.messages[body.messages.length - 1];
     const txt = typeof last.content === 'string' ? last.content : last.content.map((x) => x.text || '').join(' ');
     if (/falla/i.test(txt)) return json(500, { error: { message: 'overloaded' } });
+    if (/lento/i.test(txt)) await new Promise((r) => setTimeout(r, 2500)); // la IA demora: la clienta escribe mientras piensa
     if (/guías de envío peruanas/.test(txt)) return json(200, { content: [{ type: 'text', text: 'Aquí está: ' + JSON.stringify([{ foto: 1, tipo: 'shalom', orden: '30000002', codigo: 'qwer', dni: '70000002', nombre: 'LUZ PEREZ', destino: 'Piura', fecha: '2026-11-04T18:00:00' }]) }], usage: { input_tokens: 1500, output_tokens: 80 } });
     const all = body.messages.map((m) => (typeof m.content === 'string' ? m.content : m.content.map((x) => x.text || '').join(' '))).join('\n');
     if (/siempre raro/i.test(all)) return json(200, { content: [{ type: 'text', text: 'Claro amiga, te paso: {"mensajes": [roto' }], usage: { input_tokens: 10, output_tokens: 10 } });
@@ -73,6 +74,11 @@ const meta = http.createServer(async (req, res) => {
         { id: 4, nombre: 'LIMA / LIMA / MIRAFLORES / AV LARCO', lugar_over: 'AV LARCO', departamento: 'LIMA', provincia: 'LIMA', direccion: 'Av. Larco 100', habilitado: true },
         { id: 5, nombre: 'LIMA / LIMA / ANCON / ANCON CENTRO', lugar_over: 'ANCON CENTRO', departamento: 'LIMA', provincia: 'LIMA', direccion: 'Jr. Ancón 5', habilitado: true },
         { id: 6, nombre: 'LIMA / LIMA / ATE-VITARTE / HUAYCAN', lugar_over: 'HUAYCAN', departamento: 'LIMA', provincia: 'LIMA', direccion: 'Av. J. C. Mariátegui 10', habilitado: true },
+        // Cusco: departamento, provincia y distrito se llaman igual; Quillabamba es un pueblo (distrito Santa Ana)
+        { id: 7, nombre: 'CUSCO / CUSCO / CUSCO / TICA TICA', lugar_over: 'TICA TICA', departamento: 'CUSCO', provincia: 'CUSCO', direccion: 'Av. Tica Tica 1', habilitado: true },
+        { id: 8, nombre: 'CUSCO / CUSCO / SANTIAGO / SANTIAGO CENTRO', lugar_over: 'SANTIAGO CENTRO', departamento: 'CUSCO', provincia: 'CUSCO', direccion: 'Av. Antonio Lorena 2', habilitado: true },
+        { id: 9, nombre: 'CUSCO / CUSCO / WANCHAQ / WANCHAQ', lugar_over: 'WANCHAQ', departamento: 'CUSCO', provincia: 'CUSCO', direccion: 'Av. Garcilaso 3', habilitado: true },
+        { id: 10, nombre: 'CUSCO / LA CONVENCION / SANTA ANA / QUILLABAMBA', lugar_over: 'QUILLABAMBA', departamento: 'CUSCO', provincia: 'LA CONVENCION', direccion: 'Jr. Libertad 4', habilitado: true },
         // La Libertad: 12 agencias en 3 provincias (más de 10 → primero se pregunta la provincia)
         ...Array.from({ length: 12 }, (_, i) => {
           const [prov, dist] = i < 8 ? ['TRUJILLO', i < 5 ? 'TRUJILLO' : 'VICTOR LARCO'] : i < 11 ? ['PACASMAYO', 'PACASMAYO'] : ['CHEPEN', 'CHEPEN'];
@@ -778,6 +784,40 @@ try {
     const av = await call('GET', `/api/stores/${store.id}/avisos`);
     assert.ok(av.events.some((e) => /no se puede mandar/.test(e.title) && e.chat_id === c.id));
   });
+  await step('dos mensajes seguidos: una sola respuesta de la IA (sin «Estamos validando») y talla reconocida', async () => {
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { test_numbers: '911111111, 911111112, 911111113, 911111114, 911111115, 911111116' });
+    await inbound('51911111116', 'wamid.G1', 'hola', { referral: { source_id: '1', source_type: 'ad', ctwa_clid: 'g' } });
+    await until(async () => (await chatOf('51911111116'))?.bot_node === 'talla');
+    const n = iaCalls.length;
+    await inbound('51911111116', 'wamid.G2', 'pecio, lento');
+    await new Promise((r) => setTimeout(r, 900));
+    await inbound('51911111116', 'wamid.G3', 'M');
+    let c = await until(async () => { const c = await chatOf('51911111116'); return c?.bot_node === 'bucle' && c.bot_wait === 1 ? c : null; });
+    await new Promise((r) => setTimeout(r, 3000));
+    c = await chatOf('51911111116');
+    const ms = await msgsOf(c.id);
+    assert.ok(!ms.some((m) => /Estamos validando/.test(m.body || '')), 'no se cruzan las respuestas');
+    assert.equal(c.bot_paused, 0);
+    const rounds = iaCalls.slice(n);
+    assert.ok(rounds.some((b) => !/TALLA YA/.test(b.system)) && /TALLA YA/.test(rounds[rounds.length - 1].system), 'la primera respuesta se descarta y se piensa de nuevo con los dos mensajes');
+    const iaMsgs = ms.filter((m) => m.sender === 'ia').map((m) => m.body);
+    assert.equal(new Set(iaMsgs).size, iaMsgs.length, 'responde una sola vez: ' + JSON.stringify(iaMsgs));
+    const sys = iaCalls[iaCalls.length - 1].system;
+    assert.match(sys, /TALLA YA ELEGIDA: M/);
+    assert.match(sys, /esta vez son 2/);
+    assert.equal(JSON.parse(c.bot_vars).talla, 'M');
+    // «Seguir»: con el bot en pausa la clienta escribe; al tocar Seguir, la IA contesta lo pendiente
+    await call('POST', `/api/chats/${c.id}/bot`, { action: 'pause' });
+    await inbound('51911111116', 'wamid.G4', '¿hacen envíos a provincia?');
+    await new Promise((r) => setTimeout(r, 1200));
+    const before = (await msgsOf(c.id)).filter((m) => m.sender === 'ia').length;
+    const r = await call('POST', `/api/chats/${c.id}/bot`, { action: 'resume' });
+    assert.equal(r.respondio, true, JSON.stringify(r));
+    await until(async () => (await msgsOf(c.id)).filter((m) => m.sender === 'ia').length > before);
+    assert.equal((await chatOf('51911111116')).bot_paused, 0);
+    await until(async () => { const x = await chatOf('51911111116'); return x?.bot_wait === 1; });
+    await new Promise((r) => setTimeout(r, 2500)); // que termine de mandar antes de la siguiente prueba
+  });
   let simCalls;
   await step('simulador: prueba el flujo como clienta sin WhatsApp', async () => {
     simCalls = calls.length;
@@ -818,7 +858,7 @@ try {
     const av = await call('GET', `/api/stores/${store.id}/avisos`);
     assert.ok(!av.events.some((e) => !e.read_at && /colores-M|datos de pago/.test(e.title)), 'los avisos del simulador no van a Avisos');
     const f = await call('GET', `/api/bot/flows/${flowId}`);
-    assert.equal(f.stats.precios.sent, 5, 'los números por bloque no cuentan el simulador');
+    assert.equal(f.stats.precios.sent, 6, 'los números por bloque no cuentan el simulador');
     assert.equal((await call('POST', `/api/stores/${store.id}/sim/send`, { text: '' })).status, 400);
     await call('PATCH', `/api/stores/${store.id}/bot/settings`, { bot_on: true });
   });
@@ -1488,7 +1528,7 @@ try {
     assert.equal(pr.shape.items, 'lista de 2');
     assert.equal((await call('POST', '/api/admin/shalom/probar', { path: 'http://otro.com/x' })).status, 400, 'solo rutas del servicio');
     const sy = await call('POST', '/api/admin/shalom/agencias');
-    assert.equal(sy.total, 18);
+    assert.equal(sy.total, 22);
     let f = await call('GET', '/api/shalom/agencias?q=juliaca');
     assert.equal(f.agencias.length, 1);
     assert.equal(f.agencias[0].prov, 'SAN ROMÁN');
@@ -1568,6 +1608,21 @@ try {
     assert.ok(!sm.messages.some((m) => /Agencias Shalom en/.test(m.body || '')), 'Ate: primero pregunta en qué parte');
     sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'quiero por shalom' });
     assert.ok(sm.messages.some((m) => /Agencias Shalom en ATE-VITARTE/.test(m.body || '')), 'Ate + Shalom: lista de Ate-Vitarte');
+    // «Cusco» (departamento = provincia = distrito): todas las del departamento, no solo la del distrito
+    await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
+    await conDatos(await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' }));
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'soy de Cusco' });
+    let cl = sm.messages.filter((m) => m.sender === 'bot').pop();
+    assert.match(cl.body, /Agencias Shalom en CUSCO \(4 de 4\)|Agencias Shalom en CUSCO\./, 'Cusco: todas las del departamento');
+    assert.ok(JSON.stringify(cl.extra || '').includes('QUILLABAMBA'));
+    // «Quillabamba» no es distrito: se encuentra por el nombre de la agencia
+    await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
+    await conDatos(await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' }));
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'Es para Quillabamba cusco' });
+    cl = sm.messages.filter((m) => m.sender === 'bot').pop();
+    assert.match(cl.body, /Agencias Shalom en QUILLABAMBA \(CUSCO\)/);
+    // Reglas para responder: todo junto, corto, sin «déjame confirmar»
+    assert.match(iaCalls[iaCalls.length - 1].system, /CÓMO RESPONDER[\s\S]*déjame confirmar/);
     // Cobertura parcial (Ate después del Real Plaza…): no es agencia hasta saber en qué parte está
     const { zonasSin, modoFor, DEFAULT_CFG } = await import('../src/orders.js');
     assert.equal(zonasSin(DEFAULT_CFG.sin_cobertura).find((z) => z.name === 'ate').parcial, true);

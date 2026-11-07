@@ -575,6 +575,14 @@ export const MIGRATIONS = [
       `ALTER TABLE users ADD COLUMN email_tries INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    id: 23,
+    name: 'una sola respuesta de la IA a la vez por chat (candado) y último mensaje que ya leyó',
+    sql: [
+      `ALTER TABLE chats ADD COLUMN bot_lock INTEGER`,
+      `ALTER TABLE chats ADD COLUMN bot_seen INTEGER`,
+    ],
+  },
 ];
 
 let ready = null;

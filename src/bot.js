@@ -788,6 +788,31 @@ export function coloresNoPedidos(colores, textos) {
   return out;
 }
 
+const LOCK_MS = 60 * 1000; // un candado más viejo que esto se considera abandonado
+const newestIn = async (env, chatId) => (await env.DB.prepare("SELECT MAX(id) AS id FROM messages WHERE chat_id = ? AND direction = 'in'").bind(chatId).first())?.id || 0;
+
+// Una sola respuesta de la IA a la vez por chat. Si otra está pensando, se espera a que termine;
+// si esa ya leyó este mensaje, no se responde de nuevo (antes se cruzaban y salía «Estamos validando…»).
+async function lockIA(env, chatId, msgId, maxWaitMs = 22000) {
+  const t0 = Date.now();
+  for (;;) {
+    const r = await env.DB.prepare('UPDATE chats SET bot_lock = ? WHERE id = ? AND (bot_lock IS NULL OR bot_lock < ?)').bind(Date.now(), chatId, Date.now() - LOCK_MS).run();
+    if (r.meta?.changes) {
+      if (msgId) {
+        const c = await env.DB.prepare('SELECT bot_seen FROM chats WHERE id = ?').bind(chatId).first();
+        if ((c?.bot_seen || 0) >= msgId) {
+          await unlockIA(env, chatId);
+          return 'answered';
+        }
+      }
+      return 'ok';
+    }
+    if (Date.now() - t0 > maxWaitMs) return 'busy';
+    await sleep(1200);
+  }
+}
+const unlockIA = (env, chatId) => env.DB.prepare('UPDATE chats SET bot_lock = NULL WHERE id = ?').bind(chatId).run();
+
 async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId) {
   // Espera unos segundos por si la clienta manda varios mensajes seguidos
   const delay = chat.sim ? Math.min(Number(settings.ia_delay_s) || 0, 1) : Math.min(Math.max(Number(settings.ia_delay_s) || 0, 0), 20);
@@ -796,6 +821,29 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
     const newer = await env.DB.prepare("SELECT id FROM messages WHERE chat_id = ? AND direction = 'in' AND id > ? LIMIT 1").bind(chat.id, triggerMsgId).first();
     if (newer) return { aborted: true };
   }
+  if (chat.sim) return iaCore(env, store, chat, flow, node, settings, vars, true);
+  const lk = await lockIA(env, chat.id, triggerMsgId);
+  if (lk === 'answered') return { aborted: true }; // la otra respuesta ya incluyó este mensaje
+  if (lk === 'busy') {
+    // La otra respuesta demora: se reintenta en un minuto (el cron revisa si quedó algo sin responder)
+    await env.DB.prepare(`INSERT INTO bot_jobs (store_id, chat_id, flow_id, kind, node_id, cancel_on, run_at, created_at) VALUES (?, ?, ?, 'ia_again', ?, 'none', ?, ?)`)
+      .bind(store.id, chat.id, flow.id, node.id, now() + 30 * 1000, now()).run();
+    return { aborted: true };
+  }
+  try {
+    // Si la clienta escribió mientras la IA pensaba, se vuelve a pensar con todo junto (1 vez)
+    let r = await iaCore(env, store, chat, flow, node, settings, vars, false);
+    if (r.redo) {
+      chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chat.id).first();
+      r = await iaCore(env, store, chat, flow, node, settings, vars, true);
+    }
+    return r;
+  } finally {
+    await unlockIA(env, chat.id);
+  }
+}
+
+async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   const cap = Number(settings.ia_daily_cap) || 0;
   if (cap > 0) {
     const u = await env.DB.prepare('SELECT cost FROM ia_usage WHERE store_id = ? AND day = ?').bind(store.id, today(store.timezone)).first();
@@ -806,16 +854,39 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   }
   const limit = Math.min(Math.max(Number(settings.ia_history) || 50, 4), 100);
   const { results } = await env.DB.prepare(
-    "SELECT direction, sender, type, body, transcript, media_key, media_mime FROM messages WHERE chat_id = ? AND sender != 'sys' ORDER BY id DESC LIMIT ?"
+    "SELECT id, direction, sender, type, body, transcript, media_key, media_mime FROM messages WHERE chat_id = ? AND sender != 'sys' ORDER BY id DESC LIMIT ?"
   ).bind(chat.id, limit).all();
-  const hist = historyFor(results.reverse());
+  results.reverse();
+  const seenId = results.filter((m) => m.direction === 'in').reduce((a, m) => Math.max(a, m.id), 0);
+  const hist = historyFor(results);
   if (!hist.length) return { ok: false };
+  // Lo que la clienta escribió desde la última respuesta (puede ser más de un mensaje)
+  const lastOut = results.reduce((a, m, i) => (m.direction === 'out' ? i : a), -1);
+  const nuevos = results.slice(lastOut + 1).filter((m) => m.direction === 'in').map((m) => String(m.transcript || m.body || '').trim()).filter(Boolean);
+  // ¿Dijo su talla en estos mensajes? Se reconoce sin IA (igual que el paso de la talla) y no se le vuelve a preguntar
+  const rec = Object.values(flow.graph?.nodes || {}).find((n) => n.type === 'recognize' && (n.var || 'talla') === 'talla');
+  if (rec?.options?.length) {
+    for (const t of [...nuevos].reverse()) {
+      const v = t.length <= 40 ? recognize(t, rec.options) : null;
+      if (v) {
+        vars.talla = v;
+        break;
+      }
+    }
+  }
   const labels = await chatLabels(env, chat.id);
   // Su celular ya viene en su WhatsApp: no se le pide (si escribe con usuario sin número, sí)
   const celWa = chat.sim ? null : celularWa(chat.wa_id);
   if (celWa && !vars.celular) vars.celular = celWa;
   const { results: arows } = await env.DB.prepare('SELECT key FROM bot_assets WHERE store_id = ?').bind(store.id).all();
   let system = buildSystem(await withPlan(env, settings), node, labels, vars, arows.map((a) => a.key));
+  system += `\n\n## CÓMO RESPONDER (reglas del sistema)
+- Lee TODOS los mensajes de la clienta desde tu última respuesta${nuevos.length > 1 ? ` (esta vez son ${nuevos.length}: ${nuevos.map((t) => `«${clip(t, 80)}»`).join(', ')})` : ''} y respóndelos juntos, en orden, sin dejar ninguno.
+- Los precios ya se los mandó el bot al inicio. Si pregunta el precio, contesta en 1 o 2 líneas (la promo o el precio de la cantidad que quiere) y sigue con el paso que toca. No repitas la tabla completa.
+- Si pregunta qué talla le queda, pídele su talla de jean (o su peso y estatura) y recomiéndale una. No le muestres colores hasta saber su talla.
+- Nunca digas «déjame confirmar», «te aviso en un momento» ni algo parecido: responde con lo que sabes. Si no tienes una sede en la lista, pregúntale su distrito o la ciudad más cercana.
+- No digas «de nada» si no te agradeció.`;
+  if (vars.talla) system += `\n\n## TALLA YA ELEGIDA: ${vars.talla}\nNO le vuelvas a preguntar la talla. Si todavía no vio los colores, muéstrale los de su talla${arows.some((a) => a.key === `colores-${vars.talla}`) ? ` (archivo colores-${vars.talla})` : ''} y pregúntale cuáles quiere.`;
   if (celWa) system += `\n\n## CELULAR DE LA CLIENTA: ${vars.celular}\nYa lo tenemos de su WhatsApp. NO se lo pidas: al pedir datos quita la línea «Celular:» (pide solo lo que falta) y en los formularios usa este número.`;
   // Agencias Shalom: solo provincia o Lima sin cobertura. Si tocó una de la lista, queda guardada exacta.
   let ag = {};
@@ -892,6 +963,9 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
       }
     }
   }
+  // La clienta escribió mientras la IA pensaba: se vuelve a pensar con sus mensajes nuevos (no se manda una respuesta vieja)
+  if (!final && (await newestIn(env, chat.id)) > seenId) return { redo: true };
+  if (!chat.sim) await env.DB.prepare('UPDATE chats SET bot_seen = MAX(COALESCE(bot_seen, 0), ?) WHERE id = ?').bind(seenId, chat.id).run();
   if (!reply) {
     await alertFor(env, store, chat, { kind: 'ia', title: 'La IA respondió algo que no se puede mandar', body: 'No se envió nada a la clienta y pasó a la asesora. Respuesta de la IA: ' + clip(lastErr?.raw || '', 300) });
     return { ok: false };
@@ -979,6 +1053,39 @@ export async function testIA(env, store, flow, node, text) {
   return r.valid ? r : { mensajes: [], caso: null, datos: {}, error: 'La IA no respondió en el formato pedido (en un chat real se reintenta y, si falla, pasa a asesora).' };
 }
 
+// «Seguir» (botón del chat): el bot retoma la conversación y contesta lo que la clienta dejó sin responder
+export async function seguirBot(env, ctx, store, chatId) {
+  await env.DB.prepare("UPDATE chats SET bot_paused = 0, handler = 'bot', bot_lock = NULL, updated_at = ? WHERE id = ?").bind(now(), chatId).run();
+  const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
+  const last = await env.DB.prepare("SELECT id, direction, body, transcript FROM messages WHERE chat_id = ? AND sender != 'sys' ORDER BY id DESC LIMIT 1").bind(chatId).first();
+  const pendiente = last?.direction === 'in';
+  let flow = chat.bot_flow_id ? await loadFlow(env, chat.bot_flow_id) : null;
+  if (!flow) {
+    const f = await env.DB.prepare('SELECT id FROM bot_flows WHERE store_id = ? ORDER BY active DESC, id LIMIT 1').bind(store.id).first();
+    flow = f ? await loadFlow(env, f.id) : null;
+  }
+  if (!flow) return { ok: true, respondio: false, motivo: 'Esta tienda no tiene flujo del bot.' };
+  if (!pendiente) return { ok: true, respondio: false, motivo: 'El bot quedó activo. Responderá cuando la clienta escriba.' };
+  if (!windowOpen(chat)) return { ok: true, respondio: false, motivo: 'La ventana de 24 h está cerrada: el bot responderá cuando la clienta escriba.' };
+  const vars = JSON.parse(chat.bot_vars || '{}');
+  const cur = nodeOf(flow, chat.bot_node);
+  let from;
+  if (cur && cur.type === 'send' && cur.wait && chat.bot_wait === 1) {
+    // Estaba esperando una respuesta (ej. la talla): se usa lo último que escribió
+    vars[cur.save_to || 'respuesta'] = String(last.transcript || last.body || '');
+    from = cur.next;
+  } else {
+    // Si no, contesta la IA con toda la conversación
+    from = (cur?.type === 'ia' ? cur : flow.graph.nodes.find((n) => n.type === 'ia'))?.id;
+  }
+  if (!from) return { ok: true, respondio: false, motivo: 'El bot quedó activo. Responderá cuando la clienta escriba.' };
+  await env.DB.prepare('UPDATE chats SET bot_seen = MIN(COALESCE(bot_seen, 0), ?) WHERE id = ?').bind(last.id - 1, chatId).run();
+  const job = runFrom(env, ctx, store, chatId, flow, from, vars, null).catch((e) => console.error('seguir', e));
+  if (ctx?.waitUntil) ctx.waitUntil(job);
+  else await job;
+  return { ok: true, respondio: true };
+}
+
 /* ---------------- Cron: seguimientos y esperas ---------------- */
 
 export async function runJob(env, j) {
@@ -999,6 +1106,9 @@ export async function runJob(env, j) {
     if (!ok) await cancelJobs(env, chat.id, seq.id); // ventana cerrada: no tiene sentido seguir
   } else if (j.kind === 'ia_follow') {
     await botSend(env, store, chat, { kind: 'text', text: settings.ia_follow_text }, { flowId: flow.id, node: `${j.node_id}:seguimiento`, sender: 'ia', vars });
+  } else if (j.kind === 'ia_again') {
+    // Quedó un mensaje sin responder porque otra respuesta de la IA estaba en curso
+    if ((await newestIn(env, chat.id)) > (chat.bot_seen || 0) && j.node_id) await runFrom(env, null, store, chat.id, flow, j.node_id, vars, null);
   } else if (j.kind === 'resume') {
     await saveState(env, chat.id, { bot_wait: 0 });
     if (j.node_id) await runFrom(env, null, store, chat.id, flow, j.node_id, vars);
