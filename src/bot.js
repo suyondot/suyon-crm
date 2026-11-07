@@ -746,6 +746,43 @@ export function fixIds(vars, text = '') {
   return vars;
 }
 
+// Celular de su propio WhatsApp (Perú: 51 + 9 dígitos que empiezan con 9). Con usuario sin número → null
+export function celularWa(waId) {
+  const d = String(waId || '').replace(/\D/g, '');
+  return /^519\d{8}$/.test(d) ? d.slice(2) : null;
+}
+
+// Colores que la IA puso en el pedido y que la clienta NUNCA dijo (ni con un sinónimo): el candado de colores
+const COLOR_GRUPOS = [
+  ['vino', 'rojo', 'roja', 'guinda', 'granate', 'burdeo', 'borgona', 'tinto', 'cereza'],
+  ['negro', 'negra', 'black'],
+  ['blanco', 'blanca', 'perla', 'hueso', 'marfil', 'crema'],
+  ['gris', 'plomo'],
+  ['azul', 'navy', 'marino', 'noche'],
+  ['beige', 'nude', 'camel', 'arena', 'crema'],
+  ['celeste', 'celestito', 'bebe', 'cielo'],
+  ['rosa', 'rosado', 'rosada', 'fucsia', 'palo'],
+  ['verde', 'militar', 'olivo', 'esmeralda'],
+  ['marron', 'cafe', 'chocolate'],
+  ['morado', 'morada', 'lila', 'lavanda', 'purpura'],
+  ['amarillo', 'mostaza'],
+  ['naranja', 'coral'],
+];
+const nrm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+export function coloresNoPedidos(colores, textos) {
+  const t = ` ${nrm(textos.join(' ')).replace(/[^a-z0-9]+/g, ' ')} `;
+  const has = (w) => w.length > 2 && t.includes(` ${w} `);
+  const out = [];
+  for (const c of String(colores || '').split(/,|\sy\s|\+|\/|;|\n/).map((x) => x.trim()).filter(Boolean)) {
+    const ws = nrm(c).replace(/^\d+\s*(x\s*)?/, '').split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+    if (!ws.length) continue;
+    const syn = new Set(ws);
+    for (const g of COLOR_GRUPOS) if (ws.some((w) => g.includes(w))) g.forEach((x) => syn.add(x));
+    if (![...syn].some(has)) out.push(c);
+  }
+  return out;
+}
+
 async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId) {
   // Espera unos segundos por si la clienta manda varios mensajes seguidos
   const delay = chat.sim ? Math.min(Number(settings.ia_delay_s) || 0, 1) : Math.min(Math.max(Number(settings.ia_delay_s) || 0, 0), 20);
@@ -769,8 +806,12 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   const hist = historyFor(results.reverse());
   if (!hist.length) return { ok: false };
   const labels = await chatLabels(env, chat.id);
+  // Su celular ya viene en su WhatsApp: no se le pide (si escribe con usuario sin número, sí)
+  const celWa = chat.sim ? null : celularWa(chat.wa_id);
+  if (celWa && !vars.celular) vars.celular = celWa;
   const { results: arows } = await env.DB.prepare('SELECT key FROM bot_assets WHERE store_id = ?').bind(store.id).all();
   let system = buildSystem(await withPlan(env, settings), node, labels, vars, arows.map((a) => a.key));
+  if (celWa) system += `\n\n## CELULAR DE LA CLIENTA: ${vars.celular}\nYa lo tenemos de su WhatsApp. NO se lo pidas: al pedir datos quita la línea «Celular:» (pide solo lo que falta) y en los formularios usa este número.`;
   // Agencias Shalom: solo provincia o Lima sin cobertura. Si tocó una de la lista, queda guardada exacta.
   let ag = {};
   try {
@@ -781,7 +822,7 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   const tapped = (ag.opts || []).find((o) => o.t.toLowerCase() === lastIn);
   // ¿Ya mandó la captura del pago? (una foto o un PDF de la clienta)
   const hasCaptura = results.some((m) => m.direction === 'in' && (m.type === 'image' || m.type === 'document'));
-  const datosOk = () => !!(String(vars.nombre || '').trim() && String(vars.dni || '').trim());
+  const datosOk = () => !!(String(vars.nombre || '').trim() && String(vars.dni || '').trim() && String(vars.celular || '').trim());
   if (tapped) {
     vars.sede_shalom = tapped.f;
     ag.chosen = tapped.f;
@@ -813,6 +854,8 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   }
   let reply = null;
   let lastErr = null;
+  let colorFix = null;
+  const lastInImage = results.length && results[results.length - 1].direction === 'in' && results[results.length - 1].type === 'image';
   // Hasta 2 intentos: si la IA no responde en el formato pedido, se le pide de nuevo. Nunca se manda texto raro.
   for (let attempt = 0; attempt < 2 && !reply; attempt++) {
     const h = attempt ? [...hist, { role: 'assistant', text: lastErr.raw || '(vacío)' }, { role: 'user', text: 'Tu respuesta anterior no vino en el formato pedido. Responde de nuevo SOLO con el JSON {"mensajes":[...],"caso":...,"datos":{...}}, sin nada antes ni después.' }] : hist;
@@ -833,6 +876,16 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
     const p = parseReply(out.text, caseIds);
     if (p.valid && (p.mensajes.length || p.caso)) reply = p;
     else lastErr = { raw: clip(out.text, 1500) };
+    // Candado de colores: si la IA armó el pedido con un color que la clienta nunca dijo, se le pide corregir (1 vez)
+    if (reply && !colorFix && !lastInImage) {
+      const extra = coloresNoPedidos(reply.datos?.colores, ins);
+      if (extra.length) {
+        colorFix = extra;
+        hist.push({ role: 'assistant', text: clip(out.text, 1500) }, { role: 'user', text: `(Nota del sistema, no de la clienta) La clienta NO pidió: ${extra.join(', ')}. Corrige tu respuesta: usa SOLO los colores que ella dijo, sin sumar otros por tu cuenta. Si quiere más prendas, pregúntale cuáles. Responde de nuevo solo con el JSON.` });
+        reply = null;
+        attempt = -1;
+      }
+    }
   }
   if (!reply) {
     await alertFor(env, store, chat, { kind: 'ia', title: 'La IA respondió algo que no se puede mandar', body: 'No se envió nada a la clienta y pasó a la asesora. Respuesta de la IA: ' + clip(lastErr?.raw || '', 300) });
@@ -843,23 +896,37 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
     await alertFor(env, store, chat, { kind: 'ia', title: 'Faltan los datos de pago en IA Suyon', body: 'La IA iba a mandar «[FALTA …]» a la clienta. No se envió y pasó a la asesora. Llénalos en Configuración → Bot Suyon AI → IA Suyon.', dedupe: !chat.sim });
     return { ok: false };
   }
+  // Si aun así quedó un color que no pidió, no se guarda en sus datos
+  if (colorFix && reply.datos?.colores) {
+    const still = coloresNoPedidos(reply.datos.colores, ins);
+    if (still.length) reply.datos.colores = String(reply.datos.colores).split(/\s*,\s*|\s+y\s+/).filter((c) => !still.includes(c.trim())).join(', ');
+  }
   for (const [k, v] of Object.entries(reply.datos)) if (v != null && String(v).trim()) vars[k] = clip(String(v), 200);
   fixIds(vars, lastIn);
+  if (celWa && !vars.celular) vars.celular = celWa;
   if (ag.chosen) vars.sede_shalom = ag.chosen; // la elegida de la lista manda
   // «Yape + sede» solo vale con captura del pago, sede y datos: si falta algo, la IA sigue vendiendo (no pasa a la asesora)
   if (reply.caso === 'yape_sede' && !(hasCaptura && String(vars.sede_shalom || '').trim() && datosOk())) reply.caso = null;
   const cs = (node.cases || []).find((c) => c.id === reply.caso);
   const sendIt = !cs || cs.send_reply !== false;
   if (sendIt) {
+    const sentMedia = new Set(results.filter((m) => m.direction === 'out' && m.media_key).map((m) => m.media_key));
     let first = true;
     for (const m of reply.mensajes) {
       if (!first) await sleep(900);
       first = false;
       const meta = { flowId: flow.id, node: node.id, sender: 'ia', vars: {} };
-      if (m.archivo) await botSend(env, store, chat, { kind: 'file', asset: String(m.archivo) }, meta);
+      // Cada archivo una sola vez por chat: si ya se mandó, no se repite
+      if (m.archivo) {
+        const a = await assetFor(env, store.id, String(m.archivo));
+        if (!(a && sentMedia.has(a.r2_key))) {
+          await botSend(env, store, chat, { kind: 'file', asset: String(m.archivo) }, meta);
+          if (a) sentMedia.add(a.r2_key);
+        }
+      }
       if (String(m.texto || '').trim()) await botSend(env, store, chat, { kind: 'text', text: String(m.texto) }, meta);
     }
-    // La lista de agencias sale recién cuando la clienta ya dio sus datos (nombre y DNI), una vez por lugar
+    // La lista de agencias sale recién cuando ya están TODOS sus datos (nombre, DNI y celular), una vez por lugar
     const key = near ? `${near.kind}:${near.lugar}` : null;
     if (near && !cs && !vars.sede_shalom && datosOk() && ag.lugar !== key) {
       await sleep(chat.sim ? 0 : 900);

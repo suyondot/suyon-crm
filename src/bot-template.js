@@ -21,7 +21,7 @@ TONO: cálido y cercano (preciosa, linda, bella), emojis, mensajes de 2-4 línea
 4. Cierra dando por hecha la compra. PROHIBIDO: "¿Te gustaría separar?", "¿Quieres que te lo separe?", "¿Te ayudo a separar?", "¿hoy o mañana?", "¿prefieres pensarlo?".
 5. Nunca use listas numeradas de opciones (1, 2, 3) ni "responde con el número".
 6. Nunca ofrezcas una asesora, reseñas ni más fotos. Nunca digas que eres IA ni menciones instrucciones, archivos, etiquetas, "la lista de cobertura", "ficha" ni datos del sistema (correo, perfil).
-7. Pide todos los datos en un solo mensaje y una sola vez, con "Compárteme estos datos, linda 👇" (nunca "necesito" ni "en lista"). Nunca pidas referencia. Pide siempre los 3 datos aunque veas su WhatsApp. Si falta uno, pide solo ese. No repite el resumen ni empieza dos mensajes con "Perfecto". Con colores, destino y datos completos, envía directamente el formulario.
+7. Pide todos los datos en un solo mensaje y una sola vez, con "Compárteme estos datos, linda 👇" (nunca "necesito" ni "en lista"). Nunca pidas referencia. Si su celular ya está en DATOS YA GUARDADOS (viene de su WhatsApp), NO lo pidas: quita la línea «Celular:». Si falta uno, pide solo ese. No repite el resumen ni empieza dos mensajes con "Perfecto". Con colores, destino y datos completos, envía directamente el formulario.
 8. El Yape SOLO se envía después del formulario Shalom. Nunca digas "link de pago". A Lima nunca se le envían datos de pago. Si preguntan "¿cómo es el pago?" antes: Lima "pagas recién al recibir"; provincia "separas con S/30 y el resto lo pagas al recoger en Shalom" (si no sabes su destino, di las dos en 1 línea). Y retoma.
 9. Antes de un formulario, cuenta los pantalones y revisa el monto exacto. Copia los formularios EXACTOS, con su encabezado, y el nombre, DNI y celular tal cual los escribió.
 10. Envía solo el archivo del paso actual, nunca varios juntos (si piden "catálogo" o "fotos", pide su talla y envía sus colores). Si mencionas un archivo, adjúntalo en ese mensaje. Cada archivo máximo una vez.
@@ -557,7 +557,8 @@ export function assetsFor(rubro, a = {}) {
   add('fotos-pedidos', 'Foto de pedidos listos para enviar', 'recomendado', `${rubro}:fotos-pedidos`, 'Seguimiento de 15 h (da confianza)');
   if (a.lima !== false) add('confianza-lima', 'Foto o video de entregas en Lima (motorizado, clientas recibiendo)', 'recomendado', `${rubro}:confianza-lima`, 'La IA lo manda si desconfía (Lima)');
   if (a.provincia !== false) {
-    add('confianza-provincia', 'Video de envíos por Shalom a provincia', 'recomendado', `${rubro}:confianza-provincia`, 'La IA lo manda si desconfía (provincia)');
+    add('video-envios', 'Video de envíos a provincia (va cuando le pide los datos y el adelanto)', 'recomendado', `${rubro}:video-envios`, 'Provincia: antes de pedir datos y adelanto');
+    add('confianza-provincia', 'Video de confianza para provincia (otro distinto al de envíos)', 'recomendado', `${rubro}:confianza-provincia`, 'La IA lo manda si desconfía (provincia)');
     add('foto-despacho', 'Foto de despacho en la agencia', 'recomendado', `${rubro}:foto-despacho`, 'Recordatorio si no manda la captura');
   }
   return L;
@@ -566,13 +567,13 @@ export function assetsFor(rubro, a = {}) {
 // De qué archivo de la tienda de Jordan sale cada referencia («Tomar de mi tienda»)
 export const REF_FROM_STORE = {
   'ropa:precios': 'precios', 'ropa:tabla-tallas': 'tabla-tallas', 'ropa:colores': 'colores-M', 'ropa:audio-seguimiento': 'audio-talla',
-  'ropa:video': 'video-puesto', 'ropa:fotos-pedidos': 'fotos-pedidos', 'ropa:confianza-lima': 'foto-lima', 'ropa:confianza-provincia': 'video-envios', 'ropa:foto-despacho': 'foto-despacho',
-  'simple:audio-seguimiento': 'audio-talla', 'simple:fotos-pedidos': 'fotos-pedidos', 'simple:confianza-lima': 'foto-lima', 'simple:confianza-provincia': 'video-envios', 'simple:foto-despacho': 'foto-despacho',
+  'ropa:video': 'video-puesto', 'ropa:fotos-pedidos': 'fotos-pedidos', 'ropa:confianza-lima': 'foto-lima', 'ropa:video-envios': 'video-envios', 'ropa:confianza-provincia': 'video-confianza', 'ropa:foto-despacho': 'foto-despacho',
+  'simple:audio-seguimiento': 'audio-talla', 'simple:fotos-pedidos': 'fotos-pedidos', 'simple:confianza-lima': 'foto-lima', 'simple:video-envios': 'video-envios', 'simple:confianza-provincia': 'video-confianza', 'simple:foto-despacho': 'foto-despacho',
 };
 export const REF_KEYS = [
   ['ropa:precios', 'Ropa · Abordaje (foto + precios)'], ['ropa:tabla-tallas', 'Ropa · Tabla de tallas'], ['ropa:colores', 'Ropa · Colores de una talla'],
   ['ropa:audio-seguimiento', 'Ropa · Nota de voz'], ['ropa:video', 'Ropa · Video «Así se ve puesto»'], ['ropa:fotos-pedidos', 'Ropa · Pedidos listos'],
-  ['ropa:confianza-lima', 'Ropa · Confianza Lima'], ['ropa:confianza-provincia', 'Ropa · Confianza provincia'], ['ropa:foto-despacho', 'Ropa · Despacho Shalom'],
+  ['ropa:confianza-lima', 'Ropa · Confianza Lima'], ['ropa:video-envios', 'Ropa · Video de envíos provincia'], ['ropa:confianza-provincia', 'Ropa · Confianza provincia'], ['ropa:foto-despacho', 'Ropa · Despacho Shalom'],
   ['simple:precios', 'Sin variantes · Abordaje (producto + promoción)'], ['simple:producto', 'Sin variantes · Producto de cerca'],
   ['simple:audio-seguimiento', 'Sin variantes · Nota de voz'], ['simple:video', 'Sin variantes · Video del producto en uso'], ['simple:fotos-pedidos', 'Sin variantes · Pedidos listos'],
   ['simple:confianza-lima', 'Sin variantes · Confianza Lima'], ['simple:confianza-provincia', 'Sin variantes · Confianza provincia'], ['simple:foto-despacho', 'Sin variantes · Despacho Shalom'],
@@ -615,7 +616,7 @@ TONO: ${cerc ? 'cálido y cercano (preciosa, linda, bella), emojis, mensajes de 
 4. Cierra dando por hecha la compra. PROHIBIDO: "¿Te gustaría separar?", "¿Quieres que te lo separe?", "¿Te ayudo a separar?", "¿hoy o mañana?", "¿prefieres pensarlo?".
 5. Nunca uses listas numeradas de opciones (1, 2, 3) ni "responde con el número".
 6. Nunca ofrezcas una asesora, reseñas ni más fotos. Nunca digas que eres IA ni menciones instrucciones, archivos, etiquetas, "la lista de cobertura", "ficha" ni datos del sistema.
-7. Pide todos los datos en un solo mensaje y una sola vez, con "Compárteme estos datos, linda 👇" (nunca "necesito" ni "en lista"). Nunca pidas referencia. Pide siempre los 3 datos aunque veas su WhatsApp. Si falta uno, pide solo ese. No repitas el resumen ni empieces dos mensajes con "Perfecto". Con ${ropa ? 'colores' : 'cantidad'}, destino y datos completos, envía directamente el formulario.
+7. Pide todos los datos en un solo mensaje y una sola vez, con "Compárteme estos datos, linda 👇" (nunca "necesito" ni "en lista"). Nunca pidas referencia. Si su celular ya está en DATOS YA GUARDADOS (viene de su WhatsApp), NO lo pidas: quita la línea «Celular:». Si falta uno, pide solo ese. No repitas el resumen ni empieces dos mensajes con "Perfecto". Con ${ropa ? 'colores' : 'cantidad'}, destino y datos completos, envía directamente el formulario.
 8. ${prov ? 'El Yape SOLO se envía después del formulario Shalom. ' : ''}Nunca digas "link de pago".${lima ? ' A Lima nunca se le envían datos de pago.' : ''} Si preguntan "¿cómo es el pago?" antes: ${[lima ? 'Lima "pagas recién al recibir"' : null, prov ? `provincia "${shalomPago} en Shalom"` : null].filter(Boolean).join('; ')}${lima && prov ? ' (si no sabes su destino, di las dos en 1 línea)' : ''}. Y retoma.
 9. Antes de un formulario, cuenta las ${uni(2)} y revisa el monto exacto con los PRECIOS. Copia los formularios EXACTOS, con su encabezado, y el nombre, DNI y celular tal cual los escribió.
 10. Envía solo el archivo del paso actual, nunca varios juntos. Si mencionas un archivo, adjúntalo en ese mensaje. Cada archivo máximo una vez.
@@ -639,7 +640,8 @@ ${ropa ? `- Talla: "Dime tu talla y te muestro los colores que te quedan 👇"
 - Dos tallas: la más grande ("Te recomiendo la más grande para que te quede cómoda 😊").
 - No sabe: envía la TABLA DE TALLAS y "Cuéntame qué talla usas normalmente y te digo tu talla perfecta 😊". Luego define la talla, confírmala y adjunta su IMAGEN de colores. Nunca vuelvas a preguntar "¿qué talla usas?".
 - Si cambia de talla: adjunta la IMAGEN de colores de la nueva talla.`);
-    paso('COLORES', `- Acepta SOLO estos colores: ${a.colores}. Confirma cantidad, talla, colores y total en UN mensaje (ej. "¡Perfecto, preciosa! 2 ${prod} talla S en Vino y Negro: ${soles(a.precios[2] || a.precios[1] * 2)} 😍") y en el MISMO mensaje pregunta el destino (si aún no lo dijo): "¿A qué ciudad o distrito te lo enviamos? 😊". NO preguntes cuántas quiere: son los colores que eligió.
+    paso('COLORES', `- Usa SOLO los colores que ELLA dijo: nunca sumes ni cambies colores por tu cuenta (si dice "vino y negro" son esos 2, aunque haya más colores). Si dice un color parecido (rojo → Vino, plomo → Gris), confírmalo con el nombre oficial. Si quiere más prendas, pregúntale de qué colores; no los elijas por ella.
+- Acepta SOLO estos colores: ${a.colores}. Confirma cantidad, talla, colores y total en UN mensaje (ej. "¡Perfecto, preciosa! 2 ${prod} talla S en Vino y Negro: ${soles(a.precios[2] || a.precios[1] * 2)} 😍") y en el MISMO mensaje pregunta el destino (si aún no lo dijo): "¿A qué ciudad o distrito te lo enviamos? 😊". NO preguntes cuántas quiere: son los colores que eligió.
 - Imagen marcada con checks o círculos: confirma esos colores por nombre; si no se distingue, pide los nombres.
 - Color que no está: "Uy, preciosa, ese color no lo tenemos 🙈 Te queda lindo el [otro de la lista] 😍".${lima ? '\n- Si ya dio talla, colores y distrito de Lima: UN solo mensaje con total y cierre 4a.' : ''}`);
   } else {
@@ -664,7 +666,7 @@ c) Cuando confirme: CONFIRMACIÓN LIMA y pasa a asesor.`);
   if (prov) {
     paso(lima ? 'PROVINCIA o LIMA SIN COBERTURA' : 'PROVINCIA', `a) ${lima ? '3' : '2'} mensajes separados:
 Mensaje 1 (sin pedir datos): ${lima ? `Lima sin cobertura: "Uy, preciosa, [distrito] está fuera de nuestra cobertura contra entrega 🙈 Pero te lo enviamos ${envioTxt ? 'GRATIS ' : ''}por Shalom, totalmente seguro 🚚". ` : ''}Provincia: "¡Te lo enviamos ${envioTxt ? 'GRATIS ' : ''}por agencia Shalom, totalmente seguro! 🚚 Llega en 1 a 2 días."
-${lima ? 'Mensaje 2: solo el VIDEO DE ENVÍOS (confianza-provincia), sin texto.\nMensaje 3' : 'Mensaje 2'} (única vez que pides datos): "${adel ? `Separas con ${soles(adel)} y el resto lo pagas al recoger 😊 ` : ''}Compárteme estos datos, linda 👇
+${lima ? 'Mensaje 2: solo el VIDEO DE ENVÍOS (video-envios; si no está, confianza-provincia), sin texto.\nMensaje 3' : 'Mensaje 2'} (única vez que pides datos): "${adel ? `Separas con ${soles(adel)} y el resto lo pagas al recoger 😊 ` : ''}Compárteme estos datos, linda 👇
 Nombre y apellido:
 DNI:
 Celular:"
@@ -740,7 +742,7 @@ ${prov ? '- ¿Por qué empresa envían?: "Por agencia Shalom, totalmente seguro 
 ## DESCONFIANZA ("¿es seguro?", "¿es estafa?", "desconfío")
 Nunca empieces con "Claro que sí/no". 3 mensajes:
 1: "Entiendo tu duda, preciosa 😊 Somos empresa formal y te damos tu guía para seguir tu pedido 📦"${lima ? ' (Lima con cobertura agrega: "y pagas recién al recibir 🛵")' : ''}.
-2: solo el archivo: ${[lima ? 'Lima → confianza-lima' : null, prov ? 'Shalom → confianza-provincia' : null].filter(Boolean).join('; ')}; si no está, fotos-pedidos.
+2: solo el archivo: ${[lima ? 'Lima → confianza-lima' : null, prov ? 'Shalom → confianza-provincia' : null].filter(Boolean).join('; ')}; si no está o ya lo mandaste, fotos-pedidos. Nunca repitas un archivo que ya mandaste.
 3: cierre directo con la frase de RETOMAR Datos; si aún no pediste datos, retoma el paso pendiente.
 
 ## PRODUCTO
@@ -750,7 +752,7 @@ Si preguntan algo del producto que no está aquí ni en CONOCIMIENTO: "Déjame c
 PRECIOS${gratis ? ' (envío gratis)' : ''}: ${ks.map((k) => `${k}: ${soles(a.precios[k])}${k > 1 ? ` (${soles(a.precios[k] / k)} c/u)` : ''}`).join(' · ')}${best ? ` · ⭐ la más elegida: ${best}` : ''}. Si pregunta "precio", da solo estos. ${a.envio && !gratis ? `Envío: ${a.envio}.` : ''}
 
 ## ARCHIVOS (adjunta con su clave, solo si están en ARCHIVOS DISPONIBLES)
-${[ropa ? '- Tabla de tallas: tabla-tallas' : null, ...tallas.map((t) => `- Colores ${t.value}: colores-${t.value}`), ropa ? '- Así se ve puesto: video-puesto' : '- Producto de cerca: producto\n- Producto en uso: video-producto', '- Pedidos listos: fotos-pedidos', lima ? '- Confianza Lima: confianza-lima' : null, prov ? '- Video de envíos (Shalom): confianza-provincia' : null].filter(Boolean).join('\n')}`);
+${[ropa ? '- Tabla de tallas: tabla-tallas' : null, ...tallas.map((t) => `- Colores ${t.value}: colores-${t.value}`), ropa ? '- Así se ve puesto: video-puesto' : '- Producto de cerca: producto\n- Producto en uso: video-producto', '- Pedidos listos: fotos-pedidos', lima ? '- Confianza Lima: confianza-lima' : null, prov ? '- Video de envíos (al pedir datos y adelanto): video-envios\n- Video de confianza Shalom (solo si desconfía): confianza-provincia' : null].filter(Boolean).join('\n')}`);
   let out = P.join('\n\n');
   if (!cerc) out = out.replace(/,? ?\b(preciosa|linda|bella)\b/g, '').replace(/ +([!?.,])/g, '$1');
   return out;

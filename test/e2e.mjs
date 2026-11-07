@@ -1270,7 +1270,7 @@ try {
     });
     assert.ok(A.flow_id, JSON.stringify(A));
     assert.equal(A.respuestas.producto, 'Cápsulas de colágeno');
-    assert.deepEqual(A.assets.map((x) => x.key), ['precios', 'producto', 'audio-seguimiento', 'video-producto', 'fotos-pedidos', 'confianza-lima', 'confianza-provincia', 'foto-despacho']);
+    assert.deepEqual(A.assets.map((x) => x.key), ['precios', 'producto', 'audio-seguimiento', 'video-producto', 'fotos-pedidos', 'confianza-lima', 'video-envios', 'confianza-provincia', 'foto-despacho']);
     assert.equal(A.assets[0].need, 'si');
     // antes del asistente, la tienda de una alumna NO trae el prompt ni la plantilla de las marcas de Jordan
     assert.equal((await as('POST', `/api/stores/${s1.store_id}/bot/flows`, { template: 'pantalon' })).status, 403);
@@ -1516,7 +1516,7 @@ try {
     await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
     let n = iaCalls.length;
     let sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' });
-    const conDatos = (x) => call('PUT', `/api/chats/${x.chat.id}/datos`, { datos: { nombre: 'Ana Pérez', dni: '70000003' } });
+    const conDatos = (x) => call('PUT', `/api/chats/${x.chat.id}/datos`, { datos: { nombre: 'Ana Pérez', dni: '70000003', celular: '987654321' } });
     // Sin datos todavía: no ofrece agencias (primero nombre, DNI y celular)
     sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'Vivo en Juliaca, ¿envían?' });
     assert.match(iaCalls.slice(n).pop().system, /AGENCIA SHALOM: TODAVÍA NO/);
@@ -1541,6 +1541,12 @@ try {
     await conDatos(sm);
     sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'mejor por Shalom, Miraflores' });
     assert.ok(sm.messages.some((m) => /Agencias Shalom en MIRAFLORES/.test(m.body || '')), 'pidió Shalom: ofrece agencias de Lima');
+    // Celular del propio WhatsApp y candado de colores
+    const { celularWa, coloresNoPedidos } = await import('../src/bot.js');
+    assert.equal(celularWa('51912502934'), '912502934');
+    assert.equal(celularWa('sim3'), null, 'usuario sin número: se le pide');
+    assert.deepEqual(coloresNoPedidos('Vino, Negro, Celeste bebé', ['quiero rojo y negro']), ['Celeste bebé'], 'no pidió celeste');
+    assert.deepEqual(coloresNoPedidos('Vino y Negro', ['rojo y negro']), [], 'rojo = vino');
     // «Ate» (cobertura parcial): sin pedir Shalom no ofrece agencias; si pide Shalom, encuentra ATE-VITARTE
     await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
     await conDatos(await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' }));
