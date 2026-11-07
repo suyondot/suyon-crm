@@ -993,7 +993,7 @@ function drawIA() {
         <ol><li>Saca una clave en platform.openai.com → API keys (con tu tarjeta y un tope de gasto).</li>
         <li>En Cloudflare: Workers → suyon-crm → Configuración → Variables y secretos → Agregar.</li>
         <li>Tipo «Secreto», nombre <b class="mono">OPENAI_API_KEY</b>, pega la clave y guarda. No la pegues en este chat ni aquí.</li></ol>`}</div></div>
-    <div class="card"><div class="brow"><h3 style="flex:1">${C.S.me?.user?.is_admin && !B.data.asistente ? 'Prompt (copiado de tu Botcake)' : 'Prompt de tu IA'}</h3><span class="note mono" id="bpc">${(s.ia_prompt || '').length.toLocaleString('en-US')} caracteres</span><button type="button" class="iconbtn" data-bact="resetprompt">Restaurar el de Botcake</button></div>
+    <div class="card"><div class="brow"><h3 style="flex:1">${C.S.me?.user?.is_admin && !B.data.asistente ? 'Prompt (copiado de tu Botcake)' : 'Prompt de tu IA'}</h3><span class="note mono" id="bpc">${(s.ia_prompt || '').length.toLocaleString('en-US')} caracteres</span>${B.data.asistente ? '<button type="button" class="iconbtn" data-bact="reprompt" title="Vuelve a armar el prompt con tus respuestas del asistente y las mejoras más nuevas (no toca tu flujo)">↻ Actualizar con la versión nueva</button>' : '<button type="button" class="iconbtn" data-bact="resetprompt">Restaurar el de Botcake</button>'}</div>
       <p class="sub">Para otro producto, copia este y cambia solo lo del producto (precios, tallas, colores, stock, archivos). Escribe <b class="mono">{</b> para insertar un dato que se llena solo (fecha, hora, día de entrega, etiquetas, talla…).</p>
       <div class="bvars">${(B.data.prompt_vars || []).map(([k, d]) => `<button type="button" data-pvar="${k}" title="${e(d)}">{${k}}</button>`).join('')}</div>
       <div class="bpwrap"><textarea name="ia_prompt" id="bprompt" class="bcode" rows="22">${e(s.ia_prompt || '')}</textarea><div class="bvmenu" id="bvmenu" hidden role="listbox" aria-label="Datos para insertar"></div></div></div>
@@ -1222,6 +1222,20 @@ document.addEventListener('click', async (ev) => {
         (B.flow.graph.sequences ||= []).push({ id: 'seq' + Date.now().toString(36).slice(-5), name: 'Seguimiento nuevo', cancel_on: 'reply', steps: [{ after_min: 30, items: [{ kind: 'text', text: '' }] }] });
         markDirty();
         return drawSeqs();
+      case 'reprompt':
+        if (!confirm('¿Rehacer el prompt con tus respuestas del asistente? Si lo cambiaste a mano, esos cambios se reemplazan. Tu flujo y tus archivos no cambian.')) return;
+        t.disabled = true;
+        try {
+          await C.api('POST', `/stores/${B.storeId}/asistente/prompt`);
+          const r2 = await C.api('GET', `/stores/${B.storeId}/bot`);
+          B.data.settings = r2.settings;
+          C.toast('Prompt actualizado ✅');
+          return draw();
+        } catch (er) {
+          C.toast(er.message);
+          t.disabled = false;
+        }
+        return;
       case 'resetprompt':
         if (!confirm('¿Volver al prompt original? Se pierden tus cambios al prompt.')) return;
         await saveSettings({ ia_prompt: null });
