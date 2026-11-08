@@ -193,7 +193,7 @@ function drawFlow() {
     const ropaJordan = C.S.me?.user?.is_admin && C.store()?.rubro !== 'simple';
     box.innerHTML = `<div class="card empty" style="gap:10px"><b>Todavía no hay flujos en esta tienda</b>
       <span>${ropaJordan ? 'Responde unas preguntas de tu producto y se arma tu bot en el orden que funciona: foto y precios, pregunta, seguimientos, IA y asesora. O usa la plantilla «Ventas pantalón».' : 'Responde unas preguntas de tu producto y se arma tu bot en el orden que funciona: foto y precios, pregunta, seguimientos, IA y asesora.'}</span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="send" data-bact="asis">✨ Armar mi bot con preguntas</button>${ropaJordan ? '<button class="iconbtn" data-bact="tpl">Plantilla «Ventas pantalón»</button>' : ''}${C.S.me?.user?.is_admin ? '<button class="iconbtn" data-bact="tplct" title="Tu asistente para vender Control Total: responde dudas del plan y manda el enlace de la demo">Crear «Ventas Control Total»</button>' : ''}<button class="iconbtn" data-bact="blank">Flujo vacío</button></div></div>`;
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="send" data-bact="asis">✨ Armar mi bot con preguntas</button>${ropaJordan ? '<button class="iconbtn" data-bact="tpl">Plantilla «Ventas pantalón»</button><button class="iconbtn" data-bact="tplcargo">Plantilla «Ventas leggings cargo»</button>' : ''}${C.S.me?.user?.is_admin ? '<button class="iconbtn" data-bact="tplct" title="Tu asistente para vender Control Total: responde dudas del plan y manda el enlace de la demo">Crear «Ventas Control Total»</button>' : ''}<button class="iconbtn" data-bact="blank">Flujo vacío</button></div></div>`;
     return;
   }
   box.innerHTML = `${flowBar()}
@@ -1168,9 +1168,10 @@ document.addEventListener('click', async (ev) => {
         if (B.dirty && !confirm('Tienes cambios sin guardar en el flujo. ¿Abrir el asistente igual?')) return;
         return window.dispatchEvent(new CustomEvent('ct:asistente'));
       case 'tpl':
+      case 'tplcargo':
       case 'tplct':
       case 'blank': {
-        const r = await C.api('POST', `/stores/${B.storeId}/bot/flows`, { template: { tpl: 'pantalon', tplct: 'ventas_ct' }[d.bact] || null });
+        const r = await C.api('POST', `/stores/${B.storeId}/bot/flows`, { template: { tpl: 'pantalon', tplcargo: 'cargo', tplct: 'ventas_ct' }[d.bact] || null });
         B.flowId = r.id;
         await load();
         C.toast('Flujo creado. Está apagado hasta que lo actives.');
@@ -1179,11 +1180,11 @@ document.addEventListener('click', async (ev) => {
       case 'newflow': {
         const admin = C.S.me?.user?.is_admin;
         const ans = admin
-          ? prompt('¿Qué plantilla? Escribe 1, 2 o 3:\n1 = Ventas pantalón\n2 = Ventas Control Total (tu asistente para vender el sistema)\n3 = Flujo vacío', '1')
+          ? prompt('¿Qué plantilla? Escribe 1, 2, 3 o 4:\n1 = Ventas pantalón\n2 = Ventas Control Total (tu asistente para vender el sistema)\n3 = Flujo vacío\n4 = Ventas leggings cargo', '1')
           : !admin || C.store()?.rubro === 'simple' ? '3'
           : confirm('¿Crear desde la plantilla «Ventas pantalón»? (Cancelar = flujo vacío)') ? '1' : '3';
         if (ans === null) return;
-        const tpl = { 1: 'pantalon', 2: 'ventas_ct' }[String(ans).trim()] || null;
+        const tpl = { 1: 'pantalon', 2: 'ventas_ct', 4: 'cargo' }[String(ans).trim()] || null;
         const r = await C.api('POST', `/stores/${B.storeId}/bot/flows`, { template: tpl });
         B.flowId = r.id;
         await load();

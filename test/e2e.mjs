@@ -48,6 +48,7 @@ const meta = http.createServer(async (req, res) => {
     const all = body.messages.map((m) => (typeof m.content === 'string' ? m.content : m.content.map((x) => x.text || '').join(' '))).join('\n');
     if (/siempre raro/i.test(all)) return json(200, { content: [{ type: 'text', text: 'Claro amiga, te paso: {"mensajes": [roto' }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/rarito/i.test(txt)) return json(200, { content: [{ type: 'text', text: '¡Hola! Te cuento los precios 😊' }], usage: { input_tokens: 10, output_tokens: 10 } });
+    if (/formshalom/i.test(txt)) return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: 'Revisa tus datos 👇\nShalom: 🚚📦\nMonto total: S/109\nAdelanto: S/30\nMonto restante: S/79' }], caso: null, datos: {} }) }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/cuenta bcp/i.test(txt)) return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: 'Cuenta BCP: [FALTA BCP]' }], caso: null, datos: {} }) }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/juliaca|miraflores|ancón|ancon|terminal|libertad|trujillo/i.test(txt)) {
       const sede = /terminal/i.test(txt) ? { sede_shalom: 'Juliaca Terminal' } : {};
@@ -818,6 +819,62 @@ try {
     await until(async () => { const x = await chatOf('51911111116'); return x?.bot_wait === 1; });
     await new Promise((r) => setTimeout(r, 2500)); // que termine de mandar antes de la siguiente prueba
   });
+  await step('clienta que vuelve por un anuncio nuevo: el bot la atiende otra vez; talla en el 1er mensaje; Yape tras el formulario', async () => {
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { test_numbers: '911111111, 911111112, 911111113, 911111114, 911111115, 911111116, 911111117, 911111118' });
+    const ad = { referral: { source_id: '2', source_type: 'ad', ctwa_clid: 'v' } };
+    await inbound('51911111117', 'wamid.V1', 'hola', ad);
+    let c = await until(async () => { const x = await chatOf('51911111117'); return x?.bot_node === 'talla' ? x : null; });
+    await call('POST', `/api/chats/${c.id}/bot`, { action: 'pause' });
+    // Vuelve desde otro anuncio sin haber avanzado: empieza de nuevo (antes, en Botcake, nadie le contestaba)
+    await inbound('51911111117', 'wamid.V2', 'Deseo mis pantalones formales', ad);
+    c = await until(async () => { const x = await chatOf('51911111117'); return x?.bot_paused === 0 && x.bot_node === 'talla' ? x : null; });
+    const prec = (await msgsOf(c.id)).filter((m) => m.sender === 'bot' && /Pantalón Formal Stretch/.test(m.body || ''));
+    assert.equal(prec.length, 2, 'se le vuelve a presentar el producto');
+    // Avanza (talla M), la asesora la pausa y vuelve desde otro anuncio: la IA la retoma con lo que ya eligió
+    await inbound('51911111117', 'wamid.V3', 'M');
+    await until(async () => (await chatOf('51911111117'))?.bot_node === 'colores');
+    await call('POST', `/api/chats/${c.id}/bot`, { action: 'pause' });
+    const n = iaCalls.length;
+    await inbound('51911111117', 'wamid.V4', 'Deseo mis pantalones formales', ad);
+    await until(async () => iaCalls.length > n);
+    assert.match(iaCalls[iaCalls.length - 1].system, /VOLVIÓ DESDE UN ANUNCIO NUEVO/);
+    c = await until(async () => { const x = await chatOf('51911111117'); return x?.bot_wait === 1 && x.bot_node === 'bucle' ? x : null; });
+    assert.equal(c.bot_paused, 0);
+    assert.ok(!('__volvio' in JSON.parse(c.bot_vars)), 'la marca temporal no queda en sus datos');
+    // Formulario de Shalom sin Yape: el sistema agrega el mensaje de pago
+    await inbound('51911111117', 'wamid.V5', 'formshalom');
+    await until(async () => (await msgsOf(c.id)).some((m) => /999 111 222/.test(m.body || '')));
+    const pago = (await msgsOf(c.id)).filter((m) => /999 111 222/.test(m.body || ''));
+    assert.equal(pago.length, 1);
+    assert.match(pago[0].body, /Prueba Titular/);
+    // El primer mensaje ya trae la talla: no se le pregunta, pasa directo a sus colores
+    await inbound('51911111118', 'wamid.W1', 'precio y colores en talla L', ad);
+    const w = await until(async () => { const x = await chatOf('51911111118'); return x?.bot_node === 'colores' ? x : null; });
+    assert.equal(JSON.parse(w.bot_vars).talla, 'L');
+    assert.ok(!(await msgsOf(w.id)).some((m) => /Qué talla usas/.test(m.body || '')), 'no se pregunta la talla');
+    await new Promise((r) => setTimeout(r, 1500));
+    await call('POST', `/api/stores/${store.id}/avisos/read`, {}); // avisos de archivos que faltan en esta prueba
+  });
+  await step('plantilla «Ventas leggings cargo»: talla 38+ es L y su prompt reemplaza al de pantalón', async () => {
+    const { flowCargo, PROMPT_CARGO, TALLAS_CARGO } = await import('../src/bot-template.js');
+    const { recognize } = await import('../src/bot.js');
+    assert.equal(recognize('talla 40', TALLAS_CARGO), 'L');
+    assert.equal(recognize('mi talla de jean es 34', TALLAS_CARGO), 'M');
+    assert.equal(recognize('T 30', TALLAS_CARGO), 'S');
+    assert.ok(!/pantal[oó]n(?! formal stretch)/i.test(PROMPT_CARGO.replace(/Pantalón Formal/g, '')), 'el prompt del cargo no habla de pantalón');
+    assert.match(PROMPT_CARGO, /\{yape\}/);
+    assert.ok(!/\d{3} \d{3} \d{3}/.test(PROMPT_CARGO), 'sin números de pago en el código');
+    const g = flowCargo();
+    assert.deepEqual(g.nodes.find((x) => x.id === 'inicio').trigger.keywords, ['Deseo mis Leggins Cargo', 'Deseo mis Leggings Cargo']);
+    const antes = (await call('GET', `/api/stores/${store.id}/bot`)).settings?.ia_prompt;
+    const r = await call('POST', `/api/stores/${store.id}/bot/flows`, { template: 'cargo' });
+    assert.ok(r.id, JSON.stringify(r));
+    const f = await call('GET', `/api/bot/flows/${r.id}`);
+    assert.equal(f.flow.name, 'Ventas leggings cargo');
+    assert.equal(f.flow.active, 0, 'nace apagado');
+    await call('DELETE', `/api/bot/flows/${r.id}`);
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { ia_prompt: antes ?? null });
+  });
   let simCalls;
   await step('simulador: prueba el flujo como clienta sin WhatsApp', async () => {
     simCalls = calls.length;
@@ -858,7 +915,7 @@ try {
     const av = await call('GET', `/api/stores/${store.id}/avisos`);
     assert.ok(!av.events.some((e) => !e.read_at && /colores-M|datos de pago/.test(e.title)), 'los avisos del simulador no van a Avisos');
     const f = await call('GET', `/api/bot/flows/${flowId}`);
-    assert.equal(f.stats.precios.sent, 6, 'los números por bloque no cuentan el simulador');
+    assert.equal(f.stats.precios.sent, 8, 'los números por bloque no cuentan el simulador');
     assert.equal((await call('POST', `/api/stores/${store.id}/sim/send`, { text: '' })).status, 400);
     await call('PATCH', `/api/stores/${store.id}/bot/settings`, { bot_on: true });
   });

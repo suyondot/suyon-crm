@@ -360,6 +360,17 @@ export async function runFrom(env, ctx, store, chatId, flow, nodeId, vars, trigg
         id = node.next;
         break;
       case 'send': {
+        // El primer mensaje ya traía la respuesta (ej. «precio y colores en talla L»): no se pregunta, se sigue
+        if (node.wait && vars.__primer) {
+          const nx = nodeOf(flow, node.next);
+          const primer = vars.__primer;
+          delete vars.__primer;
+          if (nx?.type === 'recognize' && (nx.from || 'respuesta') === (node.save_to || 'respuesta') && recognize(primer, nx.options || [])) {
+            vars[node.save_to || 'respuesta'] = primer;
+            id = node.next;
+            break;
+          }
+        }
         const ok = await sendItems(env, store, chat, node.items, meta);
         if (node.wait) {
           await saveState(env, chat.id, { bot_flow_id: flow.id, bot_node: node.id, bot_wait: 1, bot_vars: vars, handler: 'bot' });
@@ -466,10 +477,45 @@ function triggerMatch(trigger, chat, text, isFirst) {
   return (trigger.keywords || []).some((k) => norm(k) && n.includes(norm(k)));
 }
 
-export async function startFlow(env, ctx, store, chatId, flow, triggerMsgId = null) {
+// Clienta que ya había escrito y vuelve desde un anuncio. Devuelve true si el bot se encargó.
+async function volvioPorAnuncio(env, ctx, store, chat, msg, text) {
+  const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM messages WHERE chat_id = ? AND direction = 'in'").bind(chat.id).first();
+  if (n <= 1) return false; // es su primer mensaje: lo maneja el inicio normal
+  // Si una persona del equipo le está escribiendo ahora (últimas 2 h), no se mete el bot
+  const ase = await env.DB.prepare("SELECT created_at FROM messages WHERE chat_id = ? AND direction = 'out' AND sender = 'ase' ORDER BY id DESC LIMIT 1").bind(chat.id).first();
+  if (ase && now() - ase.created_at < 2 * 3600 * 1000) return false;
+  // En medio de una conversación con el bot (no en pausa): sigue igual, como cualquier respuesta
+  if (!chat.bot_paused && chat.bot_flow_id && chat.bot_node && chat.bot_wait) return false;
+  const { results: flows } = await env.DB.prepare('SELECT id FROM bot_flows WHERE store_id = ? AND active = 1 ORDER BY id').bind(store.id).all();
+  let flow = null;
+  for (const f of flows) {
+    const fl = await loadFlow(env, f.id);
+    if (triggerMatch(nodeOf(fl, fl.graph.start)?.trigger, chat, text, true)) {
+      flow = fl;
+      break;
+    }
+  }
+  if (!flow) return false;
+  const vars = JSON.parse(chat.bot_vars || '{}');
+  const ia = flow.graph.nodes.find((x) => x.type === 'ia');
+  const avanzo = ['talla', 'colores', 'destino', 'distrito', 'nombre'].some((k) => vars[k]);
+  if (avanzo && ia && (chat.bot_flow_id === flow.id || !chat.bot_flow_id)) {
+    // Ya había avanzado: la IA la saluda de nuevo y retoma lo que eligió (no se le repite todo desde cero)
+    vars.__volvio = 1;
+    await cancelJobs(env, chat.id);
+    await saveState(env, chat.id, { bot_flow_id: flow.id, bot_node: ia.id, bot_wait: 2, bot_vars: vars, bot_paused: 0, handler: 'bot' });
+    await runFrom(env, ctx, store, chat.id, flow, ia.id, vars, msg.id);
+  } else {
+    await startFlow(env, ctx, store, chat.id, flow, msg.id, text);
+  }
+  return true;
+}
+
+export async function startFlow(env, ctx, store, chatId, flow, triggerMsgId = null, primer = '') {
   await cancelJobs(env, chatId);
   await saveState(env, chatId, { bot_flow_id: flow.id, bot_node: null, bot_wait: 0, bot_vars: {}, bot_paused: 0, handler: 'bot', bot_ag: null });
-  await runFrom(env, ctx, store, chatId, flow, flow.graph.start, {}, triggerMsgId);
+  const vars = primer && String(primer).length <= 80 ? { __primer: String(primer) } : {};
+  await runFrom(env, ctx, store, chatId, flow, flow.graph.start, vars, triggerMsgId);
 }
 
 export async function onInbound(env, ctx, store, chatId, msg, { sim = false } = {}) {
@@ -481,9 +527,13 @@ export async function onInbound(env, ctx, store, chatId, msg, { sim = false } = 
   await cancelJobs(env, chatId, msg.type === 'image' || msg.type === 'document' ? 'image' : 'reply');
   if (!settings.bot_on && !sim) return;
   if (!sim && (await storeBlocked(env, store.id))) return; // plan vencido: los mensajes llegan, el bot no responde
-  const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
-  if (!chat || chat.bot_paused || (!sim && !audienceOk(settings, chat.wa_id))) return;
+  let chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
+  if (!chat || (!sim && !audienceOk(settings, chat.wa_id))) return;
   const text = msg.body || (msg.type === 'audio' ? '[nota de voz]' : msg.type === 'image' ? '[foto]' : '');
+  // Volvió por un anuncio nuevo: el bot la atiende otra vez, aunque estuviera en pausa o el flujo hubiera terminado
+  // (en Botcake solo se atendía a «nuevos suscriptores» y estas clientas se quedaban sin respuesta)
+  if (msg.fromAd && !sim && (await volvioPorAnuncio(env, ctx, store, chat, msg, text))) return;
+  if (chat.bot_paused) return;
 
   if (chat.bot_flow_id && chat.bot_node && chat.bot_wait) {
     const flow = await loadFlow(env, chat.bot_flow_id);
@@ -509,7 +559,7 @@ export async function onInbound(env, ctx, store, chatId, msg, { sim = false } = 
   for (const f of flows) {
     const flow = await loadFlow(env, f.id);
     const start = nodeOf(flow, flow.graph.start);
-    if (triggerMatch(start?.trigger, chat, text, n === 1)) return startFlow(env, ctx, store, chat.id, flow, msg.id);
+    if (triggerMatch(start?.trigger, chat, text, n === 1)) return startFlow(env, ctx, store, chat.id, flow, msg.id, text);
   }
 }
 
@@ -832,8 +882,10 @@ async function runIA(env, store, chat, flow, node, settings, vars, triggerMsgId)
   }
   try {
     // Si la clienta escribió mientras la IA pensaba, se vuelve a pensar con todo junto (1 vez)
+    const volvio = vars.__volvio;
     let r = await iaCore(env, store, chat, flow, node, settings, vars, false);
     if (r.redo) {
+      if (volvio) vars.__volvio = volvio;
       chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chat.id).first();
       r = await iaCore(env, store, chat, flow, node, settings, vars, true);
     }
@@ -885,7 +937,13 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
 - Los precios ya se los mandó el bot al inicio. Si pregunta el precio, contesta en 1 o 2 líneas (la promo o el precio de la cantidad que quiere) y sigue con el paso que toca. No repitas la tabla completa.
 - Si pregunta qué talla le queda, pídele su talla de jean (o su peso y estatura) y recomiéndale una. No le muestres colores hasta saber su talla.
 - Nunca digas «déjame confirmar», «te aviso en un momento» ni algo parecido: responde con lo que sabes. Si no tienes una sede en la lista, pregúntale su distrito o la ciudad más cercana.
-- No digas «de nada» si no te agradeció.`;
+- No digas «de nada» si no te agradeció.
+- Si pregunta cómo pagar o a qué número yapear: en Lima con cobertura paga al recibir; para Shalom/provincia dale el adelanto con los datos de pago${settings.pay_yape ? ` (Yape / Plin: ${settings.pay_yape}${settings.pay_titular ? `, a nombre de ${settings.pay_titular}` : ''})` : ''}, aunque todavía no le hayas mandado el formulario. NUNCA digas que no tienes la información de pago ni que contacte a otra persona.`;
+  if (vars.__volvio) {
+    system += `\n\n## VOLVIÓ DESDE UN ANUNCIO NUEVO\nEsta clienta ya había conversado antes y volvió a escribir desde un anuncio. Salúdala con cariño como alguien que regresa (sin presentarte de nuevo), recuérdale en 1 línea lo que ya había elegido y retoma el paso pendiente con UNA pregunta. No le repitas precios ni fotos que ya vio.`;
+  }
+  delete vars.__volvio;
+  delete vars.__primer;
   if (vars.talla) system += `\n\n## TALLA YA ELEGIDA: ${vars.talla}\nNO le vuelvas a preguntar la talla. Si todavía no vio los colores, muéstrale los de su talla${arows.some((a) => a.key === `colores-${vars.talla}`) ? ` (archivo colores-${vars.talla})` : ''} y pregúntale cuáles quiere.`;
   if (celWa) system += `\n\n## CELULAR DE LA CLIENTA: ${vars.celular}\nYa lo tenemos de su WhatsApp. NO se lo pidas: al pedir datos quita la línea «Celular:» (pide solo lo que falta) y en los formularios usa este número.`;
   // Agencias Shalom: solo provincia o Lima sin cobertura. Si tocó una de la lista, queda guardada exacta.
@@ -974,6 +1032,19 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   if (reply.mensajes.some((m) => /\[FALTA [A-Z]+\]/.test(m.texto || ''))) {
     await alertFor(env, store, chat, { kind: 'ia', title: 'Faltan los datos de pago en IA Suyon', body: 'La IA iba a mandar «[FALTA …]» a la clienta. No se envió y pasó a la asesora. Llénalos en Configuración → Bot Suyon AI → IA Suyon.', dedupe: !chat.sim });
     return { ok: false };
+  }
+  // Formulario de Shalom sin datos de pago: el sistema agrega el mensaje con el Yape (en Botcake la IA a veces lo olvidaba
+  // y la clienta se quedaba lista para pagar sin saber a dónde)
+  const yapeDig = String(settings.pay_yape || '').replace(/\D/g, '');
+  if (yapeDig.length >= 6 && reply.mensajes.some((m) => /monto restante/i.test(m.texto || ''))) {
+    const tieneYape = (t) => String(t || '').replace(/\D/g, '').includes(yapeDig);
+    const yaSeMando = results.some((m) => m.direction === 'out' && tieneYape(m.body));
+    if (!yaSeMando && !reply.mensajes.some((m) => tieneYape(m.texto))) {
+      const adel = cfgOf(store).adelanto || 30;
+      reply.mensajes.push({
+        texto: `Separa solo con S/${adel} y enviamos tu pedido 🚚💕\n\n👉 Yape / Plin: ${settings.pay_yape}${settings.pay_titular ? `\nA nombre de: ${settings.pay_titular}` : ''}\n\nEnvíame la captura para separarlo 📦`,
+      });
+    }
   }
   // Si aun así quedó un color que no pidió, no se guarda en sus datos
   if (colorFix && reply.datos?.colores) {

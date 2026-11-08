@@ -169,7 +169,7 @@ async function handleInbound(env, ctx, store, msg, profileName) {
       const payload = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || msg.button?.payload || null;
       // Respuesta a «¿Confirmas tu pedido?»: la maneja Pedidos, no el bot
       if (await handleOrderReply(env, store, chat, { type: msg.type, body: said, payload })) return;
-      await onInbound(env, ctx, store, chat.id, { id: msgId, type: msg.type, body: said, payload });
+      await onInbound(env, ctx, store, chat.id, { id: msgId, type: msg.type, body: said, payload, fromAd: !!msg.referral });
     } catch (e) {
       console.error('bot', e);
       await notify(env, store.id, { kind: 'error', chatId: chat.id, title: 'El bot tuvo un error', body: e.message }).catch(() => {});
