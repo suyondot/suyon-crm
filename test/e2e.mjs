@@ -861,6 +861,9 @@ try {
     assert.equal(recognize('talla 40', TALLAS_CARGO), 'L');
     assert.equal(recognize('mi talla de jean es 34', TALLAS_CARGO), 'M');
     assert.equal(recognize('T 30', TALLAS_CARGO), 'S');
+    assert.equal(recognize('talla 27', TALLAS_CARGO), 'XS');
+    assert.equal(recognize('XS', TALLAS_CARGO), 'XS');
+    assert.equal(recognize('S', TALLAS_CARGO), 'S');
     assert.ok(!/pantal[oó]n(?! formal stretch)/i.test(PROMPT_CARGO.replace(/Pantalón Formal/g, '')), 'el prompt del cargo no habla de pantalón');
     assert.match(PROMPT_CARGO, /\{yape\}/);
     assert.ok(!/\d{3} \d{3} \d{3}/.test(PROMPT_CARGO), 'sin números de pago en el código');

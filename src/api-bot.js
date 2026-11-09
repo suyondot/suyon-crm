@@ -173,10 +173,10 @@ r.post('/stores/:id/bot/flows', async (c) => {
     ? flowVentasCT(web)
     : { v: 1, start: 'inicio', nodes: [{ id: 'inicio', type: 'start', x: 360, y: 40, title: 'Clienta nueva', trigger: { new_chat: true, ads: 'all', ad_ids: [], keywords: [] }, labels: [], next: null }], sequences: [] };
   const name = str(b.name || ({ pantalon: 'Ventas pantalón', cargo: 'Ventas leggings cargo', ventas_ct: 'Ventas Control Total' }[b.template] || 'Flujo nuevo'), 60);
-  // El cargo trae su prompt (con su abordaje y cierre). Reemplaza solo el de pantalón, el genérico o uno vacío.
+  // El cargo trae su prompt (con su abordaje y cierre). Reemplaza el de pantalón, el genérico, uno vacío o una versión anterior del cargo.
   if (b.template === 'cargo') {
     const cur = await loadSettings(c.env, st.id);
-    if (!cur.ia_prompt || [PROMPT_PANTALON, PROMPT_GENERICO].some((x) => cur.ia_prompt.trim() === x.trim())) await saveSettings(c.env, st.id, { ia_prompt: PROMPT_CARGO });
+    if (!cur.ia_prompt || /Vendes los Leggings Cargo/.test(cur.ia_prompt) || [PROMPT_PANTALON, PROMPT_GENERICO].some((x) => cur.ia_prompt.trim() === x.trim())) await saveSettings(c.env, st.id, { ia_prompt: PROMPT_CARGO });
   }
   // La plantilla de Control Total trae su propio prompt (solo si la tienda no tiene uno propio)
   if (b.template === 'ventas_ct') {

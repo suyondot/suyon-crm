@@ -420,7 +420,7 @@ TONO: cálido y cercano (preciosa, linda, bella), emojis, mensajes de 2-4 línea
 - Si cambia de talla: adjunta la IMAGEN de colores de la nueva talla.
 
 2. COLORES
-- Acepta SOLO los 4 colores oficiales (hay los 4 en S, M y L). Confirma cantidad, talla, colores y total (ej. "¡Perfecto, preciosa! 1 legging Negro talla M: S/109 😍") y pregunta el destino (si aún no lo dijo): "¿A qué ciudad o distrito te lo enviamos? 😊".
+- Acepta SOLO los 4 colores oficiales (hay los 4 en XS, S, M y L). Confirma cantidad, talla, colores y total (ej. "¡Perfecto, preciosa! 1 legging Negro talla M: S/109 😍") y pregunta el destino (si aún no lo dijo): "¿A qué ciudad o distrito te lo enviamos? 😊".
 - Imagen marcada con checks o círculos: confirma esos colores por nombre; si no se distingue, pide los nombres.
 - "Azul" solo = Azul noche. "Celeste" = Celeste bebé.
 - Si ya dio talla, colores y distrito de Lima: UN solo mensaje con total y cierre 4a.
@@ -541,15 +541,16 @@ TELA (responde lo que pregunte):
 - ¿Quedan ceñidos?: "Sí, quedan ceñidos y realzan la figura, y son súper cómodos 😍"
 Transparencia, lavado u otra duda de tela: "Déjame confirmarlo y te aviso 😊" y pasa a asesor.
 
-COLORES (nombres oficiales): Negro, Azul noche, Beige, Celeste bebé. Hay los 4 en S, M y L. Negro es el más pedido.
+COLORES (nombres oficiales): Negro, Azul noche, Beige, Celeste bebé. Hay los 4 en XS, S, M y L. Negro es el más pedido.
 Sinónimos: azul/azul marino → Azul noche · celeste → Celeste bebé · crema/nude/camel → Beige.
 
 PRECIOS (envío gratis): 1: S/109 · 2: S/169 (S/84.50 c/u) · 3: S/209 (S/69.67 c/u) ⭐ la más elegida. Si pregunta "precio", da solo estos tres. Si pide 4: S/265. 5 o más o precio por mayor: pasa a asesor.
 
-TALLAS (jean): 28-31 S · 32-34 M · 35-37 L. Menos de 28 → S. "Mediano" = M. 38 o más → L ("Te recomiendo la L, es stretch y te va a quedar cómoda 😊"). Nunca digas que no le quedará.
+TALLAS (jean): 26-28 XS · 29-31 S · 32-34 M · 35-37 L. Menos de 26 → XS. "Mediano" = M. 38 o más → L ("Te recomiendo la L, es stretch y te va a quedar cómoda 😊"). Nunca digas que no le quedará.
 
 ## ARCHIVOS (adjunta con su clave)
 - Tabla de tallas: tabla-tallas
+- Colores XS: colores-XS
 - Colores S: colores-S
 - Colores M: colores-M
 - Colores L: colores-L
@@ -559,11 +560,12 @@ TALLAS (jean): 28-31 S · 32-34 M · 35-37 L. Menos de 28 → S. "Mediano" = M. 
 
 // Talla de jean del cargo (decisión de Jordan: 38 o más → L)
 export const TALLAS_CARGO = [
-  { value: 'S', words: ['s', 'talla s', 'soy s', '26', '27', '28', '29', '30', '31', 'small', 'chica', 'pequeña', 'xs'] },
+  { value: 'XS', words: ['xs', 'talla xs', 'soy xs', '24', '25', '26', '27', '28', 'extra small', 'extra chica', 'muy chica'] },
+  { value: 'S', words: ['s', 'talla s', 'soy s', '29', '30', '31', 'small', 'chica', 'pequeña'] },
   { value: 'M', words: ['m', 'talla m', 'soy m', '32', '33', '34', 'mediano', 'mediana', 'medium'] },
   { value: 'L', words: ['l', 'talla l', 'soy l', '35', '36', '37', '38', '39', '40', '41', '42', 'largue', 'large', 'grande', 'xl', 'xxl'] },
 ];
-export const TALLA_OPCIONES_CARGO = ['S · Jean 28-31', 'M · Jean 32-34', 'L · Jean 35 o más'];
+export const TALLA_OPCIONES_CARGO = ['XS · Jean 26-28', 'S · Jean 29-31', 'M · Jean 32-34', 'L · Jean 35 o más'];
 
 export function flowCargo() {
   const g = flowPantalon();
