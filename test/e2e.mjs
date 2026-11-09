@@ -83,6 +83,9 @@ const meta = http.createServer(async (req, res) => {
         { id: 8, nombre: 'CUSCO / CUSCO / SANTIAGO / SANTIAGO CENTRO', lugar_over: 'SANTIAGO CENTRO', departamento: 'CUSCO', provincia: 'CUSCO', direccion: 'Av. Antonio Lorena 2', habilitado: true },
         { id: 9, nombre: 'CUSCO / CUSCO / WANCHAQ / WANCHAQ', lugar_over: 'WANCHAQ', departamento: 'CUSCO', provincia: 'CUSCO', direccion: 'Av. Garcilaso 3', habilitado: true },
         { id: 10, nombre: 'CUSCO / LA CONVENCION / SANTA ANA / QUILLABAMBA', lugar_over: 'QUILLABAMBA', departamento: 'CUSCO', provincia: 'LA CONVENCION', direccion: 'Jr. Libertad 4', habilitado: true },
+        // San Martín: «SAN MARTIN BELLAVISTA» no debe ganarle al distrito Tarapoto (pasó con una clienta real)
+        { id: 11, nombre: 'SAN MARTIN / SAN MARTIN / TARAPOTO / JR. TAHUANTINSUYO', lugar_over: 'JR. TAHUANTINSUYO', departamento: 'SAN MARTIN', provincia: 'SAN MARTIN', direccion: 'Jr. Tahuantinsuyo 158', habilitado: true },
+        { id: 12, nombre: 'SAN MARTIN / BELLAVISTA / BELLAVISTA / SAN MARTIN BELLAVISTA', lugar_over: 'SAN MARTIN BELLAVISTA', departamento: 'SAN MARTIN', provincia: 'BELLAVISTA', direccion: 'Jr. Bellavista 1', habilitado: true },
         // La Libertad: 12 agencias en 3 provincias (más de 10 → primero se pregunta la provincia)
         ...Array.from({ length: 12 }, (_, i) => {
           const [prov, dist] = i < 8 ? ['TRUJILLO', i < 5 ? 'TRUJILLO' : 'VICTOR LARCO'] : i < 11 ? ['PACASMAYO', 'PACASMAYO'] : ['CHEPEN', 'CHEPEN'];
@@ -1674,7 +1677,7 @@ try {
     assert.equal(pr.shape.items, 'lista de 2');
     assert.equal((await call('POST', '/api/admin/shalom/probar', { path: 'http://otro.com/x' })).status, 400, 'solo rutas del servicio');
     const sy = await call('POST', '/api/admin/shalom/agencias');
-    assert.equal(sy.total, 22);
+    assert.equal(sy.total, 24);
     let f = await call('GET', '/api/shalom/agencias?q=juliaca');
     assert.equal(f.agencias.length, 1);
     assert.equal(f.agencias[0].prov, 'SAN ROMÁN');
@@ -1767,6 +1770,12 @@ try {
     sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'Es para Quillabamba cusco' });
     cl = sm.messages.filter((m) => m.sender === 'bot').pop();
     assert.match(cl.body, /Agencias Shalom en QUILLABAMBA \(CUSCO\)/);
+    // «Tarapoto San Martín»: el distrito manda (antes salía solo «SAN MARTIN BELLAVISTA»)
+    await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
+    await conDatos(await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' }));
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'Jiménez Pimentel 922, Tarapoto San Martín' });
+    cl = sm.messages.filter((m) => m.sender === 'bot').pop();
+    assert.match(cl.body, /Agencias Shalom en TARAPOTO \(SAN MARTIN\)/);
     // Reglas para responder: todo junto, corto, sin «déjame confirmar»
     assert.match(iaCalls[iaCalls.length - 1].system, /CÓMO RESPONDER[\s\S]*déjame confirmar/);
     // Cobertura parcial (Ate después del Real Plaza…): no es agencia hasta saber en qué parte está
@@ -1886,6 +1895,34 @@ try {
     await call('PATCH', `/api/pedidos/${o.id}`, { status: 'confirmado' });
     L = (await call('GET', `/api/stores/${st.id}/chats?filter=confirmar`)).chats;
     assert.ok(!L.some((x) => x.id === ch.id && x.por_confirmar > 0) || before > 0, 'al confirmar sale de la lista');
+    await call('DELETE', `/api/pedidos/${o.id}`);
+  });
+  await step('✅ PROVINCIA crea el pedido con el formulario de la asesora; la lista solo muestra ASESOR cuando falta responder', async () => {
+    const me = await call('GET', '/api/me');
+    const st = me.stores[0];
+    await inbound('51911111130', 'wamid.AG1', 'Tarapoto');
+    const ch = await until(async () => (await call('GET', `/api/stores/${st.id}/chats?q=911111130`)).chats?.[0]);
+    const form = 'Shalom:  JR TAHUANTINSUYO Tarapoto San Martín 🚚📦\n\n➡️ Nombre: Adelmith García\n➡️ DNI: 41085893\n➡️ CEL: 949617856\n\nPedido: Leggins Cargo ✨\n\n✅ Cantidad:4\n✅ Talla: L\n✅ Color: Negro / Beige / Celeste bebe / Azul Noche\n\nMonto total: S/265.00\nAdelanto: S/100\nMonto restante: S/165.00';
+    await call('POST', `/api/chats/${ch.id}/messages`, { text: form });
+    const labels = (await call('GET', `/api/stores/${st.id}/labels`)).labels;
+    const prov = labels.find((l) => /✅\s*PROVINCIA/i.test(l.name));
+    const r = await call('PUT', `/api/chats/${ch.id}/labels/${prov.id}`);
+    assert.ok(r.pedido?.id, JSON.stringify(r));
+    const o = (await call('GET', `/api/pedidos/${r.pedido.id}`)).pedido;
+    assert.equal(o.modo, 'agencia');
+    assert.equal(o.status, 'validado');
+    assert.equal(o.adelanto, 100);
+    assert.match(o.sede || '', /TAHUANTINSUYO/);
+    assert.equal(o.dni, '41085893');
+    const items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items;
+    assert.equal(items.reduce((a, i) => a + i.cantidad, 0), 4, JSON.stringify(items));
+    // Volver a poner la etiqueta no crea otro pedido
+    await call('DELETE', `/api/chats/${ch.id}/labels/${prov.id}`);
+    const r2 = await call('PUT', `/api/chats/${ch.id}/labels/${prov.id}`);
+    assert.equal(r2.pedido?.ya, true);
+    // La bandeja trae quién escribió lo último (para mostrar ASESOR solo si falta responder)
+    const row = (await call('GET', `/api/stores/${st.id}/chats?q=911111130`)).chats[0];
+    assert.equal(row.last_sender, 'ase');
     await call('DELETE', `/api/pedidos/${o.id}`);
   });
   await step('ortografía: lo que escribe el equipo sale con mayúscula y tildes, sin cambiar palabras', async () => {

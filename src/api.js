@@ -16,6 +16,8 @@ import asistenteApi from './api-asistente.js';
 import carritosApi from './api-carritos.js';
 import respuestasApi, { tplShape } from './api-respuestas.js';
 import { fixSpelling } from './ortografia.js';
+import { draftFromChat, insertOrder, varsFromForm } from './orders.js';
+import { onOrderCreated } from './automations.js';
 import { loadSaldo } from './saldo.js';
 import { loadPlan } from './billing.js';
 import { mailReady, sendCode, checkCode, sendReset } from './correo.js';
@@ -806,7 +808,8 @@ async function attachLabels(db, chats) {
 
 const CHAT_COLS = `id, store_id, wa_id, name, profile_name, handler, unread, last_msg_at, last_preview, last_dir, last_inbound_at,
   ad_id, ad_headline, ad_source_url, referral_at, first_reply_at, notes, created_at, updated_at, bot_flow_id, bot_node, bot_wait, bot_paused, bot_vars,
-  (SELECT COUNT(*) FROM orders o WHERE o.chat_id = chats.id AND o.status IN ('nuevo', 'por_pagar')) AS por_confirmar`;
+  (SELECT COUNT(*) FROM orders o WHERE o.chat_id = chats.id AND o.status IN ('nuevo', 'por_pagar')) AS por_confirmar,
+  (SELECT sender FROM messages m WHERE m.chat_id = chats.id ORDER BY m.id DESC LIMIT 1) AS last_sender`;
 
 api.get('/stores/:id/chats', async (c) => {
   const st = await storeFor(c, c.req.param('id'));
@@ -897,15 +900,45 @@ api.post('/chats/:id/read', async (c) => {
 api.put('/chats/:id/labels/:labelId', async (c) => {
   const { chat, store } = await chatFor(c, c.req.param('id'));
   const u = await requireUser(c);
-  const l = await c.env.DB.prepare('SELECT id FROM labels WHERE id = ? AND store_id = ?').bind(Number(c.req.param('labelId')), store.id).first();
+  const l = await c.env.DB.prepare('SELECT id, name FROM labels WHERE id = ? AND store_id = ?').bind(Number(c.req.param('labelId')), store.id).first();
   if (!l) fail(404, 'Esa etiqueta no es de esta tienda.');
-  await c.env.DB.batch([
+  const [ins] = await c.env.DB.batch([
     c.env.DB.prepare('INSERT OR IGNORE INTO chat_labels (chat_id, label_id, user_id, created_at) VALUES (?, ?, ?, ?)').bind(chat.id, l.id, u.id, now()),
     c.env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(now(), chat.id),
   ]);
+  // ✅ LIMA / ✅ PROVINCIA = agendado: se crea el pedido con su formulario (y con eso sale la compra a Meta)
+  let pedido = null;
+  if (ins.meta?.changes && /✅\s*(LIMA|PROVINCIA)/i.test(l.name) && !chat.sim) {
+    pedido = await pedidoAlAgendar(c.env, store, chat.id, /PROVINCIA/i.test(l.name) ? 'provincia' : 'lima', u.id).catch((e) => ({ error: e.message }));
+  }
   await bump(c.env, store.id);
-  return c.json({ ok: true });
+  return c.json({ ok: true, pedido });
 });
+
+async function pedidoAlAgendar(env, store, chatId, zona, userId) {
+  const open = await env.DB.prepare("SELECT id, number FROM orders WHERE chat_id = ? AND status NOT IN ('cancelado') AND created_at > ? ORDER BY id DESC LIMIT 1").bind(chatId, now() - 3 * 864e5).first();
+  if (open) return { id: open.id, num: open.number, ya: true };
+  const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
+  let vars = {};
+  try {
+    vars = JSON.parse(chat.bot_vars || '{}') || {};
+  } catch {}
+  // El último formulario que se le mandó (de la IA o de la asesora) es lo que se acordó: manda sobre lo guardado
+  const f = await env.DB.prepare("SELECT body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' ORDER BY id DESC LIMIT 1").bind(chatId).first();
+  if (f?.body) Object.assign(vars, varsFromForm(f.body));
+  const draft = draftFromChat({ ...chat, bot_vars: JSON.stringify(vars) }, store);
+  if (zona === 'lima') draft.modo = 'lima';
+  else if (draft.modo === 'lima') draft.modo = 'agencia';
+  if (draft.modo !== 'lima' && !draft.ciudad) draft.ciudad = vars.destino || '';
+  const ad = String(f?.body || '').match(/adelanto\s*:\s*S\/\s*([\d.,]+)/i)?.[1];
+  if (ad) draft.adelanto = Number(ad.replace(',', '.')) || draft.adelanto;
+  draft.status = draft.modo === 'agencia' ? 'validado' : 'confirmado';
+  const o = await insertOrder(env, store, draft, { userId, source: 'etiqueta' });
+  if (!o) return { error: 'no se pudo guardar' };
+  await onOrderCreated(env, store, o);
+  const cap = await env.DB.prepare('SELECT capi_at FROM orders WHERE id = ?').bind(o.id).first();
+  return { id: o.id, num: o.number, capi: !!cap?.capi_at, capi_on: !!store.capi_on };
+}
 
 api.delete('/chats/:id/labels/:labelId', async (c) => {
   const { chat, store } = await chatFor(c, c.req.param('id'));

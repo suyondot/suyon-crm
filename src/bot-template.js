@@ -587,7 +587,7 @@ export function flowCargo() {
   const g = flowPantalon();
   const node = (id) => g.nodes.find((n) => n.id === id);
   node('inicio').trigger.keywords = ['Deseo mis Leggins Cargo', 'Deseo mis Leggings Cargo'];
-  node('inicio').labels = ['prod cargo'];
+  node('inicio').labels = [];
   node('precios').title = 'Leggings cargo y precios';
   node('precios').items = [f('image', 'precios'), t('✨ Leggings Cargo ✨\n\n💰 1 legging: S/109\n💰 2 leggings: S/169 → S/84.50 c/u\n🔥 3 leggings: S/209\n⭐ La más elegida\n\n🚚 Envío GRATIS a todo el Perú\n✅ Compra 100% segura')];
   node('talla').items = [{ ...t('¿Qué talla usas normalmente? 🤗 Elígela aquí abajo o escríbeme tu talla de jean 👇'), opciones: TALLA_OPCIONES_CARGO, boton: 'Elegir mi talla' }];

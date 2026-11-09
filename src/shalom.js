@@ -213,7 +213,9 @@ async function index(env) {
       if (/[-/]/.test(full)) for (const part of full.split(/\s*[-/]\s*/)) if (part.length > 2 && !places.has(`${lv}:${part}`)) places.set(`${lv}:${part}`, { lv, name: part, full });
     }
   }
-  for (const r of rows) for (const w of r.lw) if (![...['dist', 'prov', 'dep']].some((lv) => places.has(`${lv}:${w}`))) places.set(`lugar:${w}`, { lv: 'lugar', name: w, full: w });
+  // Palabras que son parte del nombre de un distrito/provincia/departamento («martin» de San Martín) no son un pueblo aparte
+  const placeWords = new Set([...places.values()].flatMap((p) => p.name.split(/[^a-z0-9]+/)));
+  for (const r of rows) for (const w of r.lw) if (!placeWords.has(w)) places.set(`lugar:${w}`, { lv: 'lugar', name: w, full: w });
   IDX = { at: st.at, n: st.n, rows, places: [...places.values()].sort((a, b) => b.name.length - a.name.length) };
   return IDX;
 }
@@ -246,7 +248,8 @@ export async function agenciesNear(env, text, sinCobertura = '', quiereAgencia =
     if (!best.has(h.name) || RANK[best.get(h.name)] < RANK[h.lv]) best.set(h.name, h.lv);
   }
   const usable = hits.filter((h) => best.get(h.name) === h.lv);
-  for (const lv of ['lugar', 'dist', 'prov', 'dep']) {
+  // El distrito manda («Tarapoto San Martín» → agencias de Tarapoto); luego pueblos (Quillabamba), provincia y departamento
+  for (const lv of ['dist', 'lugar', 'prov', 'dep']) {
     for (const p of usable.filter((h) => h.lv === lv)) {
       let rows = matchRows(p);
       // Si dijo también un departamento, quedarse con ese (Miraflores de Arequipa ≠ Miraflores de Lima)

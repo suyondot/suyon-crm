@@ -899,13 +899,18 @@ function renderItems() {
     return;
   }
   const rows = list.map((x) => {
-    const labs = x.labels.map(labelById).filter((l) => l && !/^Talla /.test(l.name)).sort((a, b) => (a.auto ? 1 : 0) - (b.auto ? 1 : 0)).slice(0, 3);
-    const pc = x.por_confirmar > 0;
-    return `<button class="item${pc ? ' pc' : ''}" data-open="${x.id}" aria-current="${x.id === S.openId}">${pc ? '<i class="pcdot" aria-hidden="true"></i>' : ''}
+    // En la lista solo van las etiquetas del equipo; de las que pone el bot, solo ASESOR y solo mientras espera respuesta del equipo
+    const all = x.labels.map(labelById).filter(Boolean);
+    const needs = !['ase', 'cel'].includes(x.last_sender || 'cli');
+    const labs = all.filter((l) => (l.auto ? /^ASESORA?$/i.test(l.name) && needs : true)).sort((a, b) => (/^ASESORA?$/i.test(a.name) ? 0 : 1) - (/^ASESORA?$/i.test(b.name) ? 0 : 1)).slice(0, 3);
+    // ✅ LIMA / ✅ PROVINCIA = ya agendado: todo el chat en verde
+    const done = all.some((l) => /✅\s*(LIMA|PROVINCIA)/i.test(l.name));
+    const pc = x.por_confirmar > 0 && !done;
+    return `<button class="item${pc ? ' pc' : ''}${done ? ' done' : ''}" data-open="${x.id}" aria-current="${x.id === S.openId}">${pc ? '<i class="pcdot" aria-hidden="true"></i>' : ''}
       <span class="av" style="background:${avColor(x.id)}">${esc(initials(chatName(x)))}</span>
       <span style="min-width:0"><span class="nm">${esc(chatName(x))}</span>
         <span class="lm">${x.last_dir === 'out' ? 'Tú: ' : ''}${esc(x.last_preview || '')}</span>
-        ${labs.length || x.ad_id || pc || x.bot_paused ? `<span class="row">${pc ? '<span class="pcb">🟡 Por confirmar</span>' : ''}${x.bot_paused && x.last_dir !== 'out' ? '<span class="bpz">⏸️ Bot en pausa</span>' : ''}${x.ad_id ? '<span class="who ia">Anuncio</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
+        ${labs.length || pc || (x.bot_paused && x.last_dir !== 'out') ? `<span class="row">${pc ? '<span class="pcb">🟡 Por confirmar</span>' : ''}${x.bot_paused && x.last_dir !== 'out' ? '<span class="bpz">⏸️ Bot en pausa</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
       <span class="meta"><span>${listTime(x.last_msg_at)}</span>${x.unread ? `<span class="unread">${x.unread}</span>` : ''}</span>
     </button>`;
   }).map((html, i) => ({ key: 'c' + list[i].id, sig: html, html }));
@@ -1575,7 +1580,12 @@ async function toggleTag(labelId) {
   renderTagbar();
   renderItems();
   try {
-    await api(on ? 'DELETE' : 'PUT', `/chats/${c.id}/labels/${labelId}`);
+    const r = await api(on ? 'DELETE' : 'PUT', `/chats/${c.id}/labels/${labelId}`);
+    // ✅ LIMA / ✅ PROVINCIA: el sistema crea el pedido con su formulario y avisa la compra a Meta
+    const p = r?.pedido;
+    if (p?.error) toast('Agendado, pero no pude crear el pedido: ' + p.error + '. Créalo con «+ Crear pedido» en la ficha.');
+    else if (p?.id && !p.ya) toast(`✅ Pedido #${p.num} creado${p.capi ? ' · compra enviada a Meta' : p.capi_on ? '' : ' (la compra a Meta está apagada en Configuración → Pedidos)'}`);
+    if (p?.id) renderFicha();
   } catch (e) {
     c.labels = on ? [...c.labels, labelId] : c.labels.filter((x) => x !== labelId);
     renderFicha();

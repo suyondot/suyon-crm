@@ -299,7 +299,7 @@ export function varsFromForm(text) {
     dni: /dni\s*:\s*([^\n]+)/i,
     celular: /(?:cel(?:ular)?)\s*:\s*([^\n]+)/i,
     direccion: /direcci[oó]n\s*:\s*([^\n]+)/i,
-    sede_shalom: /sede\s*:\s*([^\n]+)/i,
+    sede_shalom: /(?:sede|shalom)\s*:\s*([^\n]*[a-z][^\n]*)/i,
   };
   for (const [k, re] of Object.entries(map)) {
     const v = get(re);

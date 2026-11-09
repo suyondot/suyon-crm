@@ -776,7 +776,7 @@ async function callModel(env, settings, system, hist) {
     ({ res, data } = await fetchRetry((env.ANTHROPIC_API || 'https://api.anthropic.com') + '/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model, max_tokens: 1500, system, messages }),
+      body: JSON.stringify({ model, max_tokens: 2500, system, messages }),
     }));
     if (!res.ok) throw new Error(`La IA respondió con error: ${data?.error?.message || res.status}`);
     return { text: (data.content || []).filter((c) => c.type === 'text').map((c) => c.text).join(''), inTok: data.usage?.input_tokens || 0, outTok: data.usage?.output_tokens || 0, model };
@@ -804,6 +804,28 @@ function cleanText(t) {
   return x.slice(0, 4000);
 }
 
+// JSON que vino roto (una comilla o un salto de línea sin escapar, o cortado al final): se rescatan los mensajes
+// que sí están completos. Solo si hay al menos uno; si no, se trata como respuesta inválida.
+function salvageReply(s) {
+  if (!/"mensajes"\s*:/.test(s)) return null;
+  const unq = (x) => {
+    try {
+      return JSON.parse(`"${x.replace(/\r?\n/g, '\\n')}"`);
+    } catch {
+      return x.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+    }
+  };
+  const mensajes = [];
+  const re = /"texto"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"archivo"\s*:\s*(null|"[^"]*")\s*)?\}/g;
+  for (let m; (m = re.exec(s)); ) mensajes.push({ texto: unq(m[1]), archivo: m[2] && m[2] !== 'null' ? m[2].slice(1, -1) : null });
+  if (!mensajes.length) return null;
+  const caso = s.match(/"caso"\s*:\s*"(\w+)"/)?.[1] || null;
+  const datos = {};
+  const dz = s.match(/"datos"\s*:\s*\{([^{}]*)\}?/);
+  if (dz) for (const m of dz[1].matchAll(/"(\w{1,30})"\s*:\s*"((?:[^"\\]|\\.){1,200})"/g)) datos[m[1]] = unq(m[2]);
+  return { mensajes, caso, datos };
+}
+
 export function parseReply(text, validCases = null) {
   const s = String(text || '').replace(/```[a-z]*\n?|```/gi, '').trim();
   const a = s.indexOf('{');
@@ -813,7 +835,8 @@ export function parseReply(text, validCases = null) {
   try {
     j = JSON.parse(s.slice(a, b + 1));
   } catch {
-    return { valid: false, mensajes: [], caso: null, datos: {} };
+    j = salvageReply(s.slice(a));
+    if (!j) return { valid: false, mensajes: [], caso: null, datos: {} };
   }
   if (!j || typeof j !== 'object' || (!Array.isArray(j.mensajes) && !j.caso)) return { valid: false, mensajes: [], caso: null, datos: {} };
   const mensajes = (Array.isArray(j.mensajes) ? j.mensajes : [])
@@ -1111,7 +1134,7 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   if (!final && (await newestIn(env, chat.id)) > seenId) return { redo: true };
   if (!chat.sim) await env.DB.prepare('UPDATE chats SET bot_seen = MAX(COALESCE(bot_seen, 0), ?) WHERE id = ?').bind(seenId, chat.id).run();
   if (!reply) {
-    await alertFor(env, store, chat, { kind: 'ia', title: 'La IA respondió algo que no se puede mandar', body: 'No se envió nada a la clienta y pasó a la asesora. Respuesta de la IA: ' + clip(lastErr?.raw || '', 300) });
+    await alertFor(env, store, chat, { kind: 'ia', title: 'La IA respondió algo que no se puede mandar', body: 'No se envió nada a la clienta y pasó a la asesora. Respuesta de la IA: ' + clip(lastErr?.raw || '', 1500) });
     return { ok: false };
   }
   // Nunca mandar a la clienta un dato de pago que falta llenar
