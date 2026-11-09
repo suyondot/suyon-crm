@@ -1108,7 +1108,7 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   if (!cs && Number(settings.ia_follow_min) > 0 && String(settings.ia_follow_text || '').trim()) {
     await env.DB.prepare(
       `INSERT INTO bot_jobs (store_id, chat_id, flow_id, kind, node_id, cancel_on, run_at, created_at) VALUES (?, ?, ?, 'ia_follow', ?, 'reply', ?, ?)`
-    ).bind(store.id, chat.id, flow.id, node.id, now() + Number(settings.ia_follow_min) * MIN, now()).run();
+    ).bind(store.id, chat.id, flow.id, node.id, fitWindow(now() + Number(settings.ia_follow_min) * MIN, 8, 22, store.timezone), now()).run(); // nunca de madrugada
   }
   return { ok: true, caseId: cs?.id || null };
 }
