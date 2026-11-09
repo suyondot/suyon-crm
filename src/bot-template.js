@@ -320,6 +320,7 @@ export const TALLAS = [
 
 const t = (text) => ({ kind: 'text', text });
 export const TALLA_OPCIONES = ['XS · Jean 26-27', 'S · Jean 28-30', 'M · Jean 31-33', 'L · Jean 34-37', 'XL · Jean 38-40'];
+const COLORES_PANTALON = ['Negro', 'Gris claro', 'Gris oscuro', 'Perla', 'Vino', 'Azul noche', 'Beige', 'Varios colores · Te digo cuáles'];
 const f = (kind, asset, caption) => ({ kind, asset, ...(caption ? { caption } : {}) });
 
 export function flowPantalon() {
@@ -339,7 +340,7 @@ export function flowPantalon() {
       { id: 'talla', type: 'send', x: 360, y: 490, title: '¿Qué talla usas?',
         items: [{ ...t('¿Qué talla usas normalmente? 🤗 Elígela aquí abajo o escríbeme tu talla de jean 👇'), opciones: TALLA_OPCIONES, boton: 'Elegir mi talla' }], wait: true, save_to: 'respuesta', next: 'reconocer' },
       { id: 'reconocer', type: 'recognize', x: 360, y: 640, title: 'Reconocer talla', from: 'respuesta', var: 'talla', options: TALLAS, next: 'etiqueta_talla', next_other: 'ia' },
-      { id: 'etiqueta_talla', type: 'action', x: 360, y: 790, title: 'Etiqueta Talla X', ops: [{ op: 'add_label', label: 'Talla {talla}' }], next: 'colores' },
+      { id: 'etiqueta_talla', type: 'action', x: 360, y: 790, title: 'Etiqueta Talla X + seguimiento colores', ops: [{ op: 'add_label', label: 'Talla {talla}' }, { op: 'start_seq', seq: 'seg_colores' }], next: 'colores' },
       { id: 'colores', type: 'send', x: 360, y: 920, title: 'Colores de su talla',
         items: [f('image', 'colores-{talla}'), t('¡Perfecto! 😍 Estos son los colores disponibles en tu talla {talla} 👇 ¿Cuáles te gustan más? Llevando 3 te sale a solo S/58.33 c/u 🔥')],
         wait: true, save_to: 'respuesta', next: 'ia' },
@@ -368,6 +369,12 @@ export function flowPantalon() {
         { after_min: 40, items: [f('audio', 'audio-talla')] },
         { after_min: 180, from_h: 8, to_h: 22, items: [f('video', 'video-puesto'), { ...t('Así se ve puesto 😍 Formal para la oficina y cómodo todo el día 🙌\n\n¿Qué talla usas? Te muestro tus colores 👇'), opciones: TALLA_OPCIONES, boton: 'Elegir mi talla' }] },
         { after_min: 900, from_h: 8, to_h: 22, items: [f('image', 'fotos-pedidos'), t('Estos son algunos pedidos que salieron esta semana 📦💕\n\nTodavía puedes separar el tuyo con envío gratis a todo el Perú 🚚\n\nSolo dime tu talla de jean y te ayudo 😊')] },
+      ] },
+      // Vio los colores y no contestó (antes se quedaba callada para siempre: era donde más clientas se perdían)
+      { id: 'seg_colores', name: 'Seguimiento colores', cancel_on: 'reply', steps: [
+        { after_min: 20, items: [{ ...t('¿Cuál color te gustó más, preciosa? 😍 Elígelo aquí abajo o escríbeme los que quieres (puedes llevar varios) 👇'), opciones: COLORES_PANTALON, boton: 'Ver colores' }] },
+        { after_min: 180, from_h: 8, to_h: 22, items: [f('image', 'fotos-pedidos'), t('Así salieron hoy los pedidos 📦💕 ¿Te separo los tuyos? Dime tus colores y a qué distrito o ciudad te lo enviamos 🚚')] },
+        { after_min: 900, from_h: 8, to_h: 22, items: [t('¿Te animas, preciosa? 💕 Llevando 3 te sale a solo S/58.33 c/u con envío GRATIS 🚚 Dime tus colores y te lo separo hoy mismo 😊')] },
       ] },
       { id: 'rec_yape', name: 'Recordatorio Yape', cancel_on: 'image', steps: [
         { after_min: 60, from_h: 8, to_h: 22, items: [t('Preciosa, no te olvides de tu moradito 💜 Apenas me envíes la captura, separo tus pantalones 🙌')] },
@@ -574,6 +581,7 @@ export const TALLAS_CARGO = [
   { value: 'L', words: ['l', 'talla l', 'soy l', '34', '35', '36', '37', '38', '39', '40', '41', '42', 'largue', 'large', 'grande', 'xl', 'xxl'] },
 ];
 export const TALLA_OPCIONES_CARGO = ['XS · Jean 26-27', 'S · Jean 28-30', 'M · Jean 31-33', 'L · Jean 34 o más'];
+export const COLORES_CARGO = ['Negro', 'Azul noche', 'Beige', 'Celeste bebé', 'Los 4 colores · S/265 con envío gratis', 'Varios colores · Te digo cuáles'];
 
 export function flowCargo() {
   const g = flowPantalon();
@@ -591,6 +599,9 @@ export function flowCargo() {
   seg.steps[2].items = [f('video', 'video-puesto'), { ...t('Así se ve puesto 😍 Cómodo como legging, con estilo cargo 🙌\n\n¿Qué talla usas? Te muestro tus colores 👇'), opciones: TALLA_OPCIONES_CARGO, boton: 'Elegir mi talla' }];
   const rec = g.sequences.find((x) => x.id === 'rec_yape');
   rec.steps[0].items = [t('Preciosa, no te olvides de tu moradito 💜 Apenas me envíes la captura, separo tus leggings 🙌')];
+  const segc = g.sequences.find((x) => x.id === 'seg_colores');
+  segc.steps[0].items[0].opciones = COLORES_CARGO;
+  segc.steps[2].items = [t('¿Te animas, preciosa? 💕 Llevando 3 te sale a solo S/69.67 c/u con envío GRATIS 🚚 Dime tus colores y te lo separo hoy mismo 😊')];
   return g;
 }
 
@@ -1019,7 +1030,7 @@ export function flowAsistente(a, rubro) {
     nodes.push(
       { id: 'pregunta', type: 'send', x: 360, y: 490, title: '¿Qué talla usas?', items: [preguntaTalla], wait: true, save_to: 'respuesta', next: 'reconocer' },
       { id: 'reconocer', type: 'recognize', x: 360, y: 640, title: 'Reconocer talla', from: 'respuesta', var: 'talla', options: tallas.map(({ value, words }) => ({ value, words })), next: 'etiqueta_talla', next_other: 'ia' },
-      { id: 'etiqueta_talla', type: 'action', x: 360, y: 790, title: 'Etiqueta Talla X', ops: [{ op: 'add_label', label: 'Talla {talla}' }], next: 'colores' },
+      { id: 'etiqueta_talla', type: 'action', x: 360, y: 790, title: 'Etiqueta Talla X + seguimiento colores', ops: [{ op: 'add_label', label: 'Talla {talla}' }, { op: 'start_seq', seq: 'seg_colores' }], next: 'colores' },
       { id: 'colores', type: 'send', x: 360, y: 920, title: 'Colores de su talla',
         items: [{ kind: 'image', asset: 'colores-{talla}' }, t(`¡Perfecto! ${cerc ? '😍 ' : ''}Estos son los colores disponibles en talla {talla} 👇 ¿Cuáles te gustan más?${bestPromo(a, rubro) ? ` ${bestPromo(a, rubro)}` : ''}`)],
         wait: true, save_to: 'respuesta', next: 'ia' },
@@ -1045,6 +1056,16 @@ export function flowAsistente(a, rubro) {
       { after_min: 900, from_h: 8, to_h: 22, items: [o('image', 'fotos-pedidos'), t(`Estos son algunos pedidos que salieron esta semana 📦\n\nTodavía puedes separar el tuyo: ${a.envio.toLowerCase()} 🚚\n\n${pide}`)] },
     ] },
   ];
+  if (ropa) {
+    // Vio los colores y no contestó: se le pregunta de nuevo con los colores para tocar
+    const cols = [...new Set(String(a.colores || '').split(/,|·|;|\n|\s+y\s+/).map((x) => x.trim()).filter(Boolean))].slice(0, 9).map((c) => c.slice(0, 24));
+    sequences.push({ id: 'seg_colores', name: 'Seguimiento colores', cancel_on: 'reply', steps: [
+      { after_min: 20, items: [cols.length >= 2
+        ? { ...t(`¿Cuál color te gustó más? ${cerc ? '😍 ' : ''}Elígelo aquí abajo o escríbeme los que quieres (puedes llevar varios) 👇`), opciones: [...cols, 'Varios colores · Te digo cuáles'].slice(0, 10), boton: 'Ver colores' }
+        : t(`¿Cuáles colores te gustaron más? ${cerc ? '😍' : ''}`.trim())] },
+      { after_min: 180, from_h: 8, to_h: 22, items: [o('image', 'fotos-pedidos'), t(`Así salieron hoy los pedidos 📦 ¿Te separo el tuyo? Dime tus colores y a qué distrito o ciudad te lo enviamos 🚚`)] },
+    ] });
+  }
   if (a.provincia) sequences.push({ id: 'rec_pago', name: 'Recordatorio de pago', cancel_on: 'image', steps: [
     { after_min: 60, from_h: 8, to_h: 22, items: [t(`No te olvides de enviarme la captura de tu pago para separar tu pedido ${cerc ? '🙌' : ''}`.trim())] },
     { after_min: 180, from_h: 8, to_h: 22, items: [o('image', 'foto-despacho'), t('Así estamos despachando hoy por Shalom 📦 Envíame la captura y tu pedido sale en el próximo despacho.')] },

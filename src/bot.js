@@ -34,6 +34,7 @@ export const DEFAULT_SETTINGS = {
   ia_history: 50,
   ia_follow_min: 30,
   ia_follow_text: '¿Te quedó alguna duda, bella? 💕 Cuéntame y te ayudo con tu pedido 😊',
+  ia_follow_auto: 1, // 1 = el seguimiento pregunta lo que falta (talla, colores, distrito, datos, adelanto)
   pay_yape: '',
   pay_titular: '',
   pay_bcp: '',
@@ -62,6 +63,23 @@ export function fitWindow(t, fromH, toH, tz = DEFAULT_TZ) {
   return Date.UTC(p.y, p.mo - 1, p.d + (p.h >= toH ? 1 : 0), fromH) - off;
 }
 
+// Seguimiento de la IA según el paso en que se quedó la clienta (antes era siempre «¿Te quedó alguna duda?»)
+export function followText(settings, vars, { ropa = true, captura = false } = {}) {
+  const fixed = String(settings.ia_follow_text || '').trim();
+  if (Number(settings.ia_follow_auto) === 0) return fixed;
+  const has = (k) => !!String(vars[k] || '').trim();
+  const p = /preciosa|bella|linda/i.test(fixed) ? ', preciosa' : '';
+  if (has('sede_shalom') && !captura) return `¿Pudiste hacer el adelanto${p}? 💜 Apenas me mandes la captura, separo tu pedido y sale en el próximo despacho 📦`;
+  if (has('destino') || has('distrito')) {
+    if (!has('nombre') || !has('dni')) return `Para separar tu pedido solo me faltan tus datos${p} 😊\n\nNombre y apellido:\nDNI:`;
+    return fixed;
+  }
+  if (has('colores') || (!ropa && has('cantidad'))) return `¿A qué distrito o ciudad te lo enviamos${p}? 🚚 Así te digo cuándo te llega 😊`;
+  if (ropa && has('talla')) return `¿Cuáles colores te gustaron más${p}? 😍 Dime cuáles y te digo el total con tu promo 💕`;
+  if (ropa) return `¿Qué talla usas${p}? 😊 Dime tu talla de jean (28, 30, 32…) y te muestro los colores que te quedan 👇`;
+  return fixed;
+}
+
 export function norm(s) {
   return String(s || '')
     .toLowerCase()
@@ -77,8 +95,11 @@ function fill(text, vars) {
 }
 
 // Reconoce un valor (talla) sin IA. Si hay varios, se queda con el último de la lista (la talla más grande).
+// Como lo escriben a veces («esmol» = small, «midium» = medium…): se pasa a la palabra que está en la lista
+const HABLADO = { esmol: 'small', smol: 'small', smal: 'small', esmall: 'small', esmoll: 'small', smoll: 'small', midium: 'medium', mediun: 'medium', medim: 'medium', midiun: 'medium', larch: 'large', larg: 'large', larsh: 'large' };
+
 export function recognize(text, options) {
-  const n = norm(text);
+  const n = norm(text).split(' ').map((w) => HABLADO[w] || w).join(' ');
   if (!n) return null;
   const tokens = n.split(' ');
   const hits = new Set();
@@ -348,6 +369,8 @@ function checkCondition(node, vars, labels, chat) {
 export async function runFrom(env, ctx, store, chatId, flow, nodeId, vars, triggerMsgId = null) {
   let chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
   const settings = await loadSettings(env, store.id);
+  // Desde qué mensaje de la clienta se cuenta lo «nuevo» (para no perder lo que escriba mientras el bot envía)
+  let since = triggerMsgId || (chat.sim ? 0 : await newestIn(env, chatId));
   let id = nodeId;
   for (let step = 0; id && step < MAX_STEPS; step++) {
     const node = nodeOf(flow, id);
@@ -374,6 +397,20 @@ export async function runFrom(env, ctx, store, chatId, flow, nodeId, vars, trigg
         const ok = await sendItems(env, store, chat, node.items, meta);
         if (node.wait) {
           await saveState(env, chat.id, { bot_flow_id: flow.id, bot_node: node.id, bot_wait: 1, bot_vars: vars, handler: 'bot' });
+          // La clienta escribió mientras el bot mandaba (ej. «Precio??» entre la foto y la pregunta de talla):
+          // ese mensaje llegó cuando el bot todavía no esperaba nada y se perdía. Se toma como su respuesta.
+          const late = chat.sim ? null : await lateReplies(env, chat.id, since);
+          if (late) {
+            const cl = await env.DB.prepare('UPDATE chats SET bot_wait = 0 WHERE id = ? AND bot_wait = 1 AND bot_node = ?').bind(chat.id, node.id).run();
+            if (cl.meta?.changes) {
+              await cancelJobs(env, chat.id, 'reply');
+              vars[node.save_to || 'respuesta'] = late.text;
+              await saveState(env, chat.id, { bot_vars: vars });
+              triggerMsgId = since = late.id;
+              id = node.next;
+              break;
+            }
+          }
           return;
         }
         id = ok ? node.next : null;
@@ -541,6 +578,9 @@ export async function onInbound(env, ctx, store, chatId, msg, { sim = false } = 
       const node = nodeOf(flow, chat.bot_node);
       const vars = JSON.parse(chat.bot_vars || '{}');
       if (node && chat.bot_wait === 1) {
+        // Se «toma» la espera: si el bot ya la tomó con este mensaje (llegó mientras enviaba), no se responde dos veces
+        const cl = await env.DB.prepare('UPDATE chats SET bot_wait = 0 WHERE id = ? AND bot_wait = 1 AND bot_node = ?').bind(chat.id, node.id).run();
+        if (!cl.meta?.changes) return;
         vars[node.save_to || 'respuesta'] = text;
         await saveState(env, chat.id, { bot_wait: 0, bot_vars: vars });
         return runFrom(env, ctx, store, chat.id, flow, node.next, vars, msg.id);
@@ -668,7 +708,7 @@ Responde SOLO con un JSON válido, sin texto antes ni después:
 - "mensajes": cada elemento es un mensaje de WhatsApp separado, en orden. "archivo": la clave de un archivo para adjuntar en ese mensaje, o null. Si solo envías el archivo, deja "texto" vacío.
 - "caso": si la clienta está en uno de estos casos, pon su clave exacta; si no, null.
 ${cases || '(sin casos)'}
-- "datos": lo que la clienta ya dijo de: talla, colores, cantidad, destino, distrito, nombre, celular, dni, direccion, sede_shalom. Solo lo que dijo; no inventes.${settings.language && settings.language !== 'es' && LANGS[settings.language] ? `\n\nIDIOMA: escribe los "texto" siempre en ${LANGS[settings.language]}.` : ''}`;
+- "datos": lo que la clienta ya dijo de: talla, colores, cantidad, destino, distrito, nombre, celular, dni, direccion, sede_shalom. Solo lo que dijo; no inventes. Cada vez que elija o cambie colores, pon en "colores" TODOS los que lleva (ej. "Negro, 2 Beige") y en "cantidad" el total de prendas.${settings.language && settings.language !== 'es' && LANGS[settings.language] ? `\n\nIDIOMA: escribe los "texto" siempre en ${LANGS[settings.language]}.` : ''}`;
 }
 
 function historyFor(rows) {
@@ -856,6 +896,22 @@ export function coloresNoPedidos(colores, textos) {
 const LOCK_MS = 60 * 1000; // un candado más viejo que esto se considera abandonado
 const newestIn = async (env, chatId) => (await env.DB.prepare("SELECT MAX(id) AS id FROM messages WHERE chat_id = ? AND direction = 'in'").bind(chatId).first())?.id || 0;
 
+// Mensajes de la clienta que llegaron después de `since` y que la IA todavía no leyó (o null)
+async function lateReplies(env, chatId, since) {
+  const c = await env.DB.prepare('SELECT bot_seen FROM chats WHERE id = ?').bind(chatId).first();
+  const from = Math.max(Number(since) || 0, c?.bot_seen || 0);
+  if (!from) return null;
+  const { results } = await env.DB.prepare(
+    "SELECT id, type, body, transcript FROM messages WHERE chat_id = ? AND direction = 'in' AND id > ? ORDER BY id LIMIT 10"
+  ).bind(chatId, from).all();
+  if (!results.length) return null;
+  const text = results
+    .map((m) => String(m.transcript || m.body || '').trim() || (m.type === 'audio' ? '[nota de voz]' : m.type === 'image' ? '[foto]' : ''))
+    .filter(Boolean)
+    .join('\n');
+  return { id: results[results.length - 1].id, text };
+}
+
 // Una sola respuesta de la IA a la vez por chat. Si otra está pensando, se espera a que termine;
 // si esa ya leyó este mensaje, no se responde de nuevo (antes se cruzaban y salía «Estamos validando…»).
 async function lockIA(env, chatId, msgId, maxWaitMs = 22000) {
@@ -960,6 +1016,9 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   const { results: arows } = await env.DB.prepare('SELECT key FROM bot_assets WHERE store_id = ?').bind(store.id).all();
   let system = buildSystem(await withPlan(env, settings), node, labels, vars, arows.map((a) => a.key));
   system += `\n\n## CÓMO RESPONDER (reglas del sistema)
+- Si la clienta te hizo una pregunta, respóndela PRIMERO (en tu primer mensaje) y recién después pide lo que falta. Nunca la ignores ni empieces con «Disculpa» o «Perdón».
+- No repitas un mensaje que ya le mandaste igual (por ejemplo, el pedido de datos o el adelanto): si falta algo, pídelo en una línea corta.
+- Si pregunta si es contra entrega, contéstale claro según tu guía y su destino (Lima o provincia) antes de seguir; si aún no sabes su destino, explica las dos formas en 2 líneas.
 - Lee TODOS los mensajes de la clienta desde tu última respuesta${nuevos.length > 1 ? ` (esta vez son ${nuevos.length}: ${nuevos.map((t) => `«${clip(t, 80)}»`).join(', ')})` : ''} y respóndelos juntos, en orden, sin dejar ninguno.
 - Los precios ya se los mandó el bot al inicio. Si pregunta el precio, contesta en 1 o 2 líneas (la promo o el precio de la cantidad que quiere) y sigue con el paso que toca. No repitas la tabla completa.
 - Si pregunta qué talla le queda, pídele su talla de jean (o su peso y estatura) y recomiéndale una. No le muestres colores hasta saber su talla.
@@ -1132,7 +1191,7 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   }
   if (JSON.stringify(ag) !== (chat.bot_ag || '{}')) await env.DB.prepare('UPDATE chats SET bot_ag = ? WHERE id = ?').bind(JSON.stringify(ag), chat.id).run();
   // Si no responde, la IA sigue sola una vez
-  if (!cs && Number(settings.ia_follow_min) > 0 && String(settings.ia_follow_text || '').trim()) {
+  if (!cs && Number(settings.ia_follow_min) > 0 && (Number(settings.ia_follow_auto) !== 0 || String(settings.ia_follow_text || '').trim())) {
     await env.DB.prepare(
       `INSERT INTO bot_jobs (store_id, chat_id, flow_id, kind, node_id, cancel_on, run_at, created_at) VALUES (?, ?, ?, 'ia_follow', ?, 'reply', ?, ?)`
     ).bind(store.id, chat.id, flow.id, node.id, fitWindow(now() + Number(settings.ia_follow_min) * MIN, 8, 22, store.timezone), now()).run(); // nunca de madrugada
@@ -1203,7 +1262,9 @@ export async function runJob(env, j) {
     const ok = await sendItems(env, store, chat, st.items, { flowId: flow.id, node: `seq:${seq.id}:${j.step}`, vars, gap: sim ? 0 : undefined });
     if (!ok) await cancelJobs(env, chat.id, seq.id); // ventana cerrada: no tiene sentido seguir
   } else if (j.kind === 'ia_follow') {
-    await botSend(env, store, chat, { kind: 'text', text: settings.ia_follow_text }, { flowId: flow.id, node: `${j.node_id}:seguimiento`, sender: 'ia', vars });
+    const captura = !!(await env.DB.prepare("SELECT 1 FROM messages WHERE chat_id = ? AND direction = 'in' AND type IN ('image', 'document') LIMIT 1").bind(chat.id).first());
+    const text = followText(settings, vars, { ropa: store.rubro !== 'simple', captura });
+    if (text) await botSend(env, store, chat, { kind: 'text', text }, { flowId: flow.id, node: `${j.node_id}:seguimiento`, sender: 'ia', vars });
   } else if (j.kind === 'ia_again') {
     // Quedó un mensaje sin responder porque otra respuesta de la IA estaba en curso
     if ((await newestIn(env, chat.id)) > (chat.bot_seen || 0) && j.node_id) await runFrom(env, null, store, chat.id, flow, j.node_id, vars, null);

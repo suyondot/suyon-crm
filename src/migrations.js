@@ -638,6 +638,11 @@ export const MIGRATIONS = [
       `CREATE INDEX IF NOT EXISTS orders_track ON orders (guia_at) WHERE guia IS NOT NULL AND guia_codigo IS NOT NULL AND modo = 'agencia' AND status IN ('validado', 'enviado', 'en_camino', 'en_agencia')`,
     ],
   },
+  {
+    id: 27,
+    name: 'seguimiento de la IA según el paso (talla, colores, distrito, datos, adelanto)',
+    sql: [`ALTER TABLE bot_settings ADD COLUMN ia_follow_auto INTEGER`],
+  },
 ];
 
 let ready = null;

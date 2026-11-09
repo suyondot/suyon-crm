@@ -36,6 +36,7 @@ const SETTING_RULES = {
   ia_history: (v) => Math.min(Math.max(Math.round(Number(v) || 50), 4), 100),
   ia_follow_min: (v) => Math.min(Math.max(Math.round(Number(v) || 0), 0), 1440),
   ia_follow_text: (v) => clip(String(v || ''), 1000),
+  ia_follow_auto: (v) => (v ? 1 : 0),
   pay_yape: (v) => clip(String(v || '').trim(), 40),
   pay_titular: (v) => clip(String(v || '').trim(), 80),
   pay_bcp: (v) => clip(String(v || '').trim(), 40),

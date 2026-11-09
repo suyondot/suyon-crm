@@ -610,8 +610,18 @@ try {
   await step('reconocer talla sin IA (frases de Botcake y números de jean)', async () => {
     const { recognize, fitWindow, parseReply } = await import('../src/bot.js');
     const { TALLAS } = await import('../src/bot-template.js');
-    const cases = { 'M': 'M', 'talla m': 'M', 'Soy M': 'M', '32': 'M', 'mediano': 'M', 'uso talla 30 porfa': 'S', 'small': 'S', '26': 'XS', 'XL': 'XL', '42': 'XL', 'xxl': 'XL', 'largue': 'L', '28 o 31': 'M', 'Hola, quiero info': null, 'sí, me gusta': null, 'precio?': null };
+    const cases = { 'M': 'M', 'talla m': 'M', 'Soy M': 'M', '32': 'M', 'mediano': 'M', 'uso talla 30 porfa': 'S', 'small': 'S', '26': 'XS', 'XL': 'XL', '42': 'XL', 'xxl': 'XL', 'largue': 'L', '28 o 31': 'M', 'Hola, quiero info': null, 'sí, me gusta': null, 'precio?': null, 'Kieroven esmol': 'S', 'midium': 'M' };
     for (const [t, v] of Object.entries(cases)) assert.equal(recognize(t, TALLAS), v, t);
+    // Seguimiento de la IA según el paso
+    const { followText } = await import('../src/bot.js');
+    const fx = { ia_follow_text: '¿Te quedó alguna duda, bella?' };
+    assert.match(followText(fx, {}), /talla/);
+    assert.match(followText(fx, { talla: 'M' }), /colores/);
+    assert.match(followText(fx, { talla: 'M', colores: 'Negro' }), /distrito o ciudad/);
+    assert.match(followText(fx, { talla: 'M', colores: 'Negro', destino: 'Piura' }), /Nombre y apellido/);
+    assert.match(followText(fx, { destino: 'Piura', nombre: 'Ana', dni: '12345678', sede_shalom: 'X' }), /adelanto/);
+    assert.equal(followText({ ...fx, ia_follow_auto: 0 }, {}), fx.ia_follow_text);
+    assert.equal(followText(fx, {}, { ropa: false }), fx.ia_follow_text);
     const t = Date.UTC(2026, 10, 3, 4, 0); // 11 p. m. en Lima
     assert.equal(new Date(fitWindow(t, 8, 22) - 5 * 3600e3).getUTCHours(), 8);
     assert.equal(fitWindow(t, 8, 22), Date.UTC(2026, 10, 3, 13, 0), 'Lima: 8 a. m. = 13:00 UTC');
@@ -855,6 +865,19 @@ try {
     assert.ok(!(await msgsOf(c.id)).some((m) => /Estamos validando/.test(m.body || '')));
     await new Promise((r) => setTimeout(r, 2500));
   });
+  await step('la clienta escribe mientras el bot manda la foto y los precios: no se pierde su mensaje', async () => {
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { test_numbers: '911111111, 911111112, 911111113, 911111114, 911111115, 911111116, 911111120' });
+    const n = iaCalls.length;
+    await inbound('51911111120', 'wamid.Y1', 'hola', { referral: { source_id: '1', source_type: 'ad', ctwa_clid: 'y' } });
+    await new Promise((r) => setTimeout(r, 250));
+    await inbound('51911111120', 'wamid.Y2', 'cuanto cuesta 3??');
+    await until(async () => iaCalls.slice(n).some((b) => /cuanto cuesta 3/.test(JSON.stringify(b.messages))), 20000);
+    const c = await until(async () => { const x = await chatOf('51911111120'); return x?.bot_node === 'bucle' && x.bot_wait === 1 ? x : null; });
+    const ms = await msgsOf(c.id);
+    assert.equal(ms.filter((m) => /Qué talla usas/.test(m.body || '')).length, 1, 'la pregunta de talla sale una vez');
+    assert.equal(iaCalls.slice(n).filter((b) => /cuanto cuesta 3/.test(JSON.stringify(b.messages))).length >= 1, true);
+    await new Promise((r) => setTimeout(r, 1500));
+  });
   await step('clienta que vuelve por un anuncio nuevo: el bot la atiende otra vez; talla en el 1er mensaje; Yape tras el formulario', async () => {
     await call('PATCH', `/api/stores/${store.id}/bot/settings`, { test_numbers: '911111111, 911111112, 911111113, 911111114, 911111115, 911111116, 911111117, 911111118' });
     const ad = { referral: { source_id: '2', source_type: 'ad', ctwa_clid: 'v' } };
@@ -954,8 +977,9 @@ try {
     assert.equal(s.chat.vars.talla, 'M');
     assert.ok(s.labels.some((l) => l.name === 'Talla M'));
     assert.ok(s.messages.some((m) => m.sender === 'sys' && /colores-M/.test(m.body)), 'el aviso sale dentro del simulador');
-    assert.equal(s.jobs.length, 0, 'al responder se cancela el seguimiento');
+    assert.ok(s.jobs.length && s.jobs.every((j) => /Seguimiento colores/.test(j.label)), 'al responder se cancela el de talla y empieza el de colores: ' + JSON.stringify(s.jobs));
     s = await call('POST', `/api/stores/${store.id}/sim/send`, { text: 'me gusta el negro' });
+    assert.ok(!s.jobs.some((j) => /Seguimiento colores/.test(j.label)), 'eligió colores: se cancela el seguimiento de colores');
     assert.equal(s.messages.filter((m) => m.sender === 'ia').length, 2);
     assert.equal(s.chat.node, 'bucle');
     s = await call('POST', `/api/stores/${store.id}/sim/send`, { text: 'pásame la cuenta bcp' });
@@ -980,7 +1004,7 @@ try {
     const av = await call('GET', `/api/stores/${store.id}/avisos`);
     assert.ok(!av.events.some((e) => !e.read_at && /colores-M|datos de pago/.test(e.title)), 'los avisos del simulador no van a Avisos');
     const f = await call('GET', `/api/bot/flows/${flowId}`);
-    assert.equal(f.stats.precios.sent, 9, 'los números por bloque no cuentan el simulador');
+    assert.equal(f.stats.precios.sent, 10, 'los números por bloque no cuentan el simulador');
     assert.equal((await call('POST', `/api/stores/${store.id}/sim/send`, { text: '' })).status, 400);
     await call('PATCH', `/api/stores/${store.id}/bot/settings`, { bot_on: true });
   });
