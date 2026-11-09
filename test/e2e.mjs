@@ -622,6 +622,9 @@ try {
     assert.match(followText(fx, { talla: 'M' }), /colores/);
     assert.match(followText(fx, { talla: 'M', colores: 'Negro' }), /distrito o ciudad/);
     assert.match(followText(fx, { talla: 'M', colores: 'Negro', destino: 'Piura' }), /Nombre y apellido/);
+    assert.match(followText(fx, { talla: 'L', destino: 'Huancavelica' }), /colores/, 'sin colores pregunta colores aunque ya dijo su ciudad');
+    assert.match(followText(fx, { talla: 'L', colores: 'Negro', destino: 'Lima' }), /En qué distrito/);
+    assert.match(followText(fx, { talla: 'L', colores: 'Negro', distrito: 'Comas' }), /Dirección/);
     assert.match(followText(fx, { destino: 'Piura', nombre: 'Ana', dni: '12345678', sede_shalom: 'X' }), /adelanto/);
     assert.equal(followText({ ...fx, ia_follow_auto: 0 }, {}), fx.ia_follow_text);
     assert.equal(followText(fx, {}, { ropa: false }), fx.ia_follow_text);
@@ -694,13 +697,10 @@ try {
     assert.deepEqual(out.map((m) => m.type), ['image', 'text', 'text']);
     assert.ok(out.every((m) => m.sender === 'bot' && m.status === 'sent'));
     assert.match(out[2].body, /Qué talla usas/);
-    // la pregunta de talla sale como lista para tocar (XS a XL con su talla de jean)
-    const sentList = calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.to === '51911111111' && x.body?.type === 'interactive').pop();
-    assert.equal(sentList.body.interactive.type, 'list');
-    assert.deepEqual(sentList.body.interactive.action.sections[0].rows.map((r) => r.title), ['XS', 'S', 'M', 'L', 'XL']);
-    assert.equal(sentList.body.interactive.action.sections[0].rows[2].description, 'Jean 31-33');
-    assert.equal(sentList.body.interactive.action.button, 'Elegir mi talla');
-    assert.deepEqual(out[2].extra?.opciones?.length, 5);
+    // la pregunta de talla va como texto, sin botones (como en su Botcake: a las clientas no les gustan los botones)
+    assert.match(out[2].body, /XS, S, M, L, XL o tu talla de jean/);
+    assert.ok(!out[2].extra?.opciones, 'sin botones');
+    assert.ok(!calls.some((x) => x.path === `${PHONE_ID}/messages` && x.body?.to === '51911111111' && x.body?.type === 'interactive'));
     const l = await call('GET', `/api/stores/${store.id}/labels`);
     assert.ok(l.labels.some((x) => x.name === 'pantalón prod'));
   });

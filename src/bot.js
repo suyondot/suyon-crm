@@ -70,13 +70,15 @@ export function followText(settings, vars, { ropa = true, captura = false } = {}
   const has = (k) => !!String(vars[k] || '').trim();
   const p = /preciosa|bella|linda/i.test(fixed) ? ', preciosa' : '';
   if (has('sede_shalom') && !captura) return `¿Pudiste hacer el adelanto${p}? 💜 Apenas me mandes la captura, separo tu pedido y sale en el próximo despacho 📦`;
-  if (has('destino') || has('distrito')) {
-    if (!has('nombre') || !has('dni')) return `Para separar tu pedido solo me faltan tus datos${p} 😊\n\nNombre y apellido:\nDNI:`;
-    return fixed;
-  }
-  if (has('colores') || (!ropa && has('cantidad'))) return `¿A qué distrito o ciudad te lo enviamos${p}? 🚚 Así te digo cuándo te llega 😊`;
-  if (ropa && has('talla')) return `¿Cuáles colores te gustaron más${p}? 😍 Dime cuáles y te digo el total con tu promo 💕`;
-  if (ropa) return `¿Qué talla usas${p}? 😊 Dime tu talla de jean (28, 30, 32…) y te muestro los colores que te quedan 👇`;
+  // Se pregunta lo que falta EN ORDEN: talla → colores → distrito/ciudad → datos (aunque ya haya dicho su ciudad)
+  if (ropa && !has('talla')) return `¿Qué talla usas${p}? 😊 Dime tu talla de jean (28, 30, 32…) y te muestro los colores que te quedan 👇`;
+  if (ropa && !has('colores')) return `¿Cuáles colores te gustaron más${p}? 😍 Dime cuáles y te digo el total con tu promo 💕`;
+  if (!ropa && !has('cantidad')) return fixed;
+  const dest = String(vars.destino || '').trim();
+  const lima = /\b(lima|callao)\b/i.test(dest) || (has('distrito') && !dest);
+  if (!has('distrito') && (!dest || /^(lima|callao)( metropolitana)?$/i.test(dest))) return dest ? `¿En qué distrito te lo llevamos${p}? 🛵 Así te digo si te llega hoy o mañana 😊` : `¿A qué distrito o ciudad te lo enviamos${p}? 🚚 Así te digo cuándo te llega 😊`;
+  if (lima && (!has('nombre') || !has('direccion'))) return `Para agendar tu pedido solo me faltan tus datos${p} 😊\n\nNombre y apellido:\nDirección:`;
+  if (!lima && (!has('nombre') || !has('dni'))) return `Para separar tu pedido solo me faltan tus datos${p} 😊\n\nNombre y apellido:\nDNI:`;
   return fixed;
 }
 
@@ -390,6 +392,8 @@ export async function runFrom(env, ctx, store, chatId, flow, nodeId, vars, trigg
           delete vars.__primer;
           if (nx?.type === 'recognize' && (nx.from || 'respuesta') === (node.save_to || 'respuesta') && recognize(primer, nx.options || [])) {
             vars[node.save_to || 'respuesta'] = primer;
+            // Ya respondió lo que se iba a preguntar: el seguimiento de esa pregunta («dime tu talla») no va
+            await cancelJobs(env, chat.id, 'reply');
             id = node.next;
             break;
           }
@@ -904,7 +908,19 @@ const COLOR_GRUPOS = [
 const nrm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 export function coloresNoPedidos(colores, textos) {
   const t = ` ${nrm(textos.join(' ')).replace(/[^a-z0-9]+/g, ' ')} `;
-  const has = (w) => w.length > 2 && t.includes(` ${w} `);
+  const words = t.trim().split(' ');
+  // Con faltas de ortografía («nrgro», «beig»): una letra de diferencia cuenta en palabras de 5 letras o más
+  const near = (a, b) => {
+    if (Math.abs(a.length - b.length) > 1 || b.length < 5) return false;
+    let i = 0, j = 0, d = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] === b[j]) { i++; j++; continue; }
+      if (++d > 1) return false;
+      if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; }
+    }
+    return d + (a.length - i) + (b.length - j) <= 1;
+  };
+  const has = (w) => w.length > 2 && (t.includes(` ${w} `) || words.some((x) => near(x, w)));
   const out = [];
   for (const c of String(colores || '').split(/,|\sy\s|\+|\/|;|\n/).map((x) => x.trim()).filter(Boolean)) {
     const ws = nrm(c).replace(/^\d+\s*(x\s*)?/, '').split(/[^a-z0-9]+/).filter((w) => w.length > 2);
