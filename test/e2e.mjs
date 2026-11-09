@@ -859,9 +859,11 @@ try {
     const { flowCargo, PROMPT_CARGO, TALLAS_CARGO } = await import('../src/bot-template.js');
     const { recognize } = await import('../src/bot.js');
     assert.equal(recognize('talla 40', TALLAS_CARGO), 'L');
-    assert.equal(recognize('mi talla de jean es 34', TALLAS_CARGO), 'M');
+    assert.equal(recognize('mi talla de jean es 33', TALLAS_CARGO), 'M');
     assert.equal(recognize('T 30', TALLAS_CARGO), 'S');
     assert.equal(recognize('talla 27', TALLAS_CARGO), 'XS');
+    assert.equal(recognize('31', TALLAS_CARGO), 'M');
+    assert.equal(recognize('mi jean es 34', TALLAS_CARGO), 'L');
     assert.equal(recognize('XS', TALLAS_CARGO), 'XS');
     assert.equal(recognize('S', TALLAS_CARGO), 'S');
     assert.ok(!/pantal[oó]n(?! formal stretch)/i.test(PROMPT_CARGO.replace(/Pantalón Formal/g, '')), 'el prompt del cargo no habla de pantalón');

@@ -416,7 +416,7 @@ TONO: cálido y cercano (preciosa, linda, bella), emojis, mensajes de 2-4 línea
 1. TALLA
 - Si da talla o número de jean: confírmala ("¡Perfecto! Tu talla es la M 😍"), adjunta la IMAGEN de colores de SU talla (nunca escribas la lista de colores) y "¿Cuáles te gustan más? Llevando 3 te sale a solo S/69.67 c/u 🔥".
 - Dos tallas o caderona: la más grande ("Te recomiendo la M para que te quede cómoda 😊").
-- No sabe: envía la TABLA DE TALLAS y "Cuéntame qué número de jean usas y te digo tu talla perfecta 😊". Luego define la talla, confírmala y adjunta su IMAGEN de colores. Nunca vuelvas a preguntar "¿qué talla usas?".
+- No sabe: envía la TABLA DE TALLAS y "Cuéntame qué número de jean usas o tu cintura en cm y te digo tu talla perfecta 😊". Luego define la talla, confírmala y adjunta su IMAGEN de colores. Nunca vuelvas a preguntar "¿qué talla usas?".
 - Si cambia de talla: adjunta la IMAGEN de colores de la nueva talla.
 
 2. COLORES
@@ -546,7 +546,12 @@ Sinónimos: azul/azul marino → Azul noche · celeste → Celeste bebé · crem
 
 PRECIOS (envío gratis): 1: S/109 · 2: S/169 (S/84.50 c/u) · 3: S/209 (S/69.67 c/u) ⭐ la más elegida. Si pregunta "precio", da solo estos tres. Si pide 4: S/265. 5 o más o precio por mayor: pasa a asesor.
 
-TALLAS (jean): 26-28 XS · 29-31 S · 32-34 M · 35-37 L. Menos de 26 → XS. "Mediano" = M. 38 o más → L ("Te recomiendo la L, es stretch y te va a quedar cómoda 😊"). Nunca digas que no le quedará.
+TALLAS:
+- XS: jean 26-27 · cintura 62-67 cm · largo 97 cm
+- S: jean 28-30 · cintura 68-79 cm · largo 100 cm
+- M: jean 31-33 · cintura 77-89 cm · largo 103 cm
+- L: jean 34-37 · cintura 83-96 cm · largo 105 cm
+Menos de 26 → XS. "Mediano" = M. 38 o más → L ("Te recomiendo la L, es stretch y te va a quedar cómoda 😊"). Si está entre 2 tallas (o su cintura cae en dos), elige la más grande. La tela es stretch: cede hasta 10 cm más del máximo. Nunca digas que no le quedará.
 
 ## ARCHIVOS (adjunta con su clave)
 - Tabla de tallas: tabla-tallas
@@ -559,13 +564,14 @@ TALLAS (jean): 26-28 XS · 29-31 S · 32-34 M · 35-37 L. Menos de 26 → XS. "M
 - Video confianza: video-confianza`;
 
 // Talla de jean del cargo (decisión de Jordan: 38 o más → L)
+// Tabla de tallas del cargo (la de Jordan, 8 nov 2026): jean · cintura · largo. 38 o más → L.
 export const TALLAS_CARGO = [
-  { value: 'XS', words: ['xs', 'talla xs', 'soy xs', '24', '25', '26', '27', '28', 'extra small', 'extra chica', 'muy chica'] },
-  { value: 'S', words: ['s', 'talla s', 'soy s', '29', '30', '31', 'small', 'chica', 'pequeña'] },
-  { value: 'M', words: ['m', 'talla m', 'soy m', '32', '33', '34', 'mediano', 'mediana', 'medium'] },
-  { value: 'L', words: ['l', 'talla l', 'soy l', '35', '36', '37', '38', '39', '40', '41', '42', 'largue', 'large', 'grande', 'xl', 'xxl'] },
+  { value: 'XS', words: ['xs', 'talla xs', 'soy xs', '24', '25', '26', '27', 'extra small', 'extra chica', 'muy chica'] },
+  { value: 'S', words: ['s', 'talla s', 'soy s', '28', '29', '30', 'small', 'chica', 'pequeña'] },
+  { value: 'M', words: ['m', 'talla m', 'soy m', '31', '32', '33', 'mediano', 'mediana', 'medium'] },
+  { value: 'L', words: ['l', 'talla l', 'soy l', '34', '35', '36', '37', '38', '39', '40', '41', '42', 'largue', 'large', 'grande', 'xl', 'xxl'] },
 ];
-export const TALLA_OPCIONES_CARGO = ['XS · Jean 26-28', 'S · Jean 29-31', 'M · Jean 32-34', 'L · Jean 35 o más'];
+export const TALLA_OPCIONES_CARGO = ['XS · Jean 26-27', 'S · Jean 28-30', 'M · Jean 31-33', 'L · Jean 34 o más'];
 
 export function flowCargo() {
   const g = flowPantalon();
