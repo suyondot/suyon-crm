@@ -335,9 +335,12 @@ export async function pendingCounts(db, storeIds) {
   const [{ results: ev }, { results: ase }] = await Promise.all([db.prepare(
     `SELECT store_id, COUNT(*) AS n FROM notifications WHERE read_at IS NULL AND store_id IN (${inList(storeIds.length)}) GROUP BY store_id`
   ).bind(...storeIds).all(), db.prepare(
-    `SELECT c.store_id, COUNT(*) AS n FROM chats c JOIN chat_labels cl ON cl.chat_id = c.id JOIN labels l ON l.id = cl.label_id
-     WHERE l.name = 'ASESOR' AND c.sim = 0 AND ${NEEDS_ASESORA} AND c.store_id IN (${inList(storeIds.length)}) GROUP BY c.store_id`
-  ).bind(...storeIds).all()]);
+    // Solo chats con movimiento en los últimos 7 días (usa el índice por tienda y fecha; antes recorría TODOS los chats con ASESOR)
+    `SELECT c.store_id, COUNT(*) AS n FROM chats c
+     WHERE c.store_id IN (${inList(storeIds.length)}) AND c.last_msg_at > ? AND c.sim = 0
+       AND EXISTS (SELECT 1 FROM chat_labels cl JOIN labels l ON l.id = cl.label_id WHERE cl.chat_id = c.id AND l.name = 'ASESOR')
+       AND ${NEEDS_ASESORA} GROUP BY c.store_id`
+  ).bind(...storeIds, now() - 7 * 864e5).all()]);
   const out = {};
   for (const x of ev) out[x.store_id] = (out[x.store_id] || 0) + x.n;
   for (const x of ase) out[x.store_id] = (out[x.store_id] || 0) + x.n;

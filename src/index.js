@@ -9,7 +9,7 @@ import { landingPage } from './landing.js';
 import { loadLanding, serveLandingMedia } from './landing-data.js';
 import { loadPlan, optionsOf } from './billing.js';
 import { currentUser } from './auth.js';
-import { runJobs } from './bot.js';
+import { runJobs, cleanJobs } from './bot.js';
 import { runOrderJobs } from './automations.js';
 import { trackDue } from './rastreo.js';
 import { handleShopify } from './shopify.js';
@@ -119,7 +119,8 @@ export default {
     if (event.cron !== '0 8 * * *') {
       await runJobs(env);
       await runOrderJobs(env);
-      await trackDue(env).catch((e) => console.error('rastreo', e));
+      // Rastreo de guías: cada 10 minutos (cada minuto leía la tabla de pedidos entera)
+      if (new Date(event.scheduledTime || Date.now()).getUTCMinutes() % 10 === 0) await trackDue(env).catch((e) => console.error('rastreo', e));
       return;
     }
     const t = now();
@@ -131,5 +132,6 @@ export default {
       env.DB.prepare('DELETE FROM notifications WHERE created_at < ? AND read_at IS NOT NULL').bind(t - 60 * 864e5),
     ]);
     await tokenReminders(env, notify).catch((e) => console.error('token', e));
+    await cleanJobs(env).catch((e) => console.error('jobs', e));
   },
 };

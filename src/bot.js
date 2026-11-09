@@ -1226,6 +1226,10 @@ export async function runJobs(env) {
       console.error('job', j.id, e);
     }
   }
+}
+
+// Limpieza de seguimientos viejos: una vez al día (antes cada minuto y recorría toda la tabla)
+export async function cleanJobs(env) {
   await env.DB.prepare('DELETE FROM bot_jobs WHERE (done_at IS NOT NULL OR canceled_at IS NOT NULL) AND created_at < ?').bind(now() - 30 * 864e5).run();
 }
 

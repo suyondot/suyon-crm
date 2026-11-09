@@ -631,6 +631,13 @@ export const MIGRATIONS = [
       )`,
     ],
   },
+  {
+    id: 26,
+    name: 'índice para el rastreo de guías (no recorrer todos los pedidos)',
+    sql: [
+      `CREATE INDEX IF NOT EXISTS orders_track ON orders (guia_at) WHERE guia IS NOT NULL AND guia_codigo IS NOT NULL AND modo = 'agencia' AND status IN ('validado', 'enviado', 'en_camino', 'en_agencia')`,
+    ],
+  },
 ];
 
 let ready = null;

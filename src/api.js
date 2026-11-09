@@ -771,18 +771,27 @@ api.delete('/labels/:id', async (c) => {
 /* ---------------- Sincronización y chats ---------------- */
 
 // Consulta liviana cada pocos segundos: si "rev" cambió, la app pide lo nuevo
+const SYNC_COUNTS = new Map();
 api.get('/sync', async (c) => {
   const { stores } = await loadAccess(c);
   const chatStores = stores.filter((s) => s.role === 'dueno' || s.role === 'asesora');
   const ids = chatStores.map((s) => s.id);
-  // Las dos consultas van a la vez (antes una detrás de otra)
-  const [un, avisos] = await Promise.all([
-    ids.length
-      ? c.env.DB.prepare(`SELECT store_id, COUNT(*) AS n FROM chats WHERE unread > 0 AND sim = 0 AND store_id IN (${inList(ids.length)}) GROUP BY store_id`).bind(...ids).all()
-      : { results: [] },
-    pendingCounts(c.env.DB, ids),
-  ]);
-  const unread = Object.fromEntries(un.results.map((r) => [r.store_id, r.n]));
+  // Los contadores (no leídos y Avisos) se calculan como máximo cada 20 s: /sync se llama cada 3 s por cada
+  // celular/PC abierto y estas cuentas leían miles de filas → se pasó el límite diario de D1 (9 nov 2026).
+  const key = ids.join(',');
+  let cached = SYNC_COUNTS.get(key);
+  if (!cached || now() - cached.t > 20000) {
+    const [un, avisos] = await Promise.all([
+      ids.length
+        ? c.env.DB.prepare(`SELECT store_id, COUNT(*) AS n FROM chats WHERE unread > 0 AND sim = 0 AND store_id IN (${inList(ids.length)}) GROUP BY store_id`).bind(...ids).all()
+        : { results: [] },
+      pendingCounts(c.env.DB, ids),
+    ]);
+    cached = { t: now(), unread: Object.fromEntries(un.results.map((r) => [r.store_id, r.n])), avisos };
+    SYNC_COUNTS.set(key, cached);
+    if (SYNC_COUNTS.size > 500) SYNC_COUNTS.clear();
+  }
+  const { unread, avisos } = cached;
   return c.json({ t: now(), stores: stores.map((s) => ({ id: s.id, rev: s.rev, unread: unread[s.id] || 0, avisos: avisos[s.id] || 0, status: s.status })) });
 });
 
