@@ -57,7 +57,7 @@ r.get('/stores/:id/reporte', async (c) => {
   const usaPedidos = !!(await db.prepare('SELECT 1 AS x FROM orders WHERE store_id = ? LIMIT 1').bind(st.id).first());
   const [msgs, chats, sales, calls] = await Promise.all([
     db.prepare(`SELECT m.created_at FROM messages m JOIN chats c ON c.id = m.chat_id
-      WHERE c.store_id = ? AND c.sim = 0 AND m.direction = 'in' AND m.created_at >= ? AND m.created_at < ? LIMIT 50000`).bind(st.id, t0, t1).all(),
+      WHERE m.store_id = ? AND c.sim = 0 AND m.direction = 'in' AND m.created_at >= ? AND m.created_at < ? LIMIT 50000`).bind(st.id, t0, t1).all(),
     db.prepare(`SELECT id, ad_id, ad_headline, created_at, first_reply_at FROM chats
       WHERE store_id = ? AND sim = 0 AND created_at >= ? AND created_at < ? LIMIT 20000`).bind(st.id, t0, t1).all(),
     usaPedidos
@@ -412,7 +412,7 @@ r.get('/stores/:id/embudo', async (c) => {
       COUNT(DISTINCT CASE WHEN m.replied = 1 THEN m.chat_id END) AS revivieron,
       COUNT(DISTINCT CASE WHEN m.status = 'failed' THEN m.chat_id END) AS fallidos
     FROM messages m JOIN chats c ON c.id = m.chat_id
-    WHERE c.store_id = ? AND c.sim = 0 AND m.bot_node LIKE 'seq:%' AND m.created_at >= ? AND m.created_at < ?
+    WHERE m.store_id = ? AND c.sim = 0 AND m.bot_node LIKE 'seq:%' AND m.created_at >= ? AND m.created_at < ?
     GROUP BY m.bot_node`).bind(st.id, t0, t1).all();
   const seguimientos = segs.map((s) => ({ ...s, ...(segName.get(s.node) || { seq: s.node, paso: '', cuando: '', que: '' }), tasa: s.enviados ? s.revivieron / s.enviados : null }))
     .sort((a, b) => String(a.seq).localeCompare(String(b.seq)) || a.paso - b.paso);

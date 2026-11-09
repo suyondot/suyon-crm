@@ -773,14 +773,15 @@ api.delete('/labels/:id', async (c) => {
 api.get('/sync', async (c) => {
   const { stores } = await loadAccess(c);
   const chatStores = stores.filter((s) => s.role === 'dueno' || s.role === 'asesora');
-  let unread = {};
-  if (chatStores.length) {
-    const { results } = await c.env.DB.prepare(
-      `SELECT store_id, COUNT(*) AS n FROM chats WHERE unread > 0 AND sim = 0 AND store_id IN (${inList(chatStores.length)}) GROUP BY store_id`
-    ).bind(...chatStores.map((s) => s.id)).all();
-    unread = Object.fromEntries(results.map((r) => [r.store_id, r.n]));
-  }
-  const avisos = await pendingCounts(c.env.DB, chatStores.map((s) => s.id));
+  const ids = chatStores.map((s) => s.id);
+  // Las dos consultas van a la vez (antes una detrás de otra)
+  const [un, avisos] = await Promise.all([
+    ids.length
+      ? c.env.DB.prepare(`SELECT store_id, COUNT(*) AS n FROM chats WHERE unread > 0 AND sim = 0 AND store_id IN (${inList(ids.length)}) GROUP BY store_id`).bind(...ids).all()
+      : { results: [] },
+    pendingCounts(c.env.DB, ids),
+  ]);
+  const unread = Object.fromEntries(un.results.map((r) => [r.store_id, r.n]));
   return c.json({ t: now(), stores: stores.map((s) => ({ id: s.id, rev: s.rev, unread: unread[s.id] || 0, avisos: avisos[s.id] || 0, status: s.status })) });
 });
 

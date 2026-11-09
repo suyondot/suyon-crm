@@ -583,6 +583,16 @@ export const MIGRATIONS = [
       `ALTER TABLE chats ADD COLUMN bot_seen INTEGER`,
     ],
   },
+  {
+    id: 24,
+    name: 'índices para que la bandeja, los reportes y el embudo carguen rápido',
+    sql: [
+      `CREATE INDEX IF NOT EXISTS chats_store_recent ON chats (store_id, COALESCE(last_msg_at, created_at) DESC)`,
+      `CREATE INDEX IF NOT EXISTS chats_store_created ON chats (store_id, created_at)`,
+      `CREATE INDEX IF NOT EXISTS messages_store_created ON messages (store_id, created_at)`,
+      `CREATE INDEX IF NOT EXISTS notifications_unread ON notifications (store_id) WHERE read_at IS NULL`,
+    ],
+  },
 ];
 
 let ready = null;

@@ -897,7 +897,7 @@ function renderItems() {
       : `<div class="empty"><b>${S.chats.size ? 'Sin chats aquí' : 'Todavía no hay chats'}</b><span>${S.chats.size ? 'Prueba con otro filtro o quita la etiqueta.' : store().status === 'activo' ? 'Cuando una clienta escriba a este número, aparecerá aquí.' : 'Conecta el número para empezar a recibir mensajes.'}</span></div>`;
     return;
   }
-  box.innerHTML = list.map((x) => {
+  const rows = list.map((x) => {
     const labs = x.labels.map(labelById).filter((l) => l && !/^Talla /.test(l.name)).sort((a, b) => (a.auto ? 1 : 0) - (b.auto ? 1 : 0)).slice(0, 3);
     const pc = x.por_confirmar > 0;
     return `<button class="item${pc ? ' pc' : ''}" data-open="${x.id}" aria-current="${x.id === S.openId}">${pc ? '<i class="pcdot" aria-hidden="true"></i>' : ''}
@@ -907,7 +907,10 @@ function renderItems() {
         ${labs.length || x.ad_id || pc || x.bot_paused ? `<span class="row">${pc ? '<span class="pcb">🟡 Por confirmar</span>' : ''}${x.bot_paused && x.last_dir !== 'out' ? '<span class="bpz">⏸️ Bot en pausa</span>' : ''}${x.ad_id ? '<span class="who ia">Anuncio</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
       <span class="meta"><span>${listTime(x.last_msg_at)}</span>${x.unread ? `<span class="unread">${x.unread}</span>` : ''}</span>
     </button>`;
-  }).join('') + (S.chatsMore && !S.q ? '<button class="iconbtn loadmore" data-act="morechats" style="margin:10px auto;display:flex">Cargar más</button>' : '');
+  }).map((html, i) => ({ key: 'c' + list[i].id, sig: html, html }));
+  if (S.chatsMore && !S.q) rows.push({ key: 'more', sig: 'more', html: '<button class="iconbtn loadmore" data-act="morechats" style="margin:10px auto;display:flex">Cargar más</button>' });
+  if (box.querySelector(':scope > .empty')) box.innerHTML = '';
+  patchChildren(box, rows);
   box.scrollTop = sc;
 }
 
@@ -1510,13 +1513,17 @@ async function finishRec(r) {
 }
 
 /* ---------- Ficha ---------- */
-function renderFicha() {
+function renderFicha({ ifChanged = false } = {}) {
   const f = $('#ficha');
   if (!f) return;
   const c = S.chats.get(S.openId);
   if (!c) return (f.innerHTML = '');
   if (f.contains(document.activeElement) && document.activeElement.matches('input,textarea')) return;
   const w = windowInfo(c);
+  // En cada sincronización solo se vuelve a dibujar si algo de la ficha cambió (no salta ni parpadea)
+  const sig = [c.id, c.name, c.profile_name, c.notes, c.bot_paused, c.bot_node, c.bot_wait, c.handler, c.bot_vars, c.por_confirmar, w.label, w.title, window.innerWidth <= 1180].join('|');
+  if (ifChanged && f.dataset.sig === sig && f.firstElementChild) return;
+  f.dataset.sig = sig;
   f.innerHTML = `
     ${window.innerWidth <= 1180 ? '<button class="iconbtn" data-act="ficha" style="justify-self:end">Cerrar ficha</button>' : ''}
     <div class="sec"><h3>Clienta</h3><dl class="kv">
@@ -1581,6 +1588,7 @@ let callsLoading = false;
 async function loadCalls() {
   if (!S.storeId || !canChats() || callsLoading) return;
   callsLoading = true;
+  S.callsAt = Date.now();
   const sid = S.storeId;
   try {
     const r = await api('GET', `/stores/${sid}/llamadas`);
@@ -1737,10 +1745,12 @@ async function fetchNewMessages(id) {
 
 async function refreshStore(newUnread) {
   const sid = S.storeId;
-  loadCalls();
   const r = await api('GET', `/stores/${sid}/chats?after=${S.chatCursor}`);
   if (sid !== S.storeId) return;
   S.chatCursor = r.t;
+  // La franja de llamadas solo se vuelve a pedir si cambió alguna etiqueta (o cada minuto)
+  const labsChanged = r.chats.some((c) => String(S.chats.get(c.id)?.labels || '') !== String(c.labels || ''));
+  if (labsChanged || Date.now() - (S.callsAt || 0) > 60000) loadCalls();
   const fresh = mergeChats(r.chats);
   const open = S.chats.get(S.openId);
   // Si el chat abierto recibió algo, se marca leído al toque
@@ -1754,7 +1764,7 @@ async function refreshStore(newUnread) {
   if (S.openId) {
     await fetchNewMessages(S.openId);
     renderConvHead();
-    renderFicha();
+    renderFicha({ ifChanged: true });
     renderTagbar();
     const wasLocked = !$('#draft') && !S.rec;
     if (wasLocked) renderComposer();
@@ -2845,6 +2855,21 @@ function goCliente(id) {
   render();
 }
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  const hadCtrl = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+  // Versión nueva lista: botón para actualizar (no recarga sola para no perder lo que está escribiendo)
+  const showUpdate = () => {
+    if (document.getElementById('upd')) return;
+    const b = document.createElement('button');
+    b.id = 'upd';
+    b.className = 'updbar';
+    b.innerHTML = '✨ Nueva versión lista · <b>Actualizar</b>';
+    b.onclick = () => location.reload();
+    document.body.appendChild(b);
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', () => hadCtrl && showUpdate());
+  navigator.serviceWorker.addEventListener('message', (e) => e.data?.type === 'update' && showUpdate());
+}
 
 boot();
