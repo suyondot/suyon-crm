@@ -11,6 +11,7 @@ import { initEnvios, renderEnvios, resetEnvios } from './envios.js';
 import { initAsistente, renderAsistente, resetAsistente, rubroPicker } from './asistente.js';
 import { initCarritos, renderCarritos, resetCarritos } from './carritos.js';
 import { initPanel, renderMiPlan, renderPaywall, renderPanel } from './panel.js';
+import { initRespuestas, attachSlash, openPicker, openPlantilla, renderRapidasCfg, renderPlantillasCfg } from './respuestas.js';
 
 /* =================== Utilidades =================== */
 const $ = (s, el = document) => el.querySelector(s);
@@ -1149,7 +1150,7 @@ function msgRow(m, list) {
   const bubble = `<div class="bub ${media ? 'mediab' : ''}">${inner}${meta}${m.extra?.reaction ? `<span class="react">${esc(m.extra.reaction)}</span>` : ''}</div>`;
   const canReply = !!m.wamid;
   return `<div class="m ${out ? 'out s-' + m.sender : ''}">${out ? `<span class="by ${m.sender === 'ase' ? 'ase' : m.sender}">${esc(byLabel(m))}</span>` : ''}
-    <div class="wrapb">${bubble}${canReply ? `<button class="rbtn" data-reply="${m.id}" aria-label="Responder a este mensaje" title="Responder">↩</button>` : ''}</div>
+    <div class="wrapb">${bubble}${canReply ? `<button class="rbtn" data-reply="${m.id}" aria-label="Responder a este mensaje" title="Responder">↩</button>` : ''}${m.type === 'sticker' && typeof m.id === 'number' && m.media_status !== 'error' ? `<button class="rbtn" data-savestk="${m.id}" aria-label="Guardar sticker" title="Guardar sticker">⭐</button>` : ''}</div>
     ${m.status === 'failed' ? `<div class="failnote"><span>${esc(m.error || 'No se envió')}</span>${typeof m.id === 'number' ? `<button data-retry="${m.id}">Reintentar</button>` : ''}</div>` : ''}
   </div>`;
 }
@@ -1246,7 +1247,7 @@ function renderComposer() {
     return;
   }
   if (!w.canSend) {
-    box.innerHTML = `<div class="closed">Pasaron más de 24 h desde su último mensaje. Solo se puede enviar una plantilla aprobada por Meta (tiene costo); llega en una próxima fase.</div>`;
+    box.innerHTML = `<div class="closed">Pasaron más de 24 h desde su último mensaje. Solo se le puede escribir con una plantilla aprobada por Meta (tiene costo).<button class="send" data-act="plantilla" style="margin-top:8px">📋 Enviar plantilla</button></div>`;
     return;
   }
   if (S.rec) {
@@ -1259,11 +1260,13 @@ function renderComposer() {
   box.innerHTML = `<div class="composer">
     <button class="iconbtn" data-act="attach" aria-label="Enviar foto, video, audio o documento" title="Foto, video, audio o documento">${ICON.clip}</button>
     <button class="iconbtn" data-act="mic" aria-label="Grabar nota de voz" title="Grabar nota de voz">${ICON.mic}</button>
-    <textarea id="draft" rows="1" placeholder="Escribe un mensaje" aria-label="Mensaje">${esc(S.drafts.get(c.id) || '')}</textarea>
+    <button class="iconbtn zap" data-act="rapidas" aria-label="Respuestas rápidas, stickers y plantillas" title="Respuestas rápidas, stickers y plantillas">⚡</button>
+    <textarea id="draft" rows="1" placeholder="Escribe un mensaje · / para respuestas rápidas" aria-label="Mensaje">${esc(S.drafts.get(c.id) || '')}</textarea>
     <button class="send" data-act="send">Enviar</button>
   </div>`;
   const ta = $('#draft');
   autosize(ta);
+  attachSlash(ta);
   ta.addEventListener('input', () => {
     autosize(ta);
     S.drafts.set(c.id, ta.value);
@@ -1888,7 +1891,8 @@ function canalPicker(cur) {
 function cfgTabs() {
   const tabs = [];
   // La pestaña de pedidos cambia según cómo vende la tienda: por mensajes (Pedidos) o por su web (Shopify)
-  if (owner()) tabs.push(['general', 'General'], ['numero', 'Número de WhatsApp'], ['perfil', 'Perfil de WhatsApp'], ['pedidoscfg', store()?.canal === 'shopify' ? 'Shopify' : 'Pedidos'], ['etiquetas', 'Etiquetas'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
+  if (owner()) tabs.push(['general', 'General'], ['numero', 'Número de WhatsApp'], ['perfil', 'Perfil de WhatsApp'], ['pedidoscfg', store()?.canal === 'shopify' ? 'Shopify' : 'Pedidos'], ['etiquetas', 'Etiquetas'], ['rapidas', 'Respuestas rápidas'], ['plantillas', 'Plantillas de WhatsApp'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
+  else if (canChats()) tabs.push(['rapidas', 'Respuestas rápidas']);
   if (S.me.companies.some((c) => c.role === 'dueno')) tabs.push(['empresa', 'Empresas']);
   const co = currentCompany();
   const showPlan = co?.role === 'dueno' && co.plan && co.plan.state !== 'free';
@@ -1908,7 +1912,7 @@ function renderConfig() {
     <nav class="cfgnav" aria-label="Secciones">${tabs.map(([k, l]) => `<button data-cfg="${k}" aria-current="${S.cfgTab === k}">${l}</button>`).join('')}
       ${st && owner() ? `<div class="cfgnote">Lo de General, Número, Perfil, Etiquetas, Bot y Equipo es de <b>${esc(st.name)}</b>${S.cfgTab === 'equipo' ? ` y su empresa` : ''}. Cambia de tienda arriba a la izquierda.</div>` : ''}</nav>
     <div id="cfgbody"></div></div></div>`;
-  ({ general: cfgGeneral, numero: cfgNumero, perfil: cfgPerfil, pedidoscfg: () => renderPedidosConfig($('#cfgbody')), etiquetas: cfgEtiquetas, bot: () => renderBotTab($('#cfgbody')), equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta, miplan: () => renderMiPlan($('#cfgbody'), currentCompany().id) })[S.cfgTab]();
+  ({ general: cfgGeneral, numero: cfgNumero, perfil: cfgPerfil, pedidoscfg: () => renderPedidosConfig($('#cfgbody')), etiquetas: cfgEtiquetas, rapidas: () => renderRapidasCfg($('#cfgbody')), plantillas: () => renderPlantillasCfg($('#cfgbody')), bot: () => renderBotTab($('#cfgbody')), equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta, miplan: () => renderMiPlan($('#cfgbody'), currentCompany().id) })[S.cfgTab]();
 }
 
 function cfgGeneral() {
@@ -2719,6 +2723,16 @@ document.addEventListener('click', async (e) => {
       return sendText();
     case 'attach':
       return fileInput.click();
+    case 'rapidas':
+      return openPicker();
+    case 'plantilla':
+      return openPlantilla();
+    case 'cfgrapidas':
+    case 'cfgplantillas':
+      closeModal();
+      S.view = 'config';
+      S.cfgTab = d.act === 'cfgrapidas' ? 'rapidas' : 'plantillas';
+      return render();
     case 'mic':
       return startRec();
     case 'reccancel':
@@ -2837,6 +2851,7 @@ initReportes({ api, esc, $, S, store, goChat });
 initPedidos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, listTime, canChats });
 initEnvios({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, canChats });
 initPanel({ api, esc, toast });
+initRespuestas({ api, esc, toast, S, store, owner, canChats, modal, closeModal, chatName, windowInfo, touchChatAfterSend, replaceLocal, toJpeg, ICON, isTouch });
 initAsistente({ api, esc, toast, LOGO });
 initCarritos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, goConfig(tab) {
   S.view = 'config';

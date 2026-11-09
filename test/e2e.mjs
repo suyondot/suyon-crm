@@ -130,6 +130,13 @@ const meta = http.createServer(async (req, res) => {
   if (req.method === 'GET' && p === `${PHONE_ID}/whatsapp_business_profile`) return json(200, { data: [{ about: 'Hola', vertical: 'APPAREL', websites: ['https://instagram.com/x'], messaging_product: 'whatsapp' }] });
   if (req.method === 'POST' && p === `${PHONE_ID}/whatsapp_business_profile`) return json(200, { success: true });
   if (req.method === 'POST' && p === `${WABA_ID}/message_templates`) return json(200, { id: 'tpl_' + ++seq, status: 'PENDING', category: body.category });
+  if (req.method === 'GET' && p === `${WABA_ID}/message_templates` && !url.searchParams.get('name')) {
+    return json(200, { data: [
+      { name: 'reactivar_clientas', status: 'APPROVED', category: 'MARKETING', language: 'es', components: [{ type: 'HEADER', format: 'IMAGE' }, { type: 'BODY', text: 'Hola {{1}} 👋 volvió el color {{2}}. ¿Te lo separo?', example: { body_text: [['María', 'vino']] } }, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Sí, quiero' }] }] },
+      { name: 'en_revision', status: 'PENDING', category: 'UTILITY', language: 'es', components: [{ type: 'BODY', text: 'Tu pedido va en camino.' }] },
+    ] });
+  }
+  if (req.method === 'DELETE' && p === `${WABA_ID}/message_templates`) return json(200, { success: true });
   if (req.method === 'GET' && p === `${WABA_ID}/message_templates`) return json(200, { data: [{ name: url.searchParams.get('name'), status: 'APPROVED', language: 'es' }] });
   if (p.startsWith('file/')) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(IMG); }
   if (req.method === 'GET' && p === PHONE_ID) return json(200, { display_phone_number: '+51 924 000 111', verified_name: 'Porte Perú', quality_rating: 'GREEN', id: PHONE_ID });
@@ -1852,6 +1859,110 @@ try {
     const sent = calls.slice(n0).find((x) => x.body?.type === 'audio');
     assert.equal(sent?.body?.audio?.voice, true, 'voice: true');
   });
+  await step('respuestas rápidas, stickers y plantillas', async () => {
+    const expectErr = async (p, re) => {
+      const r = await p;
+      assert.ok(r.status >= 400 && re.test(r.error || ''), `esperaba error ${re}: ${JSON.stringify(r).slice(0, 200)}`);
+    };
+    const me = await call('GET', '/api/me');
+    const st = me.stores[0];
+    const ch = (await call('GET', `/api/stores/${st.id}/chats`)).chats[0];
+    await hook(md({ contacts: [{ wa_id: ch.wa_id, profile: { name: 'x' } }], messages: [{ from: ch.wa_id, id: 'wamid.qr' + Date.now(), timestamp: ts(), type: 'text', text: { body: 'hola' } }] }));
+    // Crear: texto + 2 fotos
+    let fd = new FormData();
+    fd.append('atajo', '/precios');
+    fd.append('texto', 'Estas son las promos 🔥');
+    fd.append('files', new Blob([IMG], { type: 'image/jpeg' }), 'a.jpg');
+    fd.append('files', new Blob([IMG], { type: 'image/jpeg' }), 'b.jpg');
+    let r = await call('POST', `/api/stores/${st.id}/rapidas`, undefined, { form: fd });
+    const q = r.rapida;
+    assert.equal(q.atajo, 'precios', 'sin la barra');
+    assert.equal(q.media.length, 2);
+    assert.ok(!('key' in q.media[0]), 'no muestra la ruta interna');
+    await expectErr(call('POST', `/api/stores/${st.id}/rapidas`, { atajo: 'Precios', texto: 'x' }), /Ya existe/);
+    r = await call('POST', `/api/stores/${st.id}/rapidas`, { atajo: 'cuentas', texto: 'Yape a nombre de la tienda' });
+    // Editar: quitar la 1a foto y dejar solo la 2a
+    fd = new FormData();
+    fd.append('atajo', 'precios');
+    fd.append('texto', 'Promos de hoy');
+    fd.append('keep', JSON.stringify([q.media[1].id]));
+    r = await call('PUT', `/api/rapidas/${q.id}`, undefined, { form: fd });
+    assert.equal(r.rapida.media.length, 1);
+    assert.equal(r.rapida.media[0].id, q.media[1].id);
+    let list = (await call('GET', `/api/stores/${st.id}/rapidas`)).rapidas;
+    assert.deepEqual(list.map((x) => x.atajo), ['precios', 'cuentas']);
+    await call('POST', `/api/stores/${st.id}/rapidas/orden`, { ids: [list[1].id, list[0].id] });
+    list = (await call('GET', `/api/stores/${st.id}/rapidas`)).rapidas;
+    assert.deepEqual(list.map((x) => x.atajo), ['cuentas', 'precios']);
+    // Usar en el chat: 1 foto + texto → una sola burbuja con pie de foto
+    let n0 = calls.length;
+    r = await call('POST', `/api/chats/${ch.id}/rapida`, { id: q.id, texto: 'Hola María, promos de hoy' });
+    assert.equal(r.messages.length, 1);
+    assert.equal(r.messages[0].type, 'image');
+    assert.equal(r.messages[0].body, 'Hola María, promos de hoy');
+    const sent = calls.slice(n0).find((x) => x.body?.type === 'image');
+    assert.equal(sent?.body?.image?.caption, 'Hola María, promos de hoy');
+    // Borrar la respuesta no borra la foto del chat
+    await call('DELETE', `/api/rapidas/${q.id}`);
+    const pic = await fetch(BASE + `/api/media/${r.messages[0].id}`, { headers: { cookie } });
+    assert.equal(pic.status, 200, 'la foto del chat sigue');
+    // Stickers: subir un WEBP y mandarlo
+    const webp = Buffer.concat([Buffer.from('RIFF'), Buffer.from([30, 0, 0, 0]), Buffer.from('WEBPVP8 '), Buffer.alloc(22, 1)]);
+    fd = new FormData();
+    fd.append('file', new Blob([webp], { type: 'image/webp' }), 's.webp');
+    r = await call('POST', `/api/stores/${st.id}/stickers`, undefined, { form: fd });
+    assert.equal(r.sticker.animated, 0);
+    fd = new FormData();
+    fd.append('file', new Blob([IMG], { type: 'image/webp' }), 'no.webp');
+    await expectErr(call('POST', `/api/stores/${st.id}/stickers`, undefined, { form: fd }), /WEBP/);
+    n0 = calls.length;
+    const sm = await call('POST', `/api/chats/${ch.id}/sticker`, { sticker_id: r.sticker.id });
+    assert.equal(sm.message.type, 'sticker');
+    assert.ok(calls.slice(n0).some((x) => x.body?.type === 'sticker' && x.body.sticker?.id), 'se mandó como sticker');
+    // Guardar el sticker que llegó en el chat
+    const saved = await call('POST', `/api/stores/${st.id}/stickers`, { message_id: sm.message.id });
+    assert.ok(saved.sticker.id);
+    assert.equal((await call('GET', `/api/stores/${st.id}/stickers`)).stickers.length, 2);
+    // Plantillas: listar, crear con foto, mandar y borrar
+    r = await call('GET', `/api/stores/${st.id}/plantillas`);
+    assert.ok(r.conectado);
+    const tp = r.plantillas.find((x) => x.name === 'reactivar_clientas');
+    assert.deepEqual(tp.vars, [1, 2]);
+    assert.equal(tp.header.format, 'IMAGE');
+    fd = new FormData();
+    fd.append('name', 'Volvió tu color');
+    fd.append('category', 'MARKETING');
+    fd.append('body', '{{1}} volvió');
+    await expectErr(call('POST', `/api/stores/${st.id}/plantillas`, undefined, { form: fd }), /empiece o termine/);
+    fd.set('body', 'Hola {{1}}, volvió tu color favorito.');
+    fd.append('examples', JSON.stringify(['María']));
+    fd.append('header', 'IMAGE');
+    fd.append('file', new Blob([IMG], { type: 'image/jpeg' }), 'p.jpg');
+    fd.append('buttons', JSON.stringify([{ type: 'QUICK_REPLY', text: 'Sí, quiero' }, { type: 'URL', text: 'Ver', url: 'https://porte.pe' }]));
+    n0 = calls.length;
+    r = await call('POST', `/api/stores/${st.id}/plantillas`, undefined, { form: fd });
+    assert.equal(r.name, 'volvio_tu_color');
+    const cr = calls.slice(n0).find((x) => x.method === 'POST' && x.path === `${WABA_ID}/message_templates`);
+    assert.equal(cr.body.components[0].example.header_handle[0], 'HANDLE1');
+    assert.deepEqual(cr.body.components.find((x) => x.type === 'BODY').example.body_text, [['María']]);
+    assert.equal(cr.body.components.find((x) => x.type === 'BUTTONS').buttons[1].url, 'https://porte.pe');
+    await expectErr(call('POST', `/api/chats/${ch.id}/plantilla`, { name: 'reactivar_clientas', params: ['María'] }), /Llena todos/);
+    await expectErr(call('POST', `/api/chats/${ch.id}/plantilla`, { name: 'reactivar_clientas', params: ['María', 'vino'] }), /elige la foto/);
+    fd = new FormData();
+    fd.append('data', JSON.stringify({ name: 'reactivar_clientas', language: 'es', params: ['María', 'vino'] }));
+    fd.append('file', new Blob([IMG], { type: 'image/jpeg' }), 'f.jpg');
+    n0 = calls.length;
+    r = await call('POST', `/api/chats/${ch.id}/plantilla`, undefined, { form: fd });
+    assert.equal(r.message.status, 'sent');
+    assert.equal(r.message.type, 'image');
+    assert.ok(r.message.body.includes('Hola María 👋 volvió el color vino'));
+    const tm = calls.slice(n0).find((x) => x.body?.type === 'template');
+    assert.equal(tm.body.template.name, 'reactivar_clientas');
+    assert.equal(tm.body.template.components[0].parameters[0].image.id.startsWith('up_media_'), true);
+    assert.deepEqual(tm.body.template.components[1].parameters.map((x) => x.text), ['María', 'vino']);
+    await expectErr(call('POST', `/api/chats/${ch.id}/plantilla`, { name: 'en_revision' }), /no está aprobada/);
+    await call('DELETE', `/api/stores/${st.id}/plantillas/volvio_tu_color`);
+  });
   await step('celular (9 dígitos, empieza con 9) vs DNI (8) vs carnet de extranjería (12)', async () => {
     const { fixIds } = await import('../src/bot.js');
     assert.deepEqual(fixIds({ celular: '73559594' }, 'Jordan Suyon 73559594'), { dni: '73559594' });
@@ -1931,6 +2042,8 @@ try {
     const app = await fetch(BASE + '/invitacion/abc');
     assert.equal(app.status, 200, 'la app web carga en rutas propias');
   });
+  // Para revisar pantallas con la base de prueba: SCRM_HOLD=/ruta/script.mjs npm test
+  if (process.env.SCRM_HOLD) await (await import(process.env.SCRM_HOLD)).default({ BASE, cookie, call });
   console.log(`\nTodo bien: ${passed} pruebas pasaron.`);
 } catch (e) {
   console.error('\nFALLÓ:', e.message, (e.stack || '').split('\n').find((l) => l.includes('e2e.mjs')));

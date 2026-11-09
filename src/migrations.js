@@ -593,6 +593,44 @@ export const MIGRATIONS = [
       `CREATE INDEX IF NOT EXISTS notifications_unread ON notifications (store_id) WHERE read_at IS NULL`,
     ],
   },
+  {
+    id: 25,
+    name: 'respuestas rápidas, stickers guardados y fotos de las plantillas',
+    sql: [
+      `CREATE TABLE quick_replies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+        atajo TEXT NOT NULL,
+        texto TEXT,
+        media TEXT NOT NULL DEFAULT '[]',
+        sort INTEGER NOT NULL DEFAULT 0,
+        uses INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX quick_replies_store ON quick_replies (store_id, sort, id)`,
+      `CREATE TABLE stickers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+        media_key TEXT NOT NULL,
+        mime TEXT NOT NULL DEFAULT 'image/webp',
+        size INTEGER,
+        animated INTEGER NOT NULL DEFAULT 0,
+        uses INTEGER NOT NULL DEFAULT 0,
+        last_used_at INTEGER,
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX stickers_store ON stickers (store_id, id)`,
+      `CREATE TABLE wa_templates (
+        store_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        media_key TEXT,
+        media_mime TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (store_id, name)
+      )`,
+    ],
+  },
 ];
 
 let ready = null;

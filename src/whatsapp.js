@@ -250,22 +250,27 @@ export async function setProfile(env, store, fields) {
   return graph(env, store, `${store.phone_number_id}/whatsapp_business_profile`, { method: 'POST', json: { messaging_product: 'whatsapp', ...fields } });
 }
 
-// Foto de perfil: se sube con la «subida reanudable» de Meta y se usa el código que devuelve
-export async function setProfilePhoto(env, store, bytes, mime) {
+// «Subida reanudable» de Meta: devuelve un código (handle) para la foto de perfil o la foto/video de ejemplo de una plantilla
+export async function uploadHandle(env, store, bytes, mime, name = 'archivo') {
   const token = await tokenFor(env, store);
   let appId = env.META_APP_ID;
   if (!appId) appId = (await graph(env, store, `debug_token?input_token=${encodeURIComponent(token)}`))?.data?.app_id;
   if (!appId) throw new HttpError(400, 'No se encontró el ID de la app de Meta. Ponlo en Cloudflare como variable META_APP_ID.');
-  const ext = mime === 'image/png' ? 'png' : 'jpg';
-  const s = await graph(env, store, `${appId}/uploads?file_name=perfil.${ext}&file_length=${bytes.byteLength}&file_type=${encodeURIComponent(mime)}`, { method: 'POST' });
-  if (!s?.id) throw new HttpError(502, 'Meta no abrió la subida de la foto.');
+  const s = await graph(env, store, `${appId}/uploads?file_name=${encodeURIComponent(name)}&file_length=${bytes.byteLength}&file_type=${encodeURIComponent(mime)}`, { method: 'POST' });
+  if (!s?.id) throw new HttpError(502, 'Meta no abrió la subida del archivo.');
   const res = await fetch(`${env.GRAPH_API}/${s.id}`, { method: 'POST', headers: { Authorization: `OAuth ${token}`, file_offset: '0', 'Content-Type': mime }, body: bytes });
   let data = null;
   try {
     data = await res.json();
   } catch {}
-  if (!res.ok || !data?.h) throw new HttpError(502, friendlyMetaError(data?.error || { message: `No se pudo subir la foto (HTTP ${res.status})` }));
-  await setProfile(env, store, { profile_picture_handle: data.h });
+  if (!res.ok || !data?.h) throw new HttpError(502, friendlyMetaError(data?.error || { message: `No se pudo subir el archivo (HTTP ${res.status})` }));
+  return data.h;
+}
+
+// Foto de perfil: se sube con la «subida reanudable» de Meta y se usa el código que devuelve
+export async function setProfilePhoto(env, store, bytes, mime) {
+  const h = await uploadHandle(env, store, bytes, mime, mime === 'image/png' ? 'perfil.png' : 'perfil.jpg');
+  await setProfile(env, store, { profile_picture_handle: h });
 }
 
 /* ---------- Botones, listas y plantillas ---------- */
@@ -302,6 +307,44 @@ export async function createTemplate(env, store, { name, category, body, example
   const components = [{ type: 'BODY', text: body, ...(example?.length ? { example: { body_text: [example] } } : {}) }];
   if (buttons?.length) components.push({ type: 'BUTTONS', buttons: buttons.map((t) => ({ type: 'QUICK_REPLY', text: cut(t, 25) })) });
   return graph(env, store, `${store.waba_id}/message_templates`, { method: 'POST', json: { name, language: 'es', category, components } });
+}
+
+/* ---------- Plantillas: ver, crear, borrar y mandar (sección Plantillas) ---------- */
+export async function listTemplates(env, store) {
+  if (!store.waba_id) throw new HttpError(400, 'Esta tienda todavía no tiene su cuenta de WhatsApp conectada.');
+  const out = [];
+  let path = `${store.waba_id}/message_templates?fields=name,status,category,language,components,rejected_reason,quality_score&limit=100`;
+  for (let i = 0; i < 5 && path; i++) {
+    const d = await graph(env, store, path);
+    out.push(...(d?.data || []));
+    const next = d?.paging?.next;
+    path = next ? next.replace(/^https?:\/\/[^/]+\/v[\d.]+\//, '') : null;
+  }
+  return out;
+}
+
+// header: { format: 'TEXT'|'IMAGE'|'VIDEO', text, handle } · buttons: [{ type: 'QUICK_REPLY'|'URL', text, url }]
+export async function createTemplateFull(env, store, { name, category, language = 'es', header, body, example, footer, buttons }) {
+  if (!store.waba_id) throw new HttpError(400, 'Esta tienda todavía no tiene su cuenta de WhatsApp conectada.');
+  const components = [];
+  if (header?.format === 'TEXT' && header.text) components.push({ type: 'HEADER', format: 'TEXT', text: cut(header.text, 60) });
+  if (header && (header.format === 'IMAGE' || header.format === 'VIDEO') && header.handle) components.push({ type: 'HEADER', format: header.format, example: { header_handle: [header.handle] } });
+  components.push({ type: 'BODY', text: body, ...(example?.length ? { example: { body_text: [example] } } : {}) });
+  if (footer) components.push({ type: 'FOOTER', text: cut(footer, 60) });
+  if (buttons?.length) components.push({ type: 'BUTTONS', buttons: buttons.map((b) => (b.type === 'URL' ? { type: 'URL', text: cut(b.text, 25), url: b.url } : { type: 'QUICK_REPLY', text: cut(b.text, 25) })) });
+  return graph(env, store, `${store.waba_id}/message_templates`, { method: 'POST', json: { name, language, category, components } });
+}
+
+export function deleteTemplate(env, store, name) {
+  return graph(env, store, `${store.waba_id}/message_templates?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+}
+
+// Manda una plantilla con su foto/video de cabecera (id de Meta) y los datos {{1}}, {{2}}…
+export function sendTemplateFull(env, store, to, { name, language = 'es', headerKind, headerId, params = [] }) {
+  const components = [];
+  if (headerKind && headerId) components.push({ type: 'header', parameters: [{ type: headerKind, [headerKind]: { id: headerId } }] });
+  if (params.length) components.push({ type: 'body', parameters: params.map((p) => ({ type: 'text', text: cut(p || '-', 1024) })) });
+  return sendMessage(env, store, to, { type: 'template', template: { name, language: { code: language }, components } });
 }
 
 export async function templateStatus(env, store, name) {

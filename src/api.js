@@ -5,7 +5,7 @@ import {
   ROLES, DEFAULT_LABELS, LABEL_COLORS, RUBROS, insertStore, HttpError, windowOpen, GENERAL, localDay,
 } from './util.js';
 import { createSession, destroySession, currentUser, requireUser, checkPassword, loadAccess, storeFor, companyFor, chatFor } from './auth.js';
-import { sendText, uploadMedia, sendMediaById, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES, getProfile, setProfile, setProfilePhoto, VERTICALS } from './whatsapp.js';
+import { sendText, uploadMedia, sendMediaById, listTemplates, sendTemplateFull, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES, getProfile, setProfile, setProfilePhoto, VERTICALS } from './whatsapp.js';
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
 import reportesApi from './api-reportes.js';
@@ -14,6 +14,7 @@ import billingApi from './api-billing.js';
 import enviosApi from './api-envios.js';
 import asistenteApi from './api-asistente.js';
 import carritosApi from './api-carritos.js';
+import respuestasApi, { tplShape } from './api-respuestas.js';
 import { fixSpelling } from './ortografia.js';
 import { loadSaldo } from './saldo.js';
 import { loadPlan } from './billing.js';
@@ -1133,7 +1134,7 @@ async function deliver(env, store, chat, msg) {
 
 function checkCanSend(store, chat) {
   if (store.status !== 'activo') fail(409, 'Este número todavía no está conectado. El dueño debe conectarlo en Configuración → Número.');
-  if (!windowOpen(chat)) fail(409, 'Pasaron más de 24 h desde el último mensaje de la clienta. Solo se puede enviar una plantilla aprobada (llega en una próxima fase).');
+  if (!windowOpen(chat)) fail(409, 'Pasaron más de 24 h desde el último mensaje de la clienta. Solo se le puede escribir con una plantilla aprobada (botón «Enviar plantilla»).');
 }
 
 api.post('/chats/:id/messages', async (c) => {
@@ -1199,6 +1200,136 @@ api.post('/chats/:id/media', async (c) => {
   return c.json({ message: await deliver(c.env, store, chat, msg) });
 });
 
+/* ---------- Respuestas rápidas, stickers y plantillas desde el chat ---------- */
+async function insertOut(env, store, chat, u, { type, body, key, mime, name, size, extra }) {
+  const obj = key ? await env.MEDIA.get(key) : null;
+  if (key && !obj) fail(404, 'Uno de los archivos ya no está guardado.');
+  const t = now();
+  const r = await env.DB.prepare(
+    `INSERT INTO messages (chat_id, store_id, direction, sender, user_id, type, body, media_mime, media_name, media_size, media_status, status, extra, created_at, updated_at)
+     VALUES (?, ?, 'out', 'ase', ?, ?, ?, ?, ?, ?, ?, 'sending', ?, ?, ?)`
+  ).bind(chat.id, store.id, u.id, type, body || null, mime || null, name || null, size || null, key ? 'ok' : null, extra ? JSON.stringify(extra) : null, t, t).run();
+  const id = r.meta.last_row_id;
+  let mkey = null;
+  if (key) {
+    // Copia propia del archivo para este mensaje (si borran la respuesta rápida, el chat no pierde la foto)
+    mkey = mediaKey(store.id, chat.id, id);
+    await env.MEDIA.put(mkey, await obj.arrayBuffer(), { httpMetadata: { contentType: mime } });
+    await env.DB.prepare('UPDATE messages SET media_key = ? WHERE id = ?').bind(mkey, id).run();
+  }
+  return { id, type, body: body || null, media_key: mkey, media_mime: mime, media_name: name };
+}
+
+api.post('/chats/:id/rapida', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const u = await requireUser(c);
+  const b = await body(c);
+  const qr = await c.env.DB.prepare('SELECT * FROM quick_replies WHERE id = ? AND store_id = ?').bind(Number(b.id), store.id).first();
+  if (!qr) fail(404, 'Esa respuesta rápida ya no existe.');
+  checkCanSend(store, chat);
+  await pauseForHuman(c.env, chat);
+  let media = [];
+  try {
+    media = JSON.parse(qr.media || '[]');
+  } catch {}
+  const skip = new Set((b.quitar || []).map(String));
+  media = media.filter((m) => !skip.has(m.id));
+  const text = String(b.texto ?? qr.texto ?? '').trim().slice(0, 4096);
+  // Un solo archivo (foto o video) + texto corto → el texto va como pie de foto, en una sola burbuja
+  const asCap = b.pie !== false && media.length === 1 && ['image', 'video', 'document'].includes(media[0].kind) && text && text.length <= 1024;
+  const out = [];
+  for (const [i, m] of media.entries()) {
+    const msg = await insertOut(c.env, store, chat, u, { type: m.kind, body: asCap && i === 0 ? text : null, key: m.key, mime: m.mime, name: m.name, size: m.size, extra: { rapida: qr.id } });
+    out.push(await deliver(c.env, store, chat, msg));
+  }
+  if (text && !asCap) {
+    const msg = await insertOut(c.env, store, chat, u, { type: 'text', body: text, extra: { rapida: qr.id } });
+    out.push(await deliver(c.env, store, chat, msg));
+  }
+  if (!out.length) fail(400, 'Esa respuesta rápida está vacía.');
+  await c.env.DB.prepare('UPDATE quick_replies SET uses = uses + 1 WHERE id = ?').bind(qr.id).run();
+  return c.json({ messages: out });
+});
+
+api.post('/chats/:id/sticker', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const u = await requireUser(c);
+  const b = await body(c);
+  const stk = await c.env.DB.prepare('SELECT * FROM stickers WHERE id = ? AND store_id = ?').bind(Number(b.sticker_id), store.id).first();
+  if (!stk) fail(404, 'Ese sticker ya no existe.');
+  checkCanSend(store, chat);
+  await pauseForHuman(c.env, chat);
+  const msg = await insertOut(c.env, store, chat, u, { type: 'sticker', key: stk.media_key, mime: 'image/webp', name: 'sticker.webp', size: stk.size, extra: { animated: !!stk.animated } });
+  const m = await deliver(c.env, store, chat, msg);
+  await c.env.DB.prepare('UPDATE stickers SET uses = uses + 1, last_used_at = ? WHERE id = ?').bind(now(), stk.id).run();
+  return c.json({ message: m });
+});
+
+// Plantilla aprobada por Meta: se puede mandar aunque pasaron las 24 h (tiene costo)
+api.post('/chats/:id/plantilla', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const u = await requireUser(c);
+  if (store.status !== 'activo') fail(409, 'Este número todavía no está conectado.');
+  const ct = c.req.header('content-type') || '';
+  let b;
+  let file = null;
+  if (ct.includes('multipart/form-data')) {
+    const f = await c.req.formData();
+    b = JSON.parse(String(f.get('data') || '{}'));
+    const x = f.get('file');
+    if (x && typeof x !== 'string') file = x;
+  } else b = await body(c);
+  const list = await listTemplates(c.env, store);
+  const tpl = list.find((t) => t.name === b.name && (!b.language || t.language === b.language));
+  if (!tpl) fail(404, 'Esa plantilla ya no existe en Meta.');
+  if (tpl.status !== 'APPROVED') fail(409, 'Esa plantilla todavía no está aprobada por Meta.');
+  const sh = tplShape(tpl);
+  const params = sh.vars.map((n, i) => String(b.params?.[i] ?? '').trim());
+  if (params.some((x) => !x)) fail(400, 'Llena todos los datos de la plantilla.');
+  let headerKind = null;
+  let mkey = null;
+  let mime = null;
+  let bytes = null;
+  if (sh.header && (sh.header.format === 'IMAGE' || sh.header.format === 'VIDEO')) {
+    headerKind = sh.header.format === 'IMAGE' ? 'image' : 'video';
+    if (file) {
+      bytes = await file.arrayBuffer();
+      mime = String(file.type || '').split(';')[0] || (headerKind === 'image' ? 'image/jpeg' : 'video/mp4');
+    } else {
+      const loc = await c.env.DB.prepare('SELECT media_key, media_mime FROM wa_templates WHERE store_id = ? AND name = ?').bind(store.id, tpl.name).first();
+      const obj = loc?.media_key ? await c.env.MEDIA.get(loc.media_key) : null;
+      if (!obj) fail(400, headerKind === 'image' ? 'Esta plantilla lleva una foto: elige la foto para mandarla.' : 'Esta plantilla lleva un video: elige el video para mandarlo.');
+      bytes = await obj.arrayBuffer();
+      mime = loc.media_mime;
+    }
+  } else if (sh.header?.format && sh.header.format !== 'TEXT') fail(400, 'Esta plantilla lleva un archivo que todavía no se puede mandar desde aquí.');
+  const fill = (s) => s.replace(/\{\{(\d+)\}\}/g, (_, n) => params[sh.vars.indexOf(Number(n))] ?? '');
+  const text = [sh.header?.format === 'TEXT' && sh.header.text ? `*${sh.header.text}*` : '', fill(sh.body), sh.footer ? `_${sh.footer}_` : ''].filter(Boolean).join('\n\n');
+  const t = now();
+  const extra = { template: tpl.name, category: tpl.category, ...(sh.buttons.length ? { opciones: sh.buttons.map((x) => x.text) } : {}) };
+  const ins = await c.env.DB.prepare(
+    `INSERT INTO messages (chat_id, store_id, direction, sender, user_id, type, body, media_mime, media_status, status, extra, created_at, updated_at)
+     VALUES (?, ?, 'out', 'ase', ?, ?, ?, ?, ?, 'sending', ?, ?, ?)`
+  ).bind(chat.id, store.id, u.id, headerKind || 'text', text, mime, headerKind ? 'ok' : null, JSON.stringify(extra), t, t).run();
+  const id = ins.meta.last_row_id;
+  try {
+    let headerId = null;
+    if (bytes) {
+      mkey = mediaKey(store.id, chat.id, id);
+      await c.env.MEDIA.put(mkey, bytes, { httpMetadata: { contentType: mime } });
+      await c.env.DB.prepare('UPDATE messages SET media_key = ? WHERE id = ?').bind(mkey, id).run();
+      headerId = await uploadMedia(c.env, store, bytes, mime, headerKind === 'image' ? 'foto.jpg' : 'video.mp4');
+    }
+    const wamid = await sendTemplateFull(c.env, store, chat.wa_id, { name: tpl.name, language: tpl.language, headerKind, headerId, params });
+    await c.env.DB.prepare("UPDATE messages SET wamid = ?, status = 'sent', error = NULL, updated_at = ? WHERE id = ?").bind(wamid, now(), id).run();
+  } catch (e) {
+    await c.env.DB.prepare("UPDATE messages SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").bind(clip(e.message, 300), now(), id).run();
+  }
+  await afterSend(c.env, store, chat, 'text', '📋 ' + fill(sh.body));
+  const row = await c.env.DB.prepare(`SELECT ${MSG_COLS} FROM messages m LEFT JOIN users u ON u.id = m.user_id WHERE m.id = ?`).bind(id).first();
+  return c.json({ message: shapeMsg(row) });
+});
+
 api.post('/messages/:id/retry', async (c) => {
   const m = await c.env.DB.prepare('SELECT * FROM messages WHERE id = ?').bind(Number(c.req.param('id'))).first();
   if (!m) fail(404, 'Ese mensaje no existe.');
@@ -1251,5 +1382,6 @@ api.route('/', billingApi);
 api.route('/', enviosApi);
 api.route('/', asistenteApi);
 api.route('/', carritosApi);
+api.route('/', respuestasApi);
 
 export default api;
