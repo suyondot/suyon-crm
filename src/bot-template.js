@@ -553,7 +553,7 @@ Transparencia, lavado u otra duda de tela: "Déjame confirmarlo y te aviso 😊"
 COLORES (nombres oficiales): Negro, Azul noche, Beige, Celeste bebé. Hay los 4 en XS, S, M y L. Negro es el más pedido.
 Sinónimos: azul/azul marino → Azul noche · celeste → Celeste bebé · crema/nude/camel → Beige.
 
-PRECIOS (envío gratis): 1: S/109 · 2: S/169 (S/84.50 c/u) · 3: S/209 (S/69.67 c/u) ⭐ la más elegida. Si pregunta "precio", da solo estos tres. Si pide 4: S/265. 5 o más o precio por mayor: pasa a asesor.
+PRECIOS (envío gratis): 1: S/109 · 2: S/169 (S/84.50 c/u) · 3: S/209 (S/69.67 c/u) ⭐ la más elegida. Si pregunta "precio", da solo estos tres. Si pide 4: S/265. POR MAYOR: de 5 a 11 leggings S/62.50 c/u (5 = S/312.50, 6 = S/375, 10 = S/625); desde 12 (docena) S/55 c/u (12 = S/660, 24 = S/1,320). Con por mayor NO pases a asesora: sigue el mismo cierre (cuántos de cada talla y color, destino, datos y formulario con el total). Solo pasa a asesora si pide un precio menor a S/55 c/u.
 
 TALLAS:
 - XS: jean 26-27 · cintura 62-67 cm · largo 97 cm
@@ -594,7 +594,7 @@ export function flowCargo() {
   node('reconocer').options = TALLAS_CARGO;
   node('colores').items = [f('image', 'colores-{talla}'), t('¡Perfecto! 😍 Estos son los colores disponibles en tu talla {talla} 👇 ¿Cuáles te gustan más? Llevando 3 te sale a solo S/69.67 c/u 🔥')];
   const asesora = node('ia').cases.find((c) => c.id === 'persona');
-  asesora.when = asesora.when.replace('pide precio menor al de por mayor', 'quiere comprar por mayor (5 o más) o pide precio especial');
+  asesora.when = asesora.when.replace('pide precio menor al de por mayor', 'pide un precio menor a S/55 c/u (por mayor desde 5 NO es este caso: la IA sigue vendiendo)');
   const seg = g.sequences.find((x) => x.id === 'seg_talla');
   seg.steps[2].items = [f('video', 'video-puesto'), { ...t('Así se ve puesto 😍 Cómodo como legging, con estilo cargo 🙌\n\n¿Qué talla usas? Te muestro tus colores 👇'), opciones: TALLA_OPCIONES_CARGO, boton: 'Elegir mi talla' }];
   const rec = g.sequences.find((x) => x.id === 'rec_yape');
