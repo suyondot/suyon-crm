@@ -760,7 +760,8 @@ api.patch('/labels/:id', async (c) => {
 api.delete('/labels/:id', async (c) => {
   const l = await labelFor(c, c.req.param('id'));
   await storeFor(c, l.store_id, 'config');
-  if (l.auto) fail(400, 'Las etiquetas automáticas no se pueden borrar: el bot las usa.');
+  // Las del sistema (Talla X, ASESOR, COMPRÓ, YAPE PENDIENTE) no; las que creó un flujo («prod cargo») sí
+  if (l.auto && /^(talla |asesora?$|compr[oó]$|yape pendiente$)/i.test(l.name)) fail(400, 'Esta etiqueta la usa el bot: no se puede borrar.');
   await c.env.DB.batch([
     c.env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id IN (SELECT chat_id FROM chat_labels WHERE label_id = ?)').bind(now(), l.id),
     c.env.DB.prepare('DELETE FROM chat_labels WHERE label_id = ?').bind(l.id),
