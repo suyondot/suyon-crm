@@ -699,6 +699,23 @@ async function imageB64(env, img) {
   }
 }
 
+// Si la IA está saturada o falla la red, se reintenta 2 veces antes de rendirse (antes salía «Estamos validando» al toque)
+async function fetchRetry(url, opts) {
+  let last;
+  for (let i = 0; i < 3; i++) {
+    if (i) await sleep(i * 1500);
+    try {
+      const res = await fetch(url, opts);
+      const data = await res.json().catch(() => ({}));
+      last = { res, data };
+      if (![429, 500, 502, 503, 504, 529].includes(res.status)) return last;
+    } catch (e) {
+      last = { res: { ok: false, status: 0 }, data: { error: { message: e.message } } };
+    }
+  }
+  return last;
+}
+
 async function callModel(env, settings, system, hist) {
   const model = IA_MODELS[settings.ia_model] ? settings.ia_model : 'claude-haiku-5-5';
   const info = IA_MODELS[model];
@@ -716,12 +733,11 @@ async function callModel(env, settings, system, hist) {
         ? [{ type: 'image', source: { type: 'base64', media_type: lastImg.imgKey.mime, data: imgData } }, { type: 'text', text: h.text }]
         : h.text,
     }));
-    res = await fetch((env.ANTHROPIC_API || 'https://api.anthropic.com') + '/v1/messages', {
+    ({ res, data } = await fetchRetry((env.ANTHROPIC_API || 'https://api.anthropic.com') + '/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({ model, max_tokens: 1500, system, messages }),
-    });
-    data = await res.json().catch(() => ({}));
+    }));
     if (!res.ok) throw new Error(`La IA respondió con error: ${data?.error?.message || res.status}`);
     return { text: (data.content || []).filter((c) => c.type === 'text').map((c) => c.text).join(''), inTok: data.usage?.input_tokens || 0, outTok: data.usage?.output_tokens || 0, model };
   }
@@ -731,12 +747,11 @@ async function callModel(env, settings, system, hist) {
       ? [{ type: 'text', text: h.text }, { type: 'image_url', image_url: { url: `data:${lastImg.imgKey.mime};base64,${imgData}` } }]
       : h.text,
   }))];
-  res = await fetch((env.OPENAI_API || 'https://api.openai.com') + '/v1/chat/completions', {
+  ({ res, data } = await fetchRetry((env.OPENAI_API || 'https://api.openai.com') + '/v1/chat/completions', {
     method: 'POST',
     headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
     body: JSON.stringify({ model, messages, response_format: { type: 'json_object' }, max_completion_tokens: 4000 }),
-  });
-  data = await res.json().catch(() => ({}));
+  }));
   if (!res.ok) throw new Error(`La IA respondió con error: ${data?.error?.message || res.status}`);
   return { text: data.choices?.[0]?.message?.content || '', inTok: data.usage?.prompt_tokens || 0, outTok: data.usage?.completion_tokens || 0, model };
 }
@@ -912,6 +927,18 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   const seenId = results.filter((m) => m.direction === 'in').reduce((a, m) => Math.max(a, m.id), 0);
   const hist = historyFor(results);
   if (!hist.length) return { ok: false };
+  // La clienta escribió justo mientras salían los mensajes de la respuesta anterior: su mensaje quedó ANTES de la
+  // última burbuja y el historial termina en «assistant». Así la IA falla (no acepta terminar en su propio mensaje)
+  // y salía «Estamos validando». Se le pasa lo que quedó sin responder como último mensaje de la clienta.
+  let allowEmpty = false;
+  if (hist[hist.length - 1].role === 'assistant') {
+    if (chat.sim) return { ok: true };
+    const seenBefore = (await env.DB.prepare('SELECT bot_seen FROM chats WHERE id = ?').bind(chat.id).first())?.bot_seen || 0;
+    const pend = results.filter((m) => m.direction === 'in' && m.id > seenBefore).map((m) => String(m.transcript || m.body || '').trim() || '[archivo]');
+    if (!pend.length) return { ok: true }; // ya estaba todo respondido
+    hist.push({ role: 'user', text: `(Mensajes que escribió mientras le respondías: ${pend.map((t) => `«${clip(t, 200)}»`).join(' · ')}) Respóndelos ahora sin repetir lo que ya le dijiste. Si tu último mensaje ya los respondió, devuelve "mensajes": [].`, imgKey: null });
+    allowEmpty = true;
+  }
   // Lo que la clienta escribió desde la última respuesta (puede ser más de un mensaje)
   const lastOut = results.reduce((a, m, i) => (m.direction === 'out' ? i : a), -1);
   const nuevos = results.slice(lastOut + 1).filter((m) => m.direction === 'in').map((m) => String(m.transcript || m.body || '').trim()).filter(Boolean);
@@ -1008,7 +1035,7 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
     ).bind(store.id, today(store.timezone), out.inTok, out.outTok, cost).run();
     if (!settings.ia_secret || ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'].includes(settings.ia_secret)) await addSpend(env, price.provider, cost, store.timezone, store.id);
     const p = parseReply(out.text, caseIds);
-    if (p.valid && (p.mensajes.length || p.caso)) reply = p;
+    if (p.valid && (p.mensajes.length || p.caso || allowEmpty)) reply = p;
     else lastErr = { raw: clip(out.text, 1500) };
     // Candado de colores: si la IA armó el pedido con un color que la clienta nunca dijo, se le pide corregir (1 vez)
     if (reply && !colorFix && !lastInImage) {

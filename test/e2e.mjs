@@ -42,6 +42,9 @@ const meta = http.createServer(async (req, res) => {
     if (req.headers['x-api-key'] !== 'ia-test-key') return json(401, { error: { message: 'bad key' } });
     const last = body.messages[body.messages.length - 1];
     const txt = typeof last.content === 'string' ? last.content : last.content.map((x) => x.text || '').join(' ');
+    // Como la IA real: no acepta que la conversación termine en un mensaje suyo
+    if (last.role === 'assistant') return json(400, { error: { message: 'This model does not support assistant message prefill. The conversation must end with a user message.' } });
+    if (/sobrecarga/i.test(txt) && !globalThis.__sobre) { globalThis.__sobre = 1; return json(529, { error: { message: 'Overloaded' } }); }
     if (/falla/i.test(txt)) return json(500, { error: { message: 'overloaded' } });
     if (/lento/i.test(txt)) await new Promise((r) => setTimeout(r, 2500)); // la IA demora: la clienta escribe mientras piensa
     if (/guías de envío peruanas/.test(txt)) return json(200, { content: [{ type: 'text', text: 'Aquí está: ' + JSON.stringify([{ foto: 1, tipo: 'shalom', orden: '30000002', codigo: 'qwer', dni: '70000002', nombre: 'LUZ PEREZ', destino: 'Piura', fecha: '2026-11-04T18:00:00' }]) }], usage: { input_tokens: 1500, output_tokens: 80 } });
@@ -826,6 +829,32 @@ try {
     await until(async () => { const x = await chatOf('51911111116'); return x?.bot_wait === 1; });
     await new Promise((r) => setTimeout(r, 2500)); // que termine de mandar antes de la siguiente prueba
   });
+  await step('la clienta escribe justo entre dos burbujas de la IA: se le responde (sin «Estamos validando»); IA saturada se reintenta', async () => {
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { test_numbers: '911111111, 911111112, 911111113, 911111114, 911111115, 911111116, 911111119' });
+    await inbound('51911111119', 'wamid.Z1', 'hola', { referral: { source_id: '1', source_type: 'ad', ctwa_clid: 'w' } });
+    let c = await until(async () => { const x = await chatOf('51911111119'); return x?.bot_node === 'talla' ? x : null; });
+    await inbound('51911111119', 'wamid.Z2', 'M');
+    await until(async () => (await chatOf('51911111119'))?.bot_wait === 1);
+    const n = iaCalls.length;
+    await inbound('51911111119', 'wamid.Z3', 'quiero el negro lento');
+    // apenas sale la 1a burbuja de la IA, la clienta escribe otra vez
+    const ia0 = (await msgsOf(c.id)).filter((m) => m.sender === 'ia').length;
+    for (let t = 0; t < 200 && (await msgsOf(c.id)).filter((m) => m.sender === 'ia').length <= ia0; t++) await new Promise((r) => setTimeout(r, 40));
+    await inbound('51911111119', 'wamid.Z4', 'Sede verdad');
+    await new Promise((r) => setTimeout(r, 6000));
+    console.log('    (entre burbujas:', iaCalls.slice(n).some((b) => /escribió mientras le respondías/.test(JSON.stringify(b.messages))), ')');
+    c = await chatOf('51911111119');
+    const ms = await msgsOf(c.id);
+    assert.ok(!ms.some((m) => /Estamos validando/.test(m.body || '')), 'no sale «Estamos validando»: ' + JSON.stringify(ms.map((m) => m.body)));
+    assert.equal(c.bot_paused, 0);
+    assert.ok(iaCalls.slice(n).every((b) => b.messages[b.messages.length - 1].role === 'user'), 'la conversación siempre termina en la clienta');
+    // IA saturada (529) una vez: se reintenta solo y responde
+    const before = (await msgsOf(c.id)).filter((m) => m.sender === 'ia').length;
+    await inbound('51911111119', 'wamid.Z5', 'sobrecarga ¿llega mañana?');
+    await until(async () => (await msgsOf(c.id)).filter((m) => m.sender === 'ia').length > before);
+    assert.ok(!(await msgsOf(c.id)).some((m) => /Estamos validando/.test(m.body || '')));
+    await new Promise((r) => setTimeout(r, 2500));
+  });
   await step('clienta que vuelve por un anuncio nuevo: el bot la atiende otra vez; talla en el 1er mensaje; Yape tras el formulario', async () => {
     await call('PATCH', `/api/stores/${store.id}/bot/settings`, { test_numbers: '911111111, 911111112, 911111113, 911111114, 911111115, 911111116, 911111117, 911111118' });
     const ad = { referral: { source_id: '2', source_type: 'ad', ctwa_clid: 'v' } };
@@ -951,7 +980,7 @@ try {
     const av = await call('GET', `/api/stores/${store.id}/avisos`);
     assert.ok(!av.events.some((e) => !e.read_at && /colores-M|datos de pago/.test(e.title)), 'los avisos del simulador no van a Avisos');
     const f = await call('GET', `/api/bot/flows/${flowId}`);
-    assert.equal(f.stats.precios.sent, 8, 'los números por bloque no cuentan el simulador');
+    assert.equal(f.stats.precios.sent, 9, 'los números por bloque no cuentan el simulador');
     assert.equal((await call('POST', `/api/stores/${store.id}/sim/send`, { text: '' })).status, 400);
     await call('PATCH', `/api/stores/${store.id}/bot/settings`, { bot_on: true });
   });
