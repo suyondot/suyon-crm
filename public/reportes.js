@@ -4,7 +4,7 @@ export function initReportes(ctx) {
   H = ctx;
 }
 const e = (s) => H.esc(s);
-const R = { range: 'hoy', desde: null, hasta: null, data: null, metric: 'ventas', wmetric: 'pedidos', storeId: null, canal: null, loading: false };
+const R = { range: 'hoy', desde: null, hasta: null, data: null, metric: 'ventas', wmetric: 'pedidos', storeId: null, canal: null, loading: false, view: 'resumen', ad: '', zona: '', open: null };
 const web = () => H.store()?.canal === 'shopify';
 const money = (n) => `S/${Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 2 })}`;
 const fmt = (n) => Number(n || 0).toLocaleString('es-PE');
@@ -39,6 +39,7 @@ export async function renderReportes(content) {
   if (!R.desde) [R.desde, R.hasta] = [d0, d1];
   content.innerHTML = `<div class="rep">
     <div class="rephead">
+      ${web() ? '' : `<div class="seg" role="tablist" aria-label="Vista">${[['resumen', 'Resumen'], ['embudo', 'Embudo']].map(([k, l]) => `<button data-rv="${k}" aria-pressed="${R.view === k}">${l}</button>`).join('')}</div>`}
       <div class="seg" role="tablist" aria-label="Periodo">${[['hoy', 'Hoy'], ['ayer', 'Ayer'], ['7', '7 días'], ['30', '30 días'], ['rango', 'Elegir fechas']].map(([k, l]) => `<button data-rr="${k}" aria-pressed="${R.range === k}">${l}</button>`).join('')}</div>
       <div class="repdates" ${R.range === 'rango' ? '' : 'hidden'}><input type="date" id="rd0" value="${e(R.desde)}" aria-label="Desde"><span>a</span><input type="date" id="rd1" value="${e(R.hasta)}" aria-label="Hasta"></div>
       <span class="grow"></span><span class="note" id="repwhen"></span>
@@ -46,6 +47,12 @@ export async function renderReportes(content) {
     <div id="repbody"><div class="empty" style="padding:60px"><span class="spin"></span></div></div>
   </div>`;
   content.querySelector('.rephead').onclick = (ev) => {
+    const v = ev.target.closest('[data-rv]');
+    if (v) {
+      R.view = v.dataset.rv;
+      R.data = null;
+      return renderReportes(content);
+    }
     const b = ev.target.closest('[data-rr]');
     if (!b) return;
     R.range = b.dataset.rr;
@@ -65,8 +72,11 @@ async function load() {
   const [desde, hasta] = R.range === 'rango' ? [R.desde, R.hasta] : rangeDates();
   R.loading = true;
   try {
-    R.data = await H.api('GET', `/stores/${H.S.storeId}/${web() ? 'reporte-web' : 'reporte'}?desde=${desde}&hasta=${hasta}`);
+    const emb = !web() && R.view === 'embudo';
+    const extra = emb ? `&ad=${encodeURIComponent(R.ad)}&zona=${R.zona}` : '';
+    R.data = await H.api('GET', `/stores/${H.S.storeId}/${web() ? 'reporte-web' : emb ? 'embudo' : 'reporte'}?desde=${desde}&hasta=${hasta}${extra}`);
     R.data._web = web();
+    R.data._embudo = emb;
   } catch (er) {
     const b = H.$('#repbody');
     if (b) b.innerHTML = `<div class="err">${e(er.message)}</div>`;
@@ -111,6 +121,7 @@ function draw() {
   const d = R.data;
   if (!box || !d) return;
   if (d._web) return drawWeb(box, d);
+  if (d._embudo) return drawEmbudo(box, d);
   const t = d.totales;
   const when = H.$('#repwhen');
   if (when) when.textContent = d.desde === d.hasta ? new Date(d.desde + 'T12:00').toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' }) : `${d.desde.slice(8)}/${d.desde.slice(5, 7)} al ${d.hasta.slice(8)}/${d.hasta.slice(5, 7)}`;
@@ -229,4 +240,66 @@ function vbarsWeb(series, metric, names) {
     <div class="vgrid">${ticks.map((t) => `<span style="bottom:${(t / m) * 100}%"><em>${fmt(t)}</em></span>`).join('')}</div>
     <div class="vcols">${series.map((s, i) => `<div class="vcol" tabindex="0" data-tip="${e(s.label)} · ${fmt(s[metric])} ${e(name)}"><i style="height:${s[metric] ? Math.max(2, (s[metric] / m) * 100) : 0}%"></i><span>${i % step === 0 ? e(s.label) : ''}</span></div>`).join('')}</div>
     <div class="vtip" hidden></div></div>`;
+}
+
+/* ---------------- Embudo: hasta qué paso llega cada conversación ---------------- */
+const ago = (t) => {
+  if (!t) return '';
+  const m = Math.round((Date.now() - t) / 60000);
+  return m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`;
+};
+
+function drawEmbudo(box, d) {
+  const when = H.$('#repwhen');
+  if (when) when.textContent = d.desde === d.hasta ? new Date(d.desde + 'T12:00').toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' }) : `${d.desde.slice(8)}/${d.desde.slice(5, 7)} al ${d.hasta.slice(8)}/${d.hasta.slice(5, 7)}`;
+  const top = d.etapas[0]?.n || 0;
+  const zonas = [['', 'Todas'], ['lima', 'Lima'], ['provincia', 'Provincia']];
+  box.innerHTML = `
+    <div class="embf">
+      <label class="embsel"><span>Anuncio</span><select id="embad">
+        <option value="">Todos</option><option value="con" ${R.ad === 'con' ? 'selected' : ''}>Solo los que vinieron por anuncio</option><option value="sin" ${R.ad === 'sin' ? 'selected' : ''}>Sin anuncio</option>
+        ${d.anuncios.map((a) => `<option value="${e(a.id)}" ${R.ad === a.id ? 'selected' : ''}>${e(a.name)} (${fmt(a.n)})</option>`).join('')}
+      </select></label>
+      <div class="seg sm" role="tablist" aria-label="Destino">${zonas.map(([k, l]) => `<button data-ez="${k}" aria-pressed="${R.zona === k}">${l}</button>`).join('')}</div>
+    </div>
+    ${!top ? '<p class="note rempty">Todavía no hay conversaciones nuevas en este periodo.</p>' : `
+    ${d.peor ? `<div class="embtip">💡 Donde más se quedan: <b>${e(d.peor.label)}</b> → ${fmt(d.peor.quedaron)} no llegaron a «${e(d.peor.sig)}». Revisa el texto de ese paso.</div>` : ''}
+    <section class="rcard rwide"><h3>Embudo</h3><p class="rsub">${fmt(top)} conversaciones nuevas. Toca un paso para ver los chats que se quedaron ahí.</p>
+      <ol class="emb">${d.etapas.map((x, j) => `
+        <li class="${R.open === x.key ? 'open' : ''}">
+          <button class="embrow" data-eo="${x.key}" ${x.quedaron ? '' : 'disabled'} aria-expanded="${R.open === x.key}">
+            <span class="embn">${j + 1}. ${e(x.label)}</span>
+            <span class="embbar"><i style="width:${top ? Math.max(1.5, (x.n / top) * 100) : 0}%"></i></span>
+            <span class="embv"><b>${fmt(x.n)}</b><small>${pct(x.del_total)}</small></span>
+            <span class="embq">${x.quedaron ? `se quedaron <b>${fmt(x.quedaron)}</b>${x.de_arriba != null ? '' : ''}` : ''}</span>
+          </button>
+          ${R.open === x.key ? `<div class="embchats">${x.chats.length ? x.chats.map((c) => `<button class="embchat" data-ec="${c.id}"><b>${e(c.nombre || '+' + c.wa)}</b>${c.pausa ? ' <span class="bpz">⏸️ En pausa</span>' : ''}<span>${e(String(c.ultimo).slice(0, 90))}</span><small>${ago(c.at)}</small></button>`).join('') : '<p class="note">Sin chats.</p>'}${x.quedaron > x.chats.length ? `<p class="note">Se muestran los ${x.chats.length} más recientes.</p>` : ''}</div>` : ''}
+        </li>`).join('')}</ol>
+    </section>`}
+    <section class="rcard rwide"><h3>Seguimientos</h3><p class="rsub">A cuántas se les mandó cada seguimiento y cuántas respondieron después (revivieron)</p>
+      ${d.seguimientos.length ? `<div class="rtable"><table><thead><tr><th>Seguimiento</th><th>Qué manda</th><th class="r">Enviados</th><th class="r">Revivieron</th><th>Tasa</th></tr></thead><tbody>
+        ${d.seguimientos.map((x) => `<tr><td><b>${e(x.seq)}</b><small>Paso ${e(x.paso)} · ${e(x.cuando)}</small></td><td>${e(x.que)}</td><td class="r mono">${fmt(x.enviados)}${x.fallidos ? `<small class="err-t">${fmt(x.fallidos)} fallaron</small>` : ''}</td><td class="r mono"><b>${fmt(x.revivieron)}</b></td>
+          <td><span class="rrate"><i style="width:${x.tasa == null ? 0 : Math.min(100, x.tasa * 100)}%"></i></span><span class="mono">${pct(x.tasa)}</span></td></tr>`).join('')}</tbody></table></div>` : '<p class="note rempty">No se mandaron seguimientos en este periodo.</p>'}
+    </section>
+    <p class="note rnote">Cuenta las conversaciones que empezaron en el periodo y el paso más alto al que llegó cada una, según lo que guardó el bot (talla, colores, distrito, datos), el formulario que recibió y sus pedidos. «Revivieron» = respondieron después de ese seguimiento.</p>`;
+  box.querySelector('#embad').onchange = (ev) => {
+    R.ad = ev.target.value;
+    R.open = null;
+    load();
+  };
+  box.onclick = (ev) => {
+    const z = ev.target.closest('[data-ez]');
+    if (z) {
+      R.zona = z.dataset.ez;
+      R.open = null;
+      return load();
+    }
+    const o = ev.target.closest('[data-eo]');
+    if (o) {
+      R.open = R.open === o.dataset.eo ? null : o.dataset.eo;
+      return draw();
+    }
+    const c = ev.target.closest('[data-ec]');
+    if (c && H.goChat) H.goChat(Number(c.dataset.ec));
+  };
 }

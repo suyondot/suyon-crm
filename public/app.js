@@ -2823,7 +2823,7 @@ initClientes({
   },
 });
 
-initReportes({ api, esc, $, S, store });
+initReportes({ api, esc, $, S, store, goChat });
 initPedidos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, listTime, canChats });
 initEnvios({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, canChats });
 initPanel({ api, esc, toast });

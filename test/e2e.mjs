@@ -854,6 +854,25 @@ try {
     assert.ok(!(await msgsOf(w.id)).some((m) => /Qué talla usas/.test(m.body || '')), 'no se pregunta la talla');
     await new Promise((r) => setTimeout(r, 1500));
     await call('POST', `/api/stores/${store.id}/avisos/read`, {}); // avisos de archivos que faltan en esta prueba
+    // 👍 al mensaje de la IA mientras el bot espera su respuesta = «sí»
+    const ia = (await msgsOf(c.id)).filter((m) => m.sender === 'ia' && m.wamid).pop();
+    const nIA = iaCalls.length;
+    await hook(md({ messages: [{ from: '51911111117', id: 'wamid.RX1', timestamp: ts(), type: 'reaction', reaction: { message_id: ia.wamid, emoji: '👍' } }] }));
+    await until(async () => iaCalls.length > nIA);
+    assert.ok((await msgsOf(c.id)).some((m) => m.direction === 'in' && m.body === 'Sí 👍'), 'la reacción entra como «Sí 👍»');
+    await until(async () => (await chatOf('51911111117'))?.bot_wait === 1);
+    // Embudo: cuenta las conversaciones nuevas y hasta dónde llegaron
+    const hoy = new Date(Date.now() - 5 * 3600e3).toISOString().slice(0, 10);
+    const emb = await call('GET', `/api/stores/${store.id}/embudo?desde=${hoy}&hasta=${hoy}`);
+    assert.equal(emb.etapas[0].key, 'llegaron');
+    assert.ok(emb.etapas[0].n >= 2, JSON.stringify(emb.etapas.map((x) => [x.key, x.n])));
+    assert.ok(emb.etapas.find((x) => x.key === 'talla').n >= 2, 'las que dieron talla');
+    assert.ok(emb.etapas.every((x, i, a) => !i || x.n <= a[i - 1].n), 'el embudo nunca sube');
+    const st = emb.etapas.find((x) => x.quedaron);
+    assert.ok(st.chats.length, 'muestra los chats que se quedaron');
+    assert.ok(Array.isArray(emb.seguimientos));
+    const soloAd = await call('GET', `/api/stores/${store.id}/embudo?desde=${hoy}&hasta=${hoy}&ad=sin`);
+    assert.ok(soloAd.etapas[0].n < emb.etapas[0].n, 'filtra por anuncio');
   });
   await step('plantilla «Ventas leggings cargo»: talla 38+ es L y su prompt reemplaza al de pantalón', async () => {
     const { flowCargo, PROMPT_CARGO, TALLAS_CARGO } = await import('../src/bot-template.js');
@@ -868,9 +887,14 @@ try {
     assert.equal(recognize('S', TALLAS_CARGO), 'S');
     assert.ok(!/pantal[oó]n(?! formal stretch)/i.test(PROMPT_CARGO.replace(/Pantalón Formal/g, '')), 'el prompt del cargo no habla de pantalón');
     assert.match(PROMPT_CARGO, /\{yape\}/);
+    assert.match(PROMPT_CARGO, /Confírmame con un \*SÍ\* si tus datos están correctos/);
+    assert.match(PROMPT_CARGO, /Mensaje 1: "¡Genial! 🛵 A \[distrito\] te lo llevamos \[HOY\/MAÑANA\] con nuestro motorizado, entre 2 y 8 p\.m\."\nMensaje 2: "Delivery GRATIS/);
     assert.ok(!/\d{3} \d{3} \d{3}/.test(PROMPT_CARGO), 'sin números de pago en el código');
     const g = flowCargo();
     assert.deepEqual(g.nodes.find((x) => x.id === 'inicio').trigger.keywords, ['Deseo mis Leggins Cargo', 'Deseo mis Leggings Cargo']);
+    const prec = g.nodes.find((x) => x.id === 'precios').items.find((i) => i.text).text;
+    assert.match(prec, /3 leggings: S\/209\n⭐ La más elegida/);
+    assert.ok(!/69\.67/.test(prec), 'sin precio por unidad en la línea de 3');
     const antes = (await call('GET', `/api/stores/${store.id}/bot`)).settings?.ia_prompt;
     const r = await call('POST', `/api/stores/${store.id}/bot/flows`, { template: 'cargo' });
     assert.ok(r.id, JSON.stringify(r));

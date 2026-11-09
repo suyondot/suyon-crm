@@ -129,7 +129,7 @@ async function upsertChat(env, store, waId, profileName, firstAt) {
 }
 
 async function handleInbound(env, ctx, store, msg, profileName) {
-  if (msg.type === 'reaction') return handleReaction(env, store, msg);
+  if (msg.type === 'reaction') return handleReaction(env, ctx, store, msg);
   const t = msg.timestamp ? Number(msg.timestamp) * 1000 : now();
   const chat = await upsertChat(env, store, msg.from, profileName, t);
   const isMedia = MEDIA_TYPES.includes(msg.type);
@@ -179,15 +179,35 @@ async function handleInbound(env, ctx, store, msg, profileName) {
   else await work;
 }
 
-async function handleReaction(env, store, msg) {
+// Reacciones que cuentan como «sí» (ej. la clienta pone 👍 o ❤️ al formulario en vez de escribir)
+const REACCION_SI = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '👍🏾', '👍🏿', '❤️', '❤', '♥️', '🥰', '😍', '😘', '👌', '✅', '🙏', '💕', '💖', '🫶', '💯', '😊']);
+
+async function handleReaction(env, ctx, store, msg) {
   const r = msg.reaction || {};
   if (!r.message_id) return;
   const res = await env.DB.prepare(
     `UPDATE messages SET extra = json_set(COALESCE(extra, '{}'), '$.reaction', ?), updated_at = ? WHERE wamid = ? AND store_id = ?`
   ).bind(r.emoji || null, now(), r.message_id, store.id).run();
-  if (res.meta.changes) {
-    await env.DB.prepare(`UPDATE chats SET updated_at = ? WHERE id = (SELECT chat_id FROM messages WHERE wamid = ?)`).bind(now(), r.message_id).run();
-  }
+  if (!res.meta.changes) return;
+  await env.DB.prepare(`UPDATE chats SET updated_at = ? WHERE id = (SELECT chat_id FROM messages WHERE wamid = ?)`).bind(now(), r.message_id).run();
+  if (!r.emoji || !REACCION_SI.has(r.emoji)) return;
+  // Reaccionó a un mensaje de la IA mientras el bot espera su respuesta → para el bot es un «sí»
+  const m = await env.DB.prepare('SELECT chat_id, direction, sender FROM messages WHERE wamid = ? AND store_id = ?').bind(r.message_id, store.id).first();
+  if (!m || m.direction !== 'out' || m.sender !== 'ia') return;
+  const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(m.chat_id).first();
+  if (!chat || chat.bot_paused || !chat.bot_flow_id || chat.bot_wait !== 1) return;
+  const t = msg.timestamp ? Number(msg.timestamp) * 1000 : now();
+  const body = `Sí ${r.emoji}`;
+  const ins = await env.DB.prepare(
+    `INSERT OR IGNORE INTO messages (chat_id, store_id, wamid, direction, sender, type, body, extra, created_at, updated_at)
+     VALUES (?, ?, ?, 'in', 'cli', 'text', ?, ?, ?, ?)`
+  ).bind(chat.id, store.id, `react:${msg.id}`, body, JSON.stringify({ reaccion: r.emoji }), t, now()).run();
+  if (!ins.meta.changes) return;
+  await env.DB.prepare("UPDATE chats SET last_msg_at = ?, last_preview = ?, last_dir = 'in', last_inbound_at = ?, updated_at = ? WHERE id = ?")
+    .bind(t, body, t, now(), chat.id).run();
+  const work = onInbound(env, ctx, store, chat.id, { id: ins.meta.last_row_id, type: 'text', body }).catch((e) => console.error('bot', e));
+  if (ctx?.waitUntil) ctx.waitUntil(work);
+  else await work;
 }
 
 async function handleStatus(env, store, st) {

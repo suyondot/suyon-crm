@@ -47,20 +47,21 @@ TONO: cálido y cercano (preciosa, linda, bella), emojis, mensajes de 2-4 línea
 - Acepta SOLO colores del STOCK de su talla. Confirma cantidad, talla, colores y total (ej. "¡Perfecto, preciosa! 1 pantalón Negro talla M: S/89 😍") y pregunta el destino (si aún no lo dijo): "¿A qué ciudad o distrito te lo enviamos? 😊".
 - Imagen marcada con checks o círculos: confirma esos colores por nombre; si no se distingue, pide los nombres.
 - "Gris" o "plomo" solo: tu mensaje es SOLO "¡Lindos! 😍 ¿El gris claro o el gris oscuro?". Recién después confirma y pregunta el destino.
-- Si ya dio talla, colores y distrito de Lima: UN solo mensaje con total y cierre 4a.
+- Si ya dio talla, colores y distrito de Lima: confirma el total y sigue directo con el cierre 4a (sus 2 mensajes).
 
 3. DESTINO
 SIN cobertura de motorizado (van por Shalom): Ancón, Santa Rosa, Carabayllo después del km 22, Ate después del Real Plaza Puruchuco, Jicamarca, Manchay, Chosica, Chaclacayo, Cieneguilla, Pachacámac, Lurín, Punta Hermosa, Punta Negra, San Bartolo, Santa María del Mar y Pucusana.
 El resto de Lima y Callao SÍ (incluye Huachipa, Puente Piedra, Ventanilla, Mi Perú). Si solo dice "Lima", pregunta su distrito. Si dudas: "Déjame confirmar si llegamos a tu zona 😊" y pasa a asesor.
 
 4. LIMA CON COBERTURA
-a) Cierre con urgencia, en un solo mensaje:
-"¡Genial! 🛵 A [distrito] te lo llevamos [HOY/MAÑANA] con nuestro motorizado, entre 2 y 8 p.m. Delivery GRATIS y pagas recién al recibir. Compárteme estos datos, linda 👇
+a) Cierre con urgencia, en DOS mensajes separados:
+Mensaje 1: "¡Genial! 🛵 A [distrito] te lo llevamos [HOY/MAÑANA] con nuestro motorizado, entre 2 y 8 p.m."
+Mensaje 2: "Delivery GRATIS y pagas recién al recibir. Compárteme estos datos, linda 👇
 Nombre y apellido:
 Celular:
 Dirección:"
-b) Con nombre, celular y dirección, envía "Revisa que tus datos estén correctos, preciosa 👇" + FORMULARIO LIMA. Si corrige algo, reenvíalo corregido.
-c) Cuando confirme: CONFIRMACIÓN LIMA y pasa a asesor.
+b) Con nombre, celular y dirección, envía "Confírmame con un *SÍ* si tus datos están correctos, preciosa 👇" + FORMULARIO LIMA. Si corrige algo, reenvíalo corregido.
+c) Cuando confirme («sí», «correcto», «ok» o reacciona con 👍 o ❤️ al formulario): CONFIRMACIÓN LIMA y pasa a asesor.
 
 5. PROVINCIA o LIMA SIN COBERTURA
 a) 3 mensajes separados:
@@ -347,7 +348,7 @@ export function flowPantalon() {
           { id: 'yape_sede', label: 'Yape + sede', send_reply: true, next: 'compro',
             when: 'La clienta ya dio sus datos, ya eligió su sede de Shalom y ACABA DE ENVIAR la captura (foto) de su pago del adelanto (Yape, Plin o transferencia). Sin la foto de la captura NO es este caso.' },
           { id: 'lima_ok', label: 'Lima confirmó', send_reply: true, next: 'compro',
-            when: 'La clienta es de Lima CON cobertura (pago contra entrega), ya recibió el formulario de Lima y confirma que sus datos están correctos (sí, correcto, todo bien, ok o similar). NO aplica a clientas de provincia, Shalom o zonas sin cobertura.' },
+            when: 'La clienta es de Lima CON cobertura (pago contra entrega), ya recibió el formulario de Lima y confirma que sus datos están correctos (sí, correcto, todo bien, ok o similar, o «Sí 👍/❤️» si reaccionó al formulario). NO aplica a clientas de provincia, Shalom o zonas sin cobertura.' },
           { id: 'persona', label: 'Pide persona o reclamo', send_reply: true, next: 'asesora',
             when: 'La clienta pide EXPRESAMENTE hablar con una persona, tiene un reclamo de un pedido que YA recibió, pide horario de entrega especial, pide precio menor al de por mayor, pregunta por lavado, arrugas, datos del motorizado u otros productos, o su zona de cobertura es dudosa. NO aplica si solo duda o desconfía, si quiere contra entrega o si pregunta precios, tallas, colores, tela o envíos.' },
           { id: 'yape_luego', label: 'Yapeo más tarde', send_reply: true, next: 'yape_pendiente',
@@ -423,20 +424,21 @@ TONO: cálido y cercano (preciosa, linda, bella), emojis, mensajes de 2-4 línea
 - Acepta SOLO los 4 colores oficiales (hay los 4 en XS, S, M y L). Confirma cantidad, talla, colores y total (ej. "¡Perfecto, preciosa! 1 legging Negro talla M: S/109 😍") y pregunta el destino (si aún no lo dijo): "¿A qué ciudad o distrito te lo enviamos? 😊".
 - Imagen marcada con checks o círculos: confirma esos colores por nombre; si no se distingue, pide los nombres.
 - "Azul" solo = Azul noche. "Celeste" = Celeste bebé.
-- Si ya dio talla, colores y distrito de Lima: UN solo mensaje con total y cierre 4a.
+- Si ya dio talla, colores y distrito de Lima: confirma el total y sigue directo con el cierre 4a (sus 2 mensajes).
 
 3. DESTINO
 SIN cobertura de motorizado (van por Shalom): Ancón, Santa Rosa, Carabayllo después del km 22, Ate después del Real Plaza Puruchuco, Jicamarca, Manchay, Chosica, Chaclacayo, Cieneguilla, Pachacámac, Lurín, Punta Hermosa, Punta Negra, San Bartolo, Santa María del Mar y Pucusana.
 El resto de Lima y Callao SÍ (incluye Huachipa, Puente Piedra, Ventanilla, Mi Perú). Si solo dice "Lima", pregunta su distrito. Si dudas: "Déjame confirmar si llegamos a tu zona 😊" y pasa a asesor.
 
 4. LIMA CON COBERTURA
-a) Cierre con urgencia, en un solo mensaje:
-"¡Genial! 🛵 A [distrito] te lo llevamos [HOY/MAÑANA] con nuestro motorizado, entre 2 y 8 p.m. Delivery GRATIS y pagas recién al recibir. Compárteme estos datos, linda 👇
+a) Cierre con urgencia, en DOS mensajes separados:
+Mensaje 1: "¡Genial! 🛵 A [distrito] te lo llevamos [HOY/MAÑANA] con nuestro motorizado, entre 2 y 8 p.m."
+Mensaje 2: "Delivery GRATIS y pagas recién al recibir. Compárteme estos datos, linda 👇
 Nombre y apellido:
 Celular:
 Dirección:"
-b) Con nombre, celular y dirección, envía "Revisa que tus datos estén correctos, preciosa 👇" + FORMULARIO LIMA. Si corrige algo, reenvíalo corregido.
-c) Cuando confirme: CONFIRMACIÓN LIMA y pasa a asesor.
+b) Con nombre, celular y dirección, envía "Confírmame con un *SÍ* si tus datos están correctos, preciosa 👇" + FORMULARIO LIMA. Si corrige algo, reenvíalo corregido.
+c) Cuando confirme («sí», «correcto», «ok» o reacciona con 👍 o ❤️ al formulario): CONFIRMACIÓN LIMA y pasa a asesor.
 
 5. PROVINCIA o LIMA SIN COBERTURA
 a) 3 mensajes separados:
@@ -579,7 +581,7 @@ export function flowCargo() {
   node('inicio').trigger.keywords = ['Deseo mis Leggins Cargo', 'Deseo mis Leggings Cargo'];
   node('inicio').labels = ['prod cargo'];
   node('precios').title = 'Leggings cargo y precios';
-  node('precios').items = [f('image', 'precios'), t('✨ Leggings Cargo ✨\n\n💰 1 legging: S/109\n💰 2 leggings: S/169 → S/84.50 c/u\n🔥 3 leggings: S/209 → ¡solo S/69.67 c/u! ⭐ La más elegida\n\n🚚 Envío GRATIS a todo el Perú\n✅ Compra 100% segura')];
+  node('precios').items = [f('image', 'precios'), t('✨ Leggings Cargo ✨\n\n💰 1 legging: S/109\n💰 2 leggings: S/169 → S/84.50 c/u\n🔥 3 leggings: S/209\n⭐ La más elegida\n\n🚚 Envío GRATIS a todo el Perú\n✅ Compra 100% segura')];
   node('talla').items = [{ ...t('¿Qué talla usas normalmente? 🤗 Elígela aquí abajo o escríbeme tu talla de jean 👇'), opciones: TALLA_OPCIONES_CARGO, boton: 'Elegir mi talla' }];
   node('reconocer').options = TALLAS_CARGO;
   node('colores').items = [f('image', 'colores-{talla}'), t('¡Perfecto! 😍 Estos son los colores disponibles en tu talla {talla} 👇 ¿Cuáles te gustan más? Llevando 3 te sale a solo S/69.67 c/u 🔥')];
@@ -859,7 +861,7 @@ ${ropa ? `- Talla: "Dime tu talla y te muestro los colores que te quedan 👇"
     paso('COLORES', `- Usa SOLO los colores que ELLA dijo: nunca sumes ni cambies colores por tu cuenta (si dice "vino y negro" son esos 2, aunque haya más colores). Si dice un color parecido (rojo → Vino, plomo → Gris), confírmalo con el nombre oficial. Si quiere más prendas, pregúntale de qué colores; no los elijas por ella.
 - Acepta SOLO estos colores: ${a.colores}. Confirma cantidad, talla, colores y total en UN mensaje (ej. "¡Perfecto, preciosa! 2 ${prod} talla S en Vino y Negro: ${soles(a.precios[2] || a.precios[1] * 2)} 😍") y en el MISMO mensaje pregunta el destino (si aún no lo dijo): "¿A qué ciudad o distrito te lo enviamos? 😊". NO preguntes cuántas quiere: son los colores que eligió.
 - Imagen marcada con checks o círculos: confirma esos colores por nombre; si no se distingue, pide los nombres.
-- Color que no está: "Uy, preciosa, ese color no lo tenemos 🙈 Te queda lindo el [otro de la lista] 😍".${lima ? '\n- Si ya dio talla, colores y distrito de Lima: UN solo mensaje con total y cierre 4a.' : ''}`);
+- Color que no está: "Uy, preciosa, ese color no lo tenemos 🙈 Te queda lindo el [otro de la lista] 😍".${lima ? '\n- Si ya dio talla, colores y distrito de Lima: confirma el total y sigue directo con el cierre 4a (sus 2 mensajes).' : ''}`);
   } else {
     paso('CANTIDAD', `- Si dice cuántas quiere (o toca un botón de la promoción): confirma cantidad y total en UN mensaje (ej. "¡Perfecto, preciosa! 2 ${uni(2)}: ${soles(a.precios[2] || a.precios[1] * 2)} 😍") y en el MISMO mensaje pregunta el destino (si aún no lo dijo): "¿A qué ciudad o distrito te lo enviamos? 😊".
 - Si duda: recomienda la promoción más grande una sola vez${promoTxt ? ` ("${promoTxt}")` : ''}.`);
@@ -871,13 +873,14 @@ El resto de Lima y Callao SÍ. Si solo dice "Lima", pregunta su distrito.
 - Si dudas de una zona: "Déjame confirmar si llegamos a tu zona 😊" y pasa a asesor.${prov ? '\n- Si la clienta de Lima pide Shalom o agencia, respeta su elección: va por Shalom (paso PROVINCIA o LIMA SIN COBERTURA, sin el mensaje de "fuera de cobertura").' : ''}${prov ? '' : '\nSi es de provincia o de una zona sin cobertura: "Por ahora solo hacemos entregas en Lima 🙈" y pasa a asesor.'}`
     : 'Solo enviamos a provincia por agencia Shalom. Pregunta su ciudad o distrito.');
   if (lima) {
-    paso('LIMA CON COBERTURA', `a) Cierre con urgencia, en un solo mensaje:
-"¡Genial! 🛵 A [distrito] te lo llevamos [HOY/MAÑANA] con nuestro motorizado, {horario_entrega}. ${gratis ? 'Delivery GRATIS y pagas' : 'Pagas'} recién al recibir. Compárteme estos datos, linda 👇
+    paso('LIMA CON COBERTURA', `a) Cierre con urgencia, en DOS mensajes separados:
+Mensaje 1: "¡Genial! 🛵 A [distrito] te lo llevamos [HOY/MAÑANA] con nuestro motorizado, {horario_entrega}."
+Mensaje 2: "${gratis ? 'Delivery GRATIS y pagas' : 'Pagas'} recién al recibir. Compárteme estos datos, linda 👇
 Nombre y apellido:
 Celular:
 Dirección:"
-b) Con nombre, celular y dirección, envía "Revisa que tus datos estén correctos, preciosa 👇" + FORMULARIO LIMA. Si corrige algo, reenvíalo corregido.
-c) Cuando confirme: CONFIRMACIÓN LIMA y pasa a asesor.`);
+b) Con nombre, celular y dirección, envía "Confírmame con un *SÍ* si tus datos están correctos, preciosa 👇" + FORMULARIO LIMA. Si corrige algo, reenvíalo corregido.
+c) Cuando confirme («sí», «correcto», «ok» o reacciona con 👍 o ❤️ al formulario): CONFIRMACIÓN LIMA y pasa a asesor.`);
   }
   if (prov) {
     paso(lima ? 'PROVINCIA o LIMA SIN COBERTURA' : 'PROVINCIA', `a) ${lima ? '3' : '2'} mensajes separados:
@@ -1001,7 +1004,7 @@ export function flowAsistente(a, rubro) {
   if (a.provincia) cases.push({ id: 'yape_sede', label: 'Pagó + agencia', send_reply: true, next: 'compro',
     when: 'La clienta ya dio sus datos, ya eligió su agencia de Shalom y ACABA DE ENVIAR la captura (foto) de su pago. Sin la foto de la captura NO es este caso.' });
   if (a.lima) cases.push({ id: 'lima_ok', label: 'Lima confirmó', send_reply: true, next: 'compro',
-    when: 'La clienta es de Lima con cobertura (pago contra entrega), ya recibió el FORMULARIO LIMA y confirma que sus datos están correctos (sí, correcto, ok o similar). NO aplica a provincia ni a agencia.' });
+    when: 'La clienta es de Lima con cobertura (pago contra entrega), ya recibió el FORMULARIO LIMA y confirma que sus datos están correctos (sí, correcto, ok o similar, o «Sí 👍/❤️» si reaccionó al formulario). NO aplica a provincia ni a agencia.' });
   cases.push({ id: 'persona', label: 'Pide persona o reclamo', send_reply: true, next: 'asesora',
     when: 'La clienta pide EXPRESAMENTE hablar con una persona, tiene un reclamo de un pedido que ya recibió, pide un precio menor o pregunta algo que no está en tu información. NO aplica si solo duda o pregunta precios o envíos.' });
   if (a.provincia) cases.push({ id: 'yape_luego', label: 'Pago más tarde', send_reply: true, next: 'yape_pendiente',

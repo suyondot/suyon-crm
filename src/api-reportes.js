@@ -289,3 +289,133 @@ r.get('/stores/:id/reporte-web', async (c) => {
 });
 
 export default r;
+
+/* ---------------- Embudo: hasta qué paso llega cada conversación ---------------- */
+// Cohorte = conversaciones que empezaron en el periodo. Cada chat cuenta hasta el paso más alto que alcanzó
+// (sale de lo que guardó el bot, el formulario enviado y sus pedidos). «Se quedaron» = llegaron hasta ese paso y no pasaron.
+const EMBUDO_ROPA = [
+  ['llegaron', 'Llegaron'],
+  ['respondieron', 'Respondieron algo'],
+  ['talla', 'Dieron su talla'],
+  ['colores', 'Eligieron colores'],
+  ['destino', 'Dijeron su distrito o ciudad'],
+  ['datos', 'Dieron sus datos'],
+  ['formulario', 'Recibieron el formulario'],
+  ['compra', 'Confirmaron o pagaron (pedido)'],
+  ['entregado', 'Entregado o recogido'],
+];
+const EMBUDO_SIMPLE = EMBUDO_ROPA.filter(([k]) => !['talla', 'colores'].includes(k));
+
+export function etapaDe(x, simple) {
+  let v = {};
+  try {
+    v = JSON.parse(x.bot_vars || '{}') || {};
+  } catch {}
+  const labels = String(x.labels || '').split('|');
+  const ok = {
+    llegaron: true,
+    respondieron: x.n_in >= 2,
+    talla: !!v.talla || labels.some((l) => /^talla /i.test(l)),
+    colores: !!v.colores,
+    destino: !!(v.distrito || v.destino || v.sede_shalom || v.ciudad),
+    datos: !!(v.nombre && (v.direccion || v.dni)),
+    formulario: !!x.n_form,
+    compra: !!x.o_status || labels.some((l) => SALE_LABELS.includes(l)),
+    entregado: ['entregado', 'recogido', 'falta_abonar'].includes(x.o_status),
+  };
+  const pasos = simple ? EMBUDO_SIMPLE : EMBUDO_ROPA;
+  let i = 0;
+  pasos.forEach(([k], j) => {
+    if (ok[k]) i = j;
+  });
+  const zona = x.o_modo ? (x.o_modo === 'lima' ? 'lima' : 'provincia') : (() => {
+    const d = destinoOf(v, labels);
+    return d === 'Lima' ? 'lima' : d === 'Provincia' ? 'provincia' : 'sin';
+  })();
+  return { i, zona, vars: v };
+}
+
+r.get('/stores/:id/embudo', async (c) => {
+  const st = await storeFor(c, c.req.param('id'));
+  const tz = st.timezone || 'America/Lima';
+  const q = c.req.query();
+  const today = localDay(now(), tz);
+  const re = /^\d{4}-\d{2}-\d{2}$/;
+  const desde = re.test(q.desde || '') ? q.desde : today;
+  const hasta = re.test(q.hasta || '') ? q.hasta : desde;
+  if (hasta < desde) fail(400, 'La fecha final es antes que la inicial.');
+  const t0 = dayStart(desde, tz);
+  const t1 = dayStart(hasta, tz) + DAY;
+  if (t1 - t0 > 93 * DAY) fail(400, 'Elige como máximo 3 meses.');
+  const db = c.env.DB;
+  const simple = st.rubro === 'simple';
+  const pasos = simple ? EMBUDO_SIMPLE : EMBUDO_ROPA;
+  const { results } = await db.prepare(`SELECT c.id, c.wa_id, c.profile_name, c.ad_id, c.ad_headline, c.bot_vars, c.last_preview, c.last_msg_at, c.bot_paused,
+      (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id AND m.direction = 'in') AS n_in,
+      (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id AND m.direction = 'out' AND m.body LIKE '%Pedido:%') AS n_form,
+      (SELECT o.status FROM orders o WHERE o.chat_id = c.id AND o.status != 'cancelado' ORDER BY o.id DESC LIMIT 1) AS o_status,
+      (SELECT o.modo FROM orders o WHERE o.chat_id = c.id AND o.status != 'cancelado' ORDER BY o.id DESC LIMIT 1) AS o_modo,
+      (SELECT GROUP_CONCAT(l.name, '|') FROM chat_labels x JOIN labels l ON l.id = x.label_id WHERE x.chat_id = c.id) AS labels
+    FROM chats c WHERE c.store_id = ? AND c.sim = 0 AND c.created_at >= ? AND c.created_at < ? LIMIT 5000`).bind(st.id, t0, t1).all();
+
+  // Anuncios del periodo (para el filtro)
+  const ads = new Map();
+  for (const x of results) if (x.ad_id) ads.set(x.ad_id, ads.get(x.ad_id) || { id: x.ad_id, name: x.ad_headline || 'Anuncio sin título', n: 0 }), ads.get(x.ad_id).n++;
+  const zonaQ = ['lima', 'provincia'].includes(q.zona) ? q.zona : '';
+  const rows = results.filter((x) => (!q.ad ? true : q.ad === 'sin' ? !x.ad_id : q.ad === 'con' ? !!x.ad_id : x.ad_id === q.ad));
+  const n = pasos.map(() => 0);
+  const quedaron = pasos.map(() => []);
+  for (const x of rows) {
+    const { i, zona, vars } = etapaDe(x, simple);
+    if (zonaQ && zona !== zonaQ) continue;
+    for (let j = 0; j <= i; j++) n[j]++;
+    quedaron[i].push({
+      id: x.id,
+      nombre: vars.nombre || x.profile_name || '',
+      wa: x.wa_id,
+      ultimo: x.last_preview || '',
+      at: x.last_msg_at,
+      pausa: !!x.bot_paused,
+    });
+  }
+  const etapas = pasos.map(([key, label], j) => ({
+    key,
+    label,
+    n: n[j],
+    de_arriba: j ? (n[j - 1] ? n[j] / n[j - 1] : null) : null,
+    del_total: n[0] ? n[j] / n[0] : null,
+    quedaron: j === pasos.length - 1 ? 0 : quedaron[j].length,
+    chats: j === pasos.length - 1 ? [] : quedaron[j].sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 60),
+  }));
+  // La caída más grande (sin contar el último paso): ahí conviene cambiar el texto
+  let peor = null;
+  etapas.slice(0, -1).forEach((e, j) => {
+    if (e.quedaron && (!peor || e.quedaron > peor.quedaron)) peor = { key: e.key, label: e.label, quedaron: e.quedaron, sig: etapas[j + 1].label };
+  });
+
+  // Seguimientos: cuántas recibieron cada mensaje y cuántas respondieron después (revivieron)
+  const { results: flows } = await db.prepare('SELECT id, name, graph FROM bot_flows WHERE store_id = ?').bind(st.id).all();
+  const segName = new Map();
+  for (const f of flows) {
+    let g = {};
+    try {
+      g = JSON.parse(f.graph || '{}');
+    } catch {}
+    for (const s of g.sequences || []) (s.steps || []).forEach((p, k) => {
+      const m = Number(p.after_min) || 0;
+      const cuando = m < 60 ? `${m} min` : m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`;
+      const que = (p.items || []).map((it) => ({ image: 'foto', video: 'video', audio: 'audio', document: 'PDF' }[it.kind] || 'texto')).join(' + ');
+      segName.set(`seq:${s.id}:${k}`, { flow: f.name, seq: s.name || s.id, paso: k + 1, cuando, que });
+    });
+  }
+  const { results: segs } = await db.prepare(`SELECT m.bot_node AS node, COUNT(DISTINCT m.chat_id) AS enviados,
+      COUNT(DISTINCT CASE WHEN m.replied = 1 THEN m.chat_id END) AS revivieron,
+      COUNT(DISTINCT CASE WHEN m.status = 'failed' THEN m.chat_id END) AS fallidos
+    FROM messages m JOIN chats c ON c.id = m.chat_id
+    WHERE c.store_id = ? AND c.sim = 0 AND m.bot_node LIKE 'seq:%' AND m.created_at >= ? AND m.created_at < ?
+    GROUP BY m.bot_node`).bind(st.id, t0, t1).all();
+  const seguimientos = segs.map((s) => ({ ...s, ...(segName.get(s.node) || { seq: s.node, paso: '', cuando: '', que: '' }), tasa: s.enviados ? s.revivieron / s.enviados : null }))
+    .sort((a, b) => String(a.seq).localeCompare(String(b.seq)) || a.paso - b.paso);
+
+  return c.json({ desde, hasta, etapas, peor, total: n[0], anuncios: [...ads.values()].sort((a, b) => b.n - a.n), seguimientos });
+});
