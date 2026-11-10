@@ -135,6 +135,27 @@ function sugerir(list, pagos) {
   }
 }
 
+// Pagos con captura que el equipo agendó a mano (✅ LIMA / ✅ PROVINCIA o editando el pedido), sin pasar por esta sección
+async function delEquipo(env, st, t) {
+  const { results: otros } = await env.DB.prepare(
+    `SELECT o.id AS order_id, o.number AS order_number, o.status AS order_status, o.adelanto, o.status_at, o.created_at AS o_at, o.chat_id,
+            c.name, c.profile_name, c.wa_id,
+            (SELECT m.id FROM messages m WHERE m.chat_id = o.chat_id AND m.direction = 'in' AND m.type IN ('image', 'document') AND m.created_at > ? ORDER BY m.id DESC LIMIT 1) AS cap
+       FROM orders o JOIN chats c ON c.id = o.chat_id
+      WHERE o.store_id = ? AND o.created_at > ? AND o.status NOT IN ('por_pagar', 'nuevo', 'cancelado') AND c.sim = 0
+        AND NOT EXISTS (SELECT 1 FROM pago_marks pm WHERE pm.chat_id = o.chat_id)
+      ORDER BY o.id DESC LIMIT 100`
+  ).bind(t - 7 * DAY, st.id, t - 7 * DAY).all();
+  const vistos = new Set();
+  const out = [];
+  for (const x of otros) {
+    if (!x.cap || vistos.has(x.chat_id)) continue;
+    vistos.add(x.chat_id);
+    out.push({ id: null, via: 'equipo', chat_id: x.chat_id, msg_id: x.cap, order_id: x.order_id, order_number: x.order_number, order_status: x.order_status, estado: 'ok', monto: x.adelanto, created_at: x.status_at || x.o_at, nombre: x.name || x.profile_name || '', wa_id: x.wa_id });
+  }
+  return out;
+}
+
 r.get('/stores/:id/pagos', async (c) => {
   const st = await storeFor(c, c.req.param('id'));
   const tab = c.req.query('tab') || 'pend';
@@ -150,27 +171,15 @@ r.get('/stores/:id/pagos', async (c) => {
         WHERE pm.store_id = ? AND pm.estado = ? AND pm.created_at > ? ORDER BY pm.created_at DESC LIMIT 100`
     ).bind(st.id, tab === 'ok' ? 'ok' : 'no_llego', t - 14 * DAY).all();
     marcas = results.map((x) => ({ ...x, nombre: x.name || x.profile_name || '' }));
-    if (tab === 'ok') {
-      // También las que el equipo ya agendó a mano (✅ LIMA / ✅ PROVINCIA o editando el pedido) y tenían captura
-      const { results: otros } = await c.env.DB.prepare(
-        `SELECT o.id AS order_id, o.number AS order_number, o.status AS order_status, o.adelanto, o.status_at, o.created_at AS o_at, o.chat_id,
-                c.name, c.profile_name, c.wa_id,
-                (SELECT m.id FROM messages m WHERE m.chat_id = o.chat_id AND m.direction = 'in' AND m.type IN ('image', 'document') AND m.created_at > ? ORDER BY m.id DESC LIMIT 1) AS cap
-           FROM orders o JOIN chats c ON c.id = o.chat_id
-          WHERE o.store_id = ? AND o.created_at > ? AND o.status NOT IN ('por_pagar', 'nuevo', 'cancelado') AND c.sim = 0
-            AND NOT EXISTS (SELECT 1 FROM pago_marks pm WHERE pm.chat_id = o.chat_id)
-          ORDER BY o.id DESC LIMIT 100`
-      ).bind(t - 7 * DAY, st.id, t - 7 * DAY).all();
-      const vistos = new Set();
-      for (const x of otros) {
-        if (!x.cap || vistos.has(x.chat_id)) continue;
-        vistos.add(x.chat_id);
-        marcas.push({ id: null, via: 'equipo', chat_id: x.chat_id, msg_id: x.cap, order_id: x.order_id, order_number: x.order_number, order_status: x.order_status, estado: 'ok', monto: x.adelanto, created_at: x.status_at || x.o_at, nombre: x.name || x.profile_name || '', wa_id: x.wa_id });
-      }
-      marcas.sort((a, b) => b.created_at - a.created_at);
-    }
   }
-  const hoy = await c.env.DB.prepare("SELECT COUNT(*) n, COALESCE(SUM(monto), 0) s FROM pago_marks WHERE store_id = ? AND estado = 'ok' AND created_at > ?").bind(st.id, t - DAY).first();
+  const equipo = await delEquipo(c.env, st, t);
+  if (tab === 'ok') {
+    marcas.push(...equipo);
+    marcas.sort((a, b) => b.created_at - a.created_at);
+  }
+  const hoy0 = await c.env.DB.prepare("SELECT COUNT(*) n, COALESCE(SUM(monto), 0) s FROM pago_marks WHERE store_id = ? AND estado = 'ok' AND created_at > ?").bind(st.id, t - DAY).first();
+  const eq24 = equipo.filter((x) => x.created_at > t - DAY);
+  const hoy = { n: (hoy0?.n || 0) + eq24.length, s: (hoy0?.s || 0) + eq24.reduce((a, x) => a + (Number(x.monto) || 0), 0) };
   const row = await c.env.DB.prepare('SELECT pagos_key, pagos_last_at FROM stores WHERE id = ?').bind(st.id).first();
   return c.json({
     pendientes: pend,
