@@ -13,6 +13,7 @@ import { runJobs, cleanJobs } from './bot.js';
 import { runOrderJobs } from './automations.js';
 import { trackDue } from './rastreo.js';
 import { handleShopify } from './shopify.js';
+import { handlePagoIn } from './api-pagos.js';
 import { tokenReminders } from './signup.js';
 import { notify } from './bot.js';
 
@@ -20,7 +21,7 @@ const app = new Hono();
 
 app.use('*', async (c, next) => {
   const p = new URL(c.req.url).pathname;
-  if (p.startsWith('/api/') || p === '/webhook' || p.startsWith('/shopify/')) await ensureSchema(c.env.DB);
+  if (p.startsWith('/api/') || p === '/webhook' || p.startsWith('/shopify/') || p.startsWith('/pagos/')) await ensureSchema(c.env.DB);
   await next();
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', 'same-origin');
@@ -53,6 +54,9 @@ app.post('/__test/jobs', async (c) => {
 
 /* ---------- Shopify (pedidos y carritos) ---------- */
 app.post('/shopify/:storeId/:key', handleShopify);
+
+/* ---------- Pagos que reenvía la app del celular (Yape/Plin/banco) ---------- */
+app.on(['GET', 'POST'], '/pagos/:storeId/:key', handlePagoIn);
 
 /* ---------- Webhook de Meta ---------- */
 

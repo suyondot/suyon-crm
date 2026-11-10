@@ -10,6 +10,7 @@ import { initPedidos, renderPedidos, resetPedidos, fichaPedidos, renderPedidosCo
 import { initEnvios, renderEnvios, resetEnvios } from './envios.js';
 import { initAsistente, renderAsistente, resetAsistente, rubroPicker } from './asistente.js';
 import { initCarritos, renderCarritos, resetCarritos } from './carritos.js';
+import { initPagos, renderPagos, resetPagos } from './pagos.js';
 import { initPanel, renderMiPlan, renderPaywall, renderPanel } from './panel.js';
 import { initRespuestas, attachSlash, openPicker, openPlantilla, renderRapidasCfg, renderPlantillasCfg } from './respuestas.js';
 
@@ -24,6 +25,7 @@ const ICON = {
   cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.4 11h10.2L20 8H6.2"/><circle cx="9" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>',
   truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h11v10H2z"/><path d="M13 9h4l4 4v3h-8"/><circle cx="6" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg>',
   chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>',
+  wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M16 14.5h2"/><path d="M6 6l9-3 1.5 3"/></svg>',
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg>',
   user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
@@ -530,6 +532,7 @@ function enterStore() {
   resetPedidos();
   resetEnvios();
   resetCarritos();
+  resetPagos();
   if (S.storeId) pref.set('store', S.storeId);
   if (S.view === 'chats' && store() && !canChats()) S.view = 'pedidos';
   render();
@@ -572,6 +575,7 @@ function navItems() {
   if (canChats() || !store()) items.push(['chats', 'Chats', ICON.chat, S.unread[S.storeId] || 0]);
   if (store() && canChats()) items.push(['clientes', 'Clientes', ICON.users, 0]);
   if (store()) items.push(['pedidos', 'Pedidos', ICON.box, 0]);
+  if (store() && canChats() && store().canal !== 'shopify') items.push(['pagos', 'Pagos', ICON.wallet, (S.pagosN || {})[S.storeId] || 0]);
   if (store()?.canal === 'shopify' && canChats()) items.push(['carritos', 'Carritos', ICON.cart, 0]);
   if (store()) items.push(['envios', 'Envíos', ICON.truck, 0]);
   if (store() && canChats()) items.push(['avisos', 'Avisos', ICON.bell, S.avisos[S.storeId] || 0]);
@@ -631,6 +635,7 @@ function render() {
   if (asisOn()) return renderAsis();
   if (S.view === 'asis') S.view = 'chats';
   if (S.view === 'carritos' && store()?.canal !== 'shopify') S.view = 'pedidos';
+  if (S.view === 'pagos' && (store()?.canal === 'shopify' || !canChats())) S.view = 'pedidos';
   const st = store();
   document.body.dataset.rubro = st?.rubro || 'ropa';
   const co = currentCompany();
@@ -638,7 +643,7 @@ function render() {
     S.view = 'config';
     S.cfgTab = co.role === 'dueno' ? 'miplan' : 'cuenta';
   }
-  const titles = { chats: 'Chats', clientes: 'Clientes', reportes: 'Reportes', avisos: 'Avisos', pedidos: 'Pedidos', envios: 'Envíos provincia', carritos: 'Carritos abandonados', panel: 'Panel Suyon', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
+  const titles = { chats: 'Chats', clientes: 'Clientes', reportes: 'Reportes', avisos: 'Avisos', pedidos: 'Pedidos', envios: 'Envíos provincia', carritos: 'Carritos abandonados', pagos: 'Validación de pagos', panel: 'Panel Suyon', config: owner() || !st ? 'Configuración' : 'Mi cuenta' };
   const roleName = st ? S.me.roles[st.role] : '';
   root().innerHTML = `
   <nav class="side" aria-label="Principal">
@@ -667,6 +672,7 @@ function render() {
   else if (S.view === 'pedidos') renderPedidos(content);
   else if (S.view === 'envios') renderEnvios(content);
   else if (S.view === 'carritos') renderCarritos(content);
+  else if (S.view === 'pagos') renderPagos(content);
   else if (S.view === 'panel' && S.me.user.is_admin) renderPanel(content);
   else if (co?.plan?.blocked && co.role !== 'dueno' && S.cfgTab !== 'cuenta') renderPaywall(content, co);
   else renderConfig();
@@ -2876,6 +2882,15 @@ initReportes({ api, esc, $, S, store, goChat });
 initPedidos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, listTime, canChats });
 initEnvios({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, canChats });
 initPanel({ api, esc, toast });
+initPagos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, canChats, modal, closeModal, setPagosCount(n) {
+  S.pagosN = { ...(S.pagosN || {}), [S.storeId]: n };
+  const b = document.querySelector('.navbtn[data-nav="pagos"]');
+  if (!b) return;
+  let c = b.querySelector('.cnt');
+  if (!n) return c?.remove();
+  if (!c) b.insertAdjacentHTML('beforeend', '<span class="cnt"></span>'), (c = b.querySelector('.cnt'));
+  c.textContent = n > 99 ? '99+' : n;
+} });
 initRespuestas({ api, esc, toast, S, store, owner, canChats, modal, closeModal, chatName, windowInfo, touchChatAfterSend, replaceLocal, toJpeg, ICON, isTouch });
 initAsistente({ api, esc, toast, LOGO });
 initCarritos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, goConfig(tab) {

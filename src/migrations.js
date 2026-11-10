@@ -643,6 +643,41 @@ export const MIGRATIONS = [
     name: 'seguimiento de la IA según el paso (talla, colores, distrito, datos, adelanto)',
     sql: [`ALTER TABLE bot_settings ADD COLUMN ia_follow_auto INTEGER`],
   },
+  {
+    id: 28,
+    name: 'validación de pagos: marcas por captura y pagos que llegan de la app del celular',
+    sql: [
+      `CREATE TABLE pago_marks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store_id INTEGER NOT NULL,
+        chat_id INTEGER NOT NULL,
+        msg_id INTEGER NOT NULL DEFAULT 0,
+        order_id INTEGER,
+        estado TEXT NOT NULL,
+        monto REAL,
+        nota TEXT,
+        pago_id INTEGER,
+        user_id INTEGER,
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX pago_marks_chat ON pago_marks (chat_id, msg_id)`,
+      `CREATE INDEX pago_marks_store ON pago_marks (store_id, created_at)`,
+      `CREATE TABLE pagos_in (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store_id INTEGER NOT NULL,
+        monto REAL,
+        nombre TEXT,
+        texto TEXT,
+        app TEXT,
+        chat_id INTEGER,
+        order_id INTEGER,
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX pagos_in_store ON pagos_in (store_id, created_at)`,
+      `ALTER TABLE stores ADD COLUMN pagos_key TEXT`,
+      `ALTER TABLE stores ADD COLUMN pagos_last_at INTEGER`,
+    ],
+  },
 ];
 
 let ready = null;

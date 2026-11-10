@@ -1953,6 +1953,60 @@ try {
     assert.equal((await call('GET', `/api/pedidos/${np.pedido.id}`)).pedido.status, 'validado');
     await call('DELETE', `/api/pedidos/${np.pedido.id}`);
   });
+  await step('validación de pagos: captura + pago de la app del celular → confirmar crea el pedido agendado', async () => {
+    const me = await call('GET', '/api/me');
+    const st = me.stores[0];
+    await inbound('51911111132', 'wamid.PG1', 'Soy de Piura');
+    const ch = await until(async () => (await call('GET', `/api/stores/${st.id}/chats?q=911111132`)).chats?.[0]);
+    const form = 'Shalom: 🚚📦\n\n➡️ Nombre: Ana Ruiz\n➡️ DNI: 41085895\n➡️ CEL: 949617858\n➡️ Sede: Piura Centro\n\nPedido: Leggins Cargo ✨\n\n✅ Cantidad: 3\n✅ Talla: M\n✅ Color: Negro, Beige, Azul noche\n\nMonto total: S/209\nAdelanto: S/30\nMonto restante: S/179';
+    await call('POST', `/api/chats/${ch.id}/messages`, { text: form });
+    let r = await call('GET', `/api/stores/${st.id}/pagos`);
+    assert.ok(!r.pendientes.some((p) => p.chat_id === ch.id), 'sin captura no hay nada que validar');
+    await hook(md({ contacts: [{ profile: { name: 'Ana Ruiz' }, wa_id: '51911111132' }], messages: [{ from: '51911111132', id: 'wamid.PG2', timestamp: ts(), type: 'image', image: { id: 'MEDIA_IMG1', mime_type: 'image/jpeg' } }] }));
+    const p = await until(async () => (await call('GET', `/api/stores/${st.id}/pagos`)).pendientes.find((x) => x.chat_id === ch.id));
+    assert.ok(p.captura?.id, JSON.stringify(p));
+    assert.equal(p.esperado.adelanto, 30);
+    assert.equal(p.esperado.total, 209);
+    assert.equal(p.zona, 'provincia');
+    // La app del celular manda la notificación de Yape
+    const app = await call('POST', `/api/stores/${st.id}/pagos-app`, {});
+    const url = app.url.replace(/^https?:\/\/[^/]+/, BASE);
+    assert.equal((await fetch(url.replace(/\/[^/]+$/, '/malo'), { method: 'POST', body: 'x' })).status, 404, 'enlace con clave mala');
+    const pr = await (await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ texto: 'Yape! Ana Ruiz te envió un pago por S/ 30. El cód. de seguridad es: 123' }) })).json();
+    assert.equal(pr.monto, 30);
+    assert.equal(pr.nombre, 'Ana Ruiz');
+    const dup = await (await fetch(url, { method: 'POST', body: 'Yape! Ana Ruiz te envió un pago por S/ 30. El cód. de seguridad es: 123' })).json();
+    assert.equal(dup.repetido, true, 'la misma notificación no se guarda dos veces');
+    r = await call('GET', `/api/stores/${st.id}/pagos`);
+    const p2 = r.pendientes.find((x) => x.chat_id === ch.id);
+    assert.equal(p2.sugerido?.monto, 30, JSON.stringify(p2));
+    assert.equal(p2.sugerido.nombre_ok, true);
+    assert.equal(r.app.on, true);
+    // Confirmar: se crea el pedido ya validado, con el adelanto, y el chat queda ✅ PROVINCIA
+    const ok = await call('POST', `/api/chats/${ch.id}/pago`, { accion: 'ok', msg_id: p2.captura.id, monto: 30, pago_id: p2.sugerido.id });
+    assert.equal(ok.status, 200, JSON.stringify(ok));
+    const o = (await call('GET', `/api/pedidos/${ok.pedido.id}`)).pedido;
+    assert.equal(o.status, 'validado');
+    assert.equal(o.adelanto, 30);
+    const labels = (await call('GET', `/api/stores/${st.id}/labels`)).labels;
+    const row = (await call('GET', `/api/stores/${st.id}/chats?q=911111132`)).chats[0];
+    assert.ok(row.labels.includes(labels.find((l) => /✅\s*PROVINCIA/.test(l.name)).id));
+    r = await call('GET', `/api/stores/${st.id}/pagos?tab=ok`);
+    assert.ok(!r.pendientes.some((x) => x.chat_id === ch.id));
+    const mk = r.marcas.find((x) => x.chat_id === ch.id);
+    assert.equal(mk.monto, 30);
+    assert.equal(r.pagos.find((x) => x.monto === 30).chat_id, ch.id, 'el pago de la app quedó cruzado');
+    assert.equal((await call('POST', `/api/chats/${ch.id}/pago`, { accion: 'ok', msg_id: p2.captura.id })).status, 409, 'no se valida dos veces');
+    // Deshacer vuelve a «Por validar» (el pedido ya existe y queda agendado: no reaparece)
+    await call('DELETE', `/api/pago-marks/${mk.id}`);
+    r = await call('GET', `/api/stores/${st.id}/pagos`);
+    assert.ok(!r.pendientes.some((x) => x.chat_id === ch.id), 'con pedido ya validado no vuelve');
+    assert.equal(r.pagos.find((x) => x.monto === 30).chat_id, null);
+    await call('DELETE', `/api/pedidos/${o.id}`);
+    const { parsePago } = await import('../src/api-pagos.js');
+    assert.deepEqual(parsePago('Te plinearon S/ 30.00, Ana Ruiz'), { monto: 30, nombre: 'Ana Ruiz' });
+    assert.deepEqual(parsePago('Recibiste S/ 1,234.50 de Rosa Quispe'), { monto: 1234.5, nombre: 'Rosa Quispe' });
+  });
   await step('ortografía: lo que escribe el equipo sale con mayúscula y tildes, sin cambiar palabras', async () => {
     const me = await call('GET', '/api/me');
     const st = me.stores[0];
