@@ -8,6 +8,7 @@ import { createSession, destroySession, currentUser, requireUser, checkPassword,
 import { sendText, uploadMedia, sendMediaById, listTemplates, sendTemplateFull, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES, getProfile, setProfile, setProfilePhoto, VERTICALS } from './whatsapp.js';
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
+import { quitarPendientes } from './bot.js';
 import reportesApi from './api-reportes.js';
 import pedidosApi from './api-pedidos.js';
 import billingApi from './api-billing.js';
@@ -848,7 +849,19 @@ api.get('/stores/:id/chats', async (c) => {
   }
   const { results } = await db.prepare(`SELECT ${CHAT_COLS} FROM chats WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ?`)
     .bind(...vals, q.after ? 500 : limit).all();
-  return c.json({ t, chats: await attachLabels(db, results), more: !q.after && results.length === limit });
+  const more = !q.after && results.length === limit;
+  // Primera carga: también las que están por agendar (LIMA/YAPE PENDIENTE) de los últimos 3 días, aunque sean más antiguas,
+  // porque la lista las pone arriba mientras esperan respuesta del equipo
+  if (!q.after && !q.before && !q.q && !q.filter && !q.labels) {
+    const have = new Set(results.map((x) => x.id));
+    const { results: pin } = await db.prepare(
+      `SELECT ${CHAT_COLS} FROM chats WHERE store_id = ? AND sim = 0 AND COALESCE(last_msg_at, created_at) > ?
+         AND id IN (SELECT cl.chat_id FROM chat_labels cl JOIN labels l ON l.id = cl.label_id WHERE l.store_id = ? AND l.name IN ('LIMA PENDIENTE', 'YAPE PENDIENTE'))
+       ORDER BY COALESCE(last_msg_at, created_at) DESC LIMIT 60`
+    ).bind(st.id, t - 3 * 864e5, st.id).all();
+    for (const x of pin) if (!have.has(x.id)) results.push(x);
+  }
+  return c.json({ t, chats: await attachLabels(db, results), more });
 });
 
 api.get('/chats/:id', async (c) => {
@@ -907,6 +920,7 @@ api.put('/chats/:id/labels/:labelId', async (c) => {
     c.env.DB.prepare('INSERT OR IGNORE INTO chat_labels (chat_id, label_id, user_id, created_at) VALUES (?, ?, ?, ?)').bind(chat.id, l.id, u.id, now()),
     c.env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(now(), chat.id),
   ]);
+  if (ins.meta?.changes) await quitarPendientes(c.env, store.id, chat.id, l.name);
   // ✅ LIMA / ✅ PROVINCIA = agendado: se crea el pedido con su formulario (y con eso sale la compra a Meta)
   let pedido = null;
   if (ins.meta?.changes && /✅\s*(LIMA|PROVINCIA)/i.test(l.name) && !chat.sim) {

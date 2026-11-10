@@ -4,7 +4,7 @@ import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay, Http
 import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON, PROMPT_GENERICO } from './bot-template.js';
 import { iaAllowed } from './billetera.js';
-import { draftFromChat, insertOrder, cfgOf, varsFromForm } from './orders.js';
+import { draftFromChat, insertOrder, cfgOf, varsFromForm, modoFor } from './orders.js';
 import { agenciesNear, agenciesIn, agencyOptions } from './shalom.js';
 import { onOrderCreated } from './automations.js';
 import { storeBlocked, loadPlan, priceText } from './billing.js';
@@ -202,6 +202,64 @@ async function labelId(env, storeId, name) {
 export async function addLabel(env, storeId, chatId, name) {
   const id = await labelId(env, storeId, name);
   if (id) await env.DB.prepare('INSERT OR IGNORE INTO chat_labels (chat_id, label_id, created_at) VALUES (?, ?, ?)').bind(chatId, id, now()).run();
+  await quitarPendientes(env, storeId, chatId, name);
+}
+
+// Al agendar o comprar, la etiqueta «pendiente» ya no va: ✅ LIMA quita LIMA PENDIENTE; ✅ PROVINCIA o COMPRÓ quitan YAPE PENDIENTE
+export async function quitarPendientes(env, storeId, chatId, name) {
+  const n = String(name || '').trim().toUpperCase();
+  if (/✅\s*LIMA/.test(n)) await removeLabel(env, storeId, chatId, 'LIMA PENDIENTE');
+  if (/✅\s*PROVINCIA/.test(n) || /^COMPR[OÓ]$/.test(n)) await removeLabel(env, storeId, chatId, 'YAPE PENDIENTE');
+}
+
+// LIMA PENDIENTE / YAPE PENDIENTE solas (pedido de Jordan): para que el equipo vea quién está por agendar
+//  · Lima: ya dio su distrito de Lima con cobertura, o la IA le mandó el formulario Lima
+//  · Provincia: la IA le mandó el formulario Shalom (con el adelanto) y falta que pague
+// Si ya está agendada (✅ LIMA / ✅ PROVINCIA) no se toca. Si cambia de Lima a provincia (o al revés), se cambia la etiqueta.
+export function pendienteDe(store, vars, textos) {
+  const t = String(textos || '');
+  const form = /Pedido:/i.test(t);
+  if (form && /Monto restante|Sede:|Shalom:/i.test(t)) return 'YAPE PENDIENTE';
+  if (form && /Env[ií]o para:\s*Lima|Direcci[oó]n:/i.test(t)) return 'LIMA PENDIENTE';
+  if (String(vars?.sede_shalom || '').trim()) return null;
+  const d = String(vars?.distrito || '').trim();
+  const dest = String(vars?.destino || '').trim();
+  // Destino de otra región (Arequipa con distrito Miraflores) → no es Lima
+  if (dest && !/\b(lima|callao)\b/i.test(normL(dest)) && !esDistritoLima(dest)) return null;
+  const dis = [d, dest].find((x) => esDistritoLima(x));
+  if (!dis && !(d && /\b(lima|callao)\b/i.test(dest))) return null;
+  // Sin cobertura (Ancón, Lurín…) va por Shalom: no es Lima pendiente
+  return modoFor({ ciudad: '', distrito: dis || d }, cfgOf(store)) === 'lima' ? 'LIMA PENDIENTE' : null;
+}
+
+// Distritos de Lima Metropolitana y Callao (sin tildes, en minúscula)
+const DISTRITOS_LIMA = ['ancon', 'ate', 'vitarte', 'barranco', 'brena', 'carabayllo', 'chaclacayo', 'chorrillos', 'cieneguilla', 'comas', 'el agustino', 'independencia',
+  'jesus maria', 'la molina', 'la victoria', 'cercado', 'lince', 'los olivos', 'lurigancho', 'chosica', 'lurin', 'magdalena', 'miraflores', 'pachacamac', 'pucusana',
+  'pueblo libre', 'puente piedra', 'punta hermosa', 'punta negra', 'rimac', 'san bartolo', 'san borja', 'san isidro', 'san juan de lurigancho', 'sjl', 'san juan de miraflores', 'sjm',
+  'san luis', 'san martin de porres', 'smp', 'san miguel', 'santa anita', 'santa maria del mar', 'santa rosa', 'santiago de surco', 'surco', 'surquillo', 'villa el salvador', 'ves',
+  'villa maria del triunfo', 'vmt', 'callao', 'bellavista', 'carmen de la legua', 'la perla', 'la punta', 'ventanilla', 'mi peru', 'huaycan', 'manchay', 'canto grande', 'zarate',
+  'collique', 'mangomarca', 'jicamarca'];
+const normL = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+export function esDistritoLima(x) {
+  const t = ` ${normL(x)} `;
+  if (t.trim().length < 3) return false;
+  // «Miraflores Arequipa», «Bellavista San Martín»: si nombra otra región, no es Lima
+  if (/ (arequipa|cusco|piura|trujillo|libertad|chiclayo|lambayeque|ica|junin|huancayo|puno|tacna|ancash|chimbote|huanuco|cajamarca|loreto|iquitos|ucayali|pucallpa|san martin tarapoto|tarapoto|moquegua|ayacucho|apurimac|tumbes|amazonas|madre de dios|pasco|huancavelica|huaral|huacho|barranca|canete|chancay) /.test(t)) return false;
+  return DISTRITOS_LIMA.some((dname) => t.includes(` ${dname} `));
+}
+
+export async function ponerPendiente(env, store, chat, vars, textos) {
+  const want = pendienteDe(store, vars, textos);
+  if (!want) return null;
+  const labs = (await chatLabels(env, chat.id)).map((x) => x.toUpperCase());
+  if (labs.some((x) => /✅\s*(LIMA|PROVINCIA)/.test(x))) return null;
+  if (want === 'YAPE PENDIENTE' && labs.some((x) => /^COMPR[OÓ]$/.test(x))) return null;
+  if (labs.includes(want)) return null;
+  await addLabel(env, store.id, chat.id, want);
+  await removeLabel(env, store.id, chat.id, want === 'LIMA PENDIENTE' ? 'YAPE PENDIENTE' : 'LIMA PENDIENTE');
+  await env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
+  await bump(env, store.id);
+  return want;
 }
 
 async function removeLabel(env, storeId, chatId, name) {
@@ -1229,6 +1287,8 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
     }
   }
   if (JSON.stringify(ag) !== (chat.bot_ag || '{}')) await env.DB.prepare('UPDATE chats SET bot_ag = ? WHERE id = ?').bind(JSON.stringify(ag), chat.id).run();
+  // Está por agendar → LIMA PENDIENTE o YAPE PENDIENTE (solo si se mandó la respuesta)
+  if (sendIt) await ponerPendiente(env, store, chat, vars, reply.mensajes.map((m) => m.texto || '').join('\n')).catch((e) => console.error('pendiente', e));
   // Si no responde, la IA sigue sola una vez
   if (!cs && Number(settings.ia_follow_min) > 0 && (Number(settings.ia_follow_auto) !== 0 || String(settings.ia_follow_text || '').trim())) {
     await env.DB.prepare(

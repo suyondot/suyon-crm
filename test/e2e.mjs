@@ -484,6 +484,24 @@ try {
     r = await call('GET', `/api/stores/${store.id}/chats?labels=${lima.id}`);
     assert.equal(r.chats.length, 1);
     assert.deepEqual(r.chats[0].labels, [lima.id]);
+    // Al comprar (COMPRÓ / ✅ PROVINCIA) se quita YAPE PENDIENTE sola
+    const yape = labels.find((l) => l.name === 'YAPE PENDIENTE');
+    const compro = labels.find((l) => l.name === 'COMPRÓ');
+    await call('PUT', `/api/chats/${chatId}/labels/${yape.id}`);
+    await call('PUT', `/api/chats/${chatId}/labels/${compro.id}`);
+    let lb = (await call('GET', `/api/chats/${chatId}`)).chat.labels;
+    assert.ok(lb.includes(compro.id) && !lb.includes(yape.id), 'COMPRÓ quita YAPE PENDIENTE');
+    await call('DELETE', `/api/chats/${chatId}/labels/${compro.id}`);
+    // Quién está por agendar (etiqueta automática)
+    const { pendienteDe } = await import('../src/bot.js');
+    const st0 = { order_cfg: '{}' };
+    assert.equal(pendienteDe(st0, { destino: 'Lima', distrito: 'San Juan de Lurigancho' }, ''), 'LIMA PENDIENTE');
+    assert.equal(pendienteDe(st0, { destino: 'Los Olivos' }, ''), 'LIMA PENDIENTE');
+    assert.equal(pendienteDe(st0, { destino: 'Arequipa', distrito: 'Miraflores' }, ''), null, 'Miraflores de Arequipa no es Lima');
+    assert.equal(pendienteDe(st0, { destino: 'Lima', distrito: 'Lurín' }, ''), null, 'sin cobertura va por Shalom');
+    assert.equal(pendienteDe(st0, { destino: 'Lima' }, ''), null, 'falta el distrito');
+    assert.equal(pendienteDe(st0, {}, 'Shalom: 🚚📦\n➡️ Sede: X\nPedido: Leggings\nMonto restante: S/179'), 'YAPE PENDIENTE');
+    assert.equal(pendienteDe(st0, {}, 'Envío para: Lima 📦\n➡️ Dirección: Av. 1\nPedido: Leggings'), 'LIMA PENDIENTE');
   });
   await step('crear, renombrar y borrar etiqueta; las automáticas están protegidas', async () => {
     assert.equal((await call('POST', `/api/stores/${store.id}/labels`, { name: 'VIP', color: '--t-blue' })).status, 200);
