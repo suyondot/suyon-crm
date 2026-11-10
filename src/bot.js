@@ -4,7 +4,7 @@ import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay, Http
 import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON, PROMPT_GENERICO } from './bot-template.js';
 import { iaAllowed } from './billetera.js';
-import { draftFromChat, insertOrder, cfgOf, varsFromForm, modoFor } from './orders.js';
+import { draftFromChat, insertOrder, cfgOf, varsFromForm, modoFor, pedidoAbierto } from './orders.js';
 import { agenciesNear, agenciesIn, agencyOptions } from './shalom.js';
 import { onOrderCreated } from './automations.js';
 import { storeBlocked, loadPlan, priceText } from './billing.js';
@@ -546,10 +546,8 @@ async function orderFromBot(env, store, chatId, vars) {
       .bind(chat.id, store.id, `Aquí se crearía el pedido (en el simulador no se guarda): ${draft.items.map((i) => `${i.cantidad} × ${[i.talla, i.color].filter(Boolean).join(' ')}`).join(', ')} · S/${draft.total} · ${draft.modo === 'agencia' ? 'Agencia' : 'Lima'}`, t, t).run();
     return;
   }
-  const open = await env.DB.prepare(
-    "SELECT id FROM orders WHERE chat_id = ? AND status IN ('nuevo', 'por_pagar') AND created_at > ? LIMIT 1"
-  ).bind(chat.id, now() - 3 * 864e5).first();
-  if (open) return;
+  // Si ya hay un pedido en curso (de la IA o que hizo la asesora a mano), no se crea otro
+  if (await pedidoAbierto(env, chat.id)) return;
   try {
     const o = await insertOrder(env, store, draft, { source: 'ia' });
     if (o) await onOrderCreated(env, store, o);

@@ -379,7 +379,7 @@ async function save(btn) {
   try {
     let r;
     if (o.id) r = await H.api('PATCH', `/pedidos/${o.id}`, data);
-    else r = await H.api('POST', `/stores/${H.S.storeId}/pedidos`, { ...data, chat_id: o.chat_id || null, ad_id: o.ad_id || null });
+    else r = await H.api('POST', `/stores/${H.S.storeId}/pedidos`, { ...data, chat_id: o.chat_id || null, ad_id: o.ad_id || null, forzar: !!M.forzar });
     H.toast(o.id ? 'Pedido guardado' : `Pedido #${r.pedido.number} creado`);
     const cb = M.onSaved;
     if (!o.id) {
@@ -392,9 +392,19 @@ async function save(btn) {
     cb?.();
     refresh();
   } catch (er) {
-    err.textContent = er.message;
+    const ab = er.status === 409 && er.data?.abierto;
+    if (ab) {
+      // Ya hay un pedido en curso para este chat: abrir ese o, si de verdad es otra compra, crear otro
+      err.innerHTML = `${H.esc(er.message)}<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="send sm" data-pmopen="${ab.id}">Abrir pedido #${H.esc(ab.number)}</button><button class="iconbtn sm" data-pmforce>Es otra compra: crear otro</button></div>`;
+      err.querySelector('[data-pmopen]').onclick = () => openPedido({ id: ab.id, onSaved: M.onSaved });
+      err.querySelector('[data-pmforce]').onclick = () => {
+        M.forzar = true;
+        save(btn);
+      };
+    } else err.textContent = er.message;
     err.hidden = false;
   }
+  M.forzar = false;
   btn.disabled = false;
 }
 

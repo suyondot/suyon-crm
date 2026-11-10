@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { now, fail, clip, localDay, tzOffset, randomToken } from './util.js';
 import { storeFor, chatFor, requireUser } from './auth.js';
 import {
-  MODOS, ESTADOS, FLUJO, VENDIDO, PERDIDO, cfgOf, DEFAULT_CFG, cleanOrder, insertOrder, getOrder, shape, draftFromChat, formText, varsFromForm, storeColors, defaultEntrega, addEvent, orderText, firstStatus,
+  MODOS, ESTADOS, FLUJO, VENDIDO, PERDIDO, cfgOf, DEFAULT_CFG, cleanOrder, insertOrder, getOrder, shape, draftFromChat, formText, varsFromForm, storeColors, defaultEntrega, addEvent, orderText, firstStatus, pedidoAbierto,
 } from './orders.js';
 import { loadAutos, saveAuto, submitTemplate, syncTemplates, setOrderStatus, onOrderCreated, AUTO_VARS } from './automations.js';
 import { ensureDataset } from './capi.js';
@@ -125,6 +125,9 @@ r.post('/stores/:id/pedidos', async (c) => {
     if (!ch) fail(400, 'Ese chat no es de esta tienda.');
     b.chat_id = ch.id;
     if (!b.ad_id) b.ad_id = ch.ad_id;
+    // No duplicar: si el chat ya tiene un pedido en curso (por ejemplo el que creó la IA), se avisa
+    const ya = b.forzar ? null : await pedidoAbierto(c.env, ch.id);
+    if (ya) fail(409, `Este chat ya tiene el pedido #${ya.number} (${ESTADOS[ya.status] || ya.status}). Ábrelo y edítalo en vez de crear otro.`, { abierto: { id: ya.id, number: ya.number, status: ya.status } });
   }
   if (b.modo && !modosFor(st.role).includes(b.modo)) fail(403, 'Tu rol no puede crear ese tipo de pedido.');
   const o = await insertOrder(c.env, st, b, { userId: u.id, source: b.chat_id ? 'whatsapp' : 'manual' });

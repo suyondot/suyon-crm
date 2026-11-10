@@ -101,10 +101,11 @@ function markRow(m) {
   return `<div class="kcard"><div class="khead"><b>${e(m.nombre || 'Sin nombre')}</b><span class="note mono">${e(H.fmtPhone ? H.fmtPhone(m.wa_id) : m.wa_id)}</span>
     ${m.monto ? `<span class="kpill ${m.estado === 'ok' ? 'ok' : 'warn'}">${money(m.monto)}</span>` : ''}
     ${m.order_number ? `<span class="note">Pedido #${e(m.order_number)}</span>` : ''}
+    ${m.via === 'equipo' ? '<span class="kpill info">Agendado por tu equipo</span>' : ''}
     <span class="grow"></span><span class="note">${ago(m.created_at)}${m.user_name ? ` · ${e(m.user_name)}` : ''}</span></div>
     ${m.nota ? `<div class="note">${e(m.nota)}</div>` : ''}
     <div class="kfoot">${m.msg_id ? `<button class="iconbtn sm" data-pgimg="${m.msg_id}">Ver captura</button>` : ''}<button class="iconbtn sm" data-pgchatid="${m.chat_id}">💬 Abrir chat</button><span class="grow"></span>
-      <button class="iconbtn sm" data-pgundo="${m.id}" title="Vuelve a «Por validar». El pedido no cambia de estado.">Deshacer</button></div></div>`;
+      ${m.id ? `<button class="iconbtn sm" data-pgundo="${m.id}" title="Vuelve a «Por validar». El pedido no cambia de estado.">Deshacer</button>` : ''}</div></div>`;
 }
 
 function pagoRow(x) {
@@ -122,7 +123,7 @@ function draw() {
   let list = '';
   if (P.tab === 'pend') list = d.pendientes.length ? d.pendientes.map((p) => card(p, d.app)).join('') : '<div class="card empty"><b>No hay pagos por validar 🎉</b><span>Cuando una clienta mande la captura de su Yape o Plin, aparece aquí.</span></div>';
   else if (P.tab === 'app') list = !d.app.on ? `<div class="card empty"><b>Tu app de pagos no está conectada</b><span>${H.owner() ? 'Toca «📲 Conectar app de pagos» arriba: así cada Yape que te llega aparece aquí y se cruza solo con las capturas.' : 'Pídele al dueño que la conecte.'}</span></div>` : d.pagos.length ? d.pagos.map(pagoRow).join('') : '<div class="card empty"><b>Todavía no llegó ningún pago</b><span>Aquí salen los Yape/Plin de las últimas 48 horas que reenvía tu celular.</span></div>';
-  else list = d.marcas.length ? d.marcas.map(markRow).join('') : `<div class="card empty"><b>${P.tab === 'ok' ? 'Todavía no validas pagos' : 'Ninguno marcado como «no llegó»'}</b><span>Se muestran los últimos 14 días.</span></div>`;
+  else list = d.marcas.length ? d.marcas.map(markRow).join('') : `<div class="card empty"><b>${P.tab === 'ok' ? 'Todavía no validas pagos' : 'Ninguno marcado como «no llegó»'}</b><span>${P.tab === 'ok' ? 'Aquí salen los pagos validados (en esta sección o con ✅) de los últimos 7 a 14 días.' : 'Se muestran los últimos 14 días.'}</span></div>`;
   box.innerHTML = `
     <div class="rtiles">
       <div class="rtile ${r.pend ? 'hi' : ''}"><span class="rtl">Por validar</span><b class="rtv">${r.pend}</b></div>

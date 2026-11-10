@@ -37,6 +37,13 @@ export const VENDIDO = ['entregado', 'recogido'];
 export const PERDIDO = ['rechazado', 'no_recogido', 'cancelado'];
 export const firstStatus = (modo) => (modo === 'agencia' ? 'por_pagar' : 'nuevo');
 
+// Pedido en curso del chat (no entregado/recogido ni perdido) de los últimos días: para no crear otro igual
+export async function pedidoAbierto(env, chatId, dias = 3) {
+  const fin = [...VENDIDO, ...PERDIDO];
+  return env.DB.prepare(`SELECT * FROM orders WHERE chat_id = ? AND status NOT IN (${fin.map(() => '?').join(', ')}) AND created_at > ? ORDER BY id DESC LIMIT 1`)
+    .bind(chatId, ...fin, Date.now() - dias * 864e5).first();
+}
+
 // Configuración de pedidos por tienda (precios por cantidad, adelanto, producto)
 export const DEFAULT_CFG = {
   producto: 'Pantalón formal',

@@ -1118,7 +1118,7 @@ try {
     assert.equal(r.capi.on, true);
     assert.equal(r.capi.dataset, 'DS777');
     // clienta que llegó por anuncio (tiene ctwa_clid) → Purchase con su valor
-    r = await call('POST', `/api/stores/${store.id}/pedidos`, { chat_id: botChat.id, modo: 'lima', nombre: 'Prueba Meta', distrito: 'Lince', direccion: 'Av. 1', items: [{ talla: 'S', color: 'Negro', cantidad: 1 }] });
+    r = await call('POST', `/api/stores/${store.id}/pedidos`, { chat_id: botChat.id, modo: 'lima', nombre: 'Prueba Meta', distrito: 'Lince', direccion: 'Av. 1', items: [{ talla: 'S', color: 'Negro', cantidad: 1 }], forzar: true });
     const ev = await until(async () => calls.find((x) => x.path === 'DS777/events' && x.body?.data?.[0]?.custom_data?.value === r.pedido.total));
     const d = ev.body.data[0];
     assert.equal(d.event_name, 'Purchase');
@@ -1131,7 +1131,7 @@ try {
     // clienta sin anuncio → no se manda
     const before = calls.filter((x) => x.path === 'DS777/events').length;
     const c2 = (await call('GET', `/api/stores/${store.id}/chats?limit=200`)).chats.find((x) => !x.ad_id);
-    const r2 = await call('POST', `/api/stores/${store.id}/pedidos`, { chat_id: c2.id, modo: 'lima', nombre: 'Sin anuncio', distrito: 'Lince', direccion: 'Av. 2', items: [{ talla: 'S', color: 'Negro', cantidad: 1 }] });
+    const r2 = await call('POST', `/api/stores/${store.id}/pedidos`, { chat_id: c2.id, modo: 'lima', nombre: 'Sin anuncio', distrito: 'Lince', direccion: 'Av. 2', items: [{ talla: 'S', color: 'Negro', cantidad: 1 }], forzar: true });
     await until(async () => (await call('GET', `/api/pedidos/${r2.pedido.id}`)).events.some((e) => /no llegó por un anuncio/.test(e.detail)));
     assert.equal(calls.filter((x) => x.path === 'DS777/events').length, before);
     const cfg = await call('GET', `/api/stores/${store.id}/pedidos-config`);
@@ -1997,10 +1997,20 @@ try {
     assert.equal(mk.monto, 30);
     assert.equal(r.pagos.find((x) => x.monto === 30).chat_id, ch.id, 'el pago de la app quedó cruzado');
     assert.equal((await call('POST', `/api/chats/${ch.id}/pago`, { accion: 'ok', msg_id: p2.captura.id })).status, 409, 'no se valida dos veces');
+    // No se duplica el pedido a mano si el chat ya tiene uno en curso (salvo que sea otra compra)
+    const dupP = await call('POST', `/api/stores/${st.id}/pedidos`, { chat_id: ch.id, modo: 'agencia', nombre: 'Ana Ruiz', items: [{ talla: 'M', color: 'Negro', cantidad: 1 }] });
+    assert.equal(dupP.status, 409, JSON.stringify(dupP));
+    assert.equal(dupP.abierto.id, ok.pedido.id);
+    const otra = await call('POST', `/api/stores/${st.id}/pedidos`, { chat_id: ch.id, modo: 'agencia', nombre: 'Ana Ruiz', items: [{ talla: 'M', color: 'Negro', cantidad: 1 }], forzar: true });
+    assert.equal(otra.status, 200);
+    await call('DELETE', `/api/pedidos/${otra.pedido.id}`);
     // Deshacer vuelve a «Por validar» (el pedido ya existe y queda agendado: no reaparece)
     await call('DELETE', `/api/pago-marks/${mk.id}`);
     r = await call('GET', `/api/stores/${st.id}/pagos`);
     assert.ok(!r.pendientes.some((x) => x.chat_id === ch.id), 'con pedido ya validado no vuelve');
+    r = await call('GET', `/api/stores/${st.id}/pagos?tab=ok`);
+    const eq = r.marcas.find((x) => x.chat_id === ch.id);
+    assert.equal(eq?.via, 'equipo', 'sin marca, la captura sale como agendada por el equipo');
     assert.equal(r.pagos.find((x) => x.monto === 30).chat_id, null);
     await call('DELETE', `/api/pedidos/${o.id}`);
     const { parsePago } = await import('../src/api-pagos.js');
