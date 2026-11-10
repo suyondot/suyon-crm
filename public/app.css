@@ -1315,12 +1315,12 @@ a.iconbtn{text-decoration:none;color:inherit}
 .pq.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}.pq.warn:hover{background:var(--warn-soft)}
 .pq.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}.pq.bad:hover{background:var(--bad-soft)}
 /* Chats que esperan que la asesora confirme la compra */
-.item.pc{position:relative;background:color-mix(in srgb,#F5C518 14%,var(--surface));box-shadow:inset 4px 0 0 #E0A800}
+.item.pc{position:relative;background:color-mix(in srgb,#F5C518 16%,var(--surface));box-shadow:inset 0 0 0 2px #E0A800,inset 6px 0 0 #E0A800}
 .item.pc[aria-current="true"]{background:color-mix(in srgb,#F5C518 24%,var(--surface))}
 .item.done{background:color-mix(in srgb,#2FB463 14%,var(--surface));box-shadow:inset 4px 0 0 #2FB463}
 .item.done[aria-current="true"]{background:color-mix(in srgb,#2FB463 24%,var(--surface))}
 .pcdot{position:absolute;top:9px;left:40px;width:11px;height:11px;border-radius:50%;background:#E5484D;border:2px solid var(--surface);z-index:1}
-.pcb{font-size:11px;font-weight:700;color:#8a5a00;background:#FCE9A8;border-radius:10px;padding:1px 7px;white-space:nowrap}
+.pcb{font-size:11px;font-weight:800;color:#1d1400;background:#F5C518;border-radius:10px;padding:1px 7px;white-space:nowrap}
 /* 📌 Por agendar: LIMA/YAPE PENDIENTE esperando al equipo → arriba de todo */
 .item.pin{box-shadow:inset 4px 0 0 #7A1F3D}
 .pinb{font-size:11px;font-weight:700;color:#fff;background:#7A1F3D;border-radius:10px;padding:1px 7px;white-space:nowrap}

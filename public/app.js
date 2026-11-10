@@ -846,13 +846,18 @@ const sortKey = (c) => c.last_msg_at || c.created_at;
 // 📌 Por agendar (pedido de Jordan): LIMA PENDIENTE o YAPE PENDIENTE, de los últimos 3 días, y el equipo todavía no le escribe
 // después de su último mensaje → va arriba de todo. Apenas la asesora contesta, vuelve a su lugar normal.
 const porAgendar = (c) => {
+  if (c.por_confirmar > 0) return false; // ya está en 🟡 Terminar de agendar
   if (Date.now() - sortKey(c) > 3 * 864e5) return false;
   if (['ase', 'cel'].includes(c.last_sender || 'cli')) return false;
   if (c.labels.some((id) => /✅\s*(LIMA|PROVINCIA)/i.test(labelById(id)?.name || ''))) return false;
   return c.labels.some((id) => /^(LIMA|YAPE) PENDIENTE$/i.test(labelById(id)?.name || ''));
 };
+// 🟡 Terminar de agendar = la IA ya creó el pedido (Lima dijo SÍ o provincia mandó la captura) y falta que el equipo lo confirme
+const terminar = (c) => c.por_confirmar > 0 && !c.labels.some((id) => /✅\s*(LIMA|PROVINCIA)/i.test(labelById(id)?.name || ''));
+// Orden: 🟡 Terminar de agendar → 📌 Por agendar → el resto por fecha
+const prio = (c) => (terminar(c) ? 2 : porAgendar(c) ? 1 : 0);
 function visibleChats() {
-  return [...S.chats.values()].filter(matchChat).sort((a, b) => (porAgendar(b) - porAgendar(a)) || (sortKey(b) - sortKey(a)));
+  return [...S.chats.values()].filter(matchChat).sort((a, b) => (prio(b) - prio(a)) || (sortKey(b) - sortKey(a)));
 }
 
 function storeBanner() {
@@ -878,7 +883,7 @@ function renderListHead() {
       })() : ''}
       ${S.tagf.length ? `<div class="activef">${S.tagf.map((id) => `<button data-tagf="${id}" aria-label="Quitar filtro">${esc(labelById(id)?.name || '')} ×</button>`).join('')}</div>` : ''}
       <div class="chips" role="group" aria-label="Estado">
-        ${[['todos', 'Todos'], ['unread', 'Sin leer'], ['pending', 'Por responder'], ['confirmar', '🟡 Por confirmar']].map(([k, l]) => `<button class="chip${k === 'confirmar' ? ' pcchip' : ''}" data-filter="${k}" aria-pressed="${S.filter === k}">${l}${k === 'unread' ? `<span class="n" id="unreadchip">${S.unread[S.storeId] || ''}</span>` : k === 'confirmar' ? `<span class="n" id="pcchip">${all.filter((x) => x.por_confirmar > 0).length || ''}</span>` : ''}</button>`).join('')}
+        ${[['todos', 'Todos'], ['unread', 'Sin leer'], ['pending', 'Por responder'], ['confirmar', '🟡 Terminar de agendar']].map(([k, l]) => `<button class="chip${k === 'confirmar' ? ' pcchip' : ''}" data-filter="${k}" aria-pressed="${S.filter === k}">${l}${k === 'unread' ? `<span class="n" id="unreadchip">${S.unread[S.storeId] || ''}</span>` : k === 'confirmar' ? `<span class="n" id="pcchip">${all.filter((x) => x.por_confirmar > 0).length || ''}</span>` : ''}</button>`).join('')}
       </div>
     </div>
     <div class="items" id="items"></div>`;
@@ -919,7 +924,7 @@ function renderItems() {
       <span class="av" style="background:${avColor(x.id)}">${esc(initials(chatName(x)))}</span>
       <span style="min-width:0"><span class="nm">${esc(chatName(x))}</span>
         <span class="lm">${x.last_dir === 'out' ? 'Tú: ' : ''}${esc(x.last_preview || '')}</span>
-        ${labs.length || pc || pin || (x.bot_paused && x.last_dir !== 'out') ? `<span class="row">${pin ? '<span class="pinb">📌 Por agendar</span>' : ''}${pc ? '<span class="pcb">🟡 Por confirmar</span>' : ''}${x.bot_paused && x.last_dir !== 'out' ? '<span class="bpz">⏸️ Bot en pausa</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
+        ${labs.length || pc || pin || (x.bot_paused && x.last_dir !== 'out') ? `<span class="row">${pin ? '<span class="pinb">📌 Por agendar</span>' : ''}${pc ? '<span class="pcb">🟡 Terminar de agendar</span>' : ''}${x.bot_paused && x.last_dir !== 'out' ? '<span class="bpz">⏸️ Bot en pausa</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
       <span class="meta"><span>${listTime(x.last_msg_at)}</span>${x.unread ? `<span class="unread">${x.unread}</span>` : ''}</span>
     </button>`;
   }).map((html, i) => ({ key: 'c' + list[i].id, sig: html, html }));
@@ -1593,6 +1598,7 @@ async function toggleTag(labelId) {
     // ✅ LIMA / ✅ PROVINCIA: el sistema crea el pedido con su formulario y avisa la compra a Meta
     const p = r?.pedido;
     if (p?.error) toast('Agendado, pero no pude crear el pedido: ' + p.error + '. Créalo con «+ Crear pedido» en la ficha.');
+    else if (p?.id && p.ya && p.estado) toast(`✅ Pedido #${p.num} pasó a ${p.estado === 'confirmado' ? 'Confirmado' : 'Validado'}`);
     else if (p?.id && !p.ya) toast(`✅ Pedido #${p.num} creado${p.capi ? ' · compra enviada a Meta' : p.capi_on ? '' : ' (la compra a Meta está apagada en Configuración → Pedidos)'}`);
     if (p?.id) renderFicha();
   } catch (e) {

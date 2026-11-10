@@ -18,7 +18,7 @@ import carritosApi from './api-carritos.js';
 import respuestasApi, { tplShape } from './api-respuestas.js';
 import { fixSpelling } from './ortografia.js';
 import { draftFromChat, insertOrder, varsFromForm } from './orders.js';
-import { onOrderCreated } from './automations.js';
+import { onOrderCreated, setOrderStatus } from './automations.js';
 import { loadSaldo } from './saldo.js';
 import { loadPlan } from './billing.js';
 import { mailReady, sendCode, checkCode, sendReset } from './correo.js';
@@ -853,15 +853,16 @@ api.get('/stores/:id/chats', async (c) => {
   const { results } = await db.prepare(`SELECT ${CHAT_COLS} FROM chats WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ?`)
     .bind(...vals, q.after ? 500 : limit).all();
   const more = !q.after && results.length === limit;
-  // Primera carga: también las que están por agendar (LIMA/YAPE PENDIENTE) de los últimos 3 días, aunque sean más antiguas,
-  // porque la lista las pone arriba mientras esperan respuesta del equipo
+  // Primera carga: también las que están por agendar (LIMA/YAPE PENDIENTE) y las de 🟡 Terminar de agendar (pedido de la IA
+  // sin confirmar) de los últimos 7 días, aunque sean más antiguas, porque la lista las pone arriba
   if (!q.after && !q.before && !q.q && !q.filter && !q.labels) {
     const have = new Set(results.map((x) => x.id));
     const { results: pin } = await db.prepare(
       `SELECT ${CHAT_COLS} FROM chats WHERE store_id = ? AND sim = 0 AND COALESCE(last_msg_at, created_at) > ?
-         AND id IN (SELECT cl.chat_id FROM chat_labels cl JOIN labels l ON l.id = cl.label_id WHERE l.store_id = ? AND l.name IN ('LIMA PENDIENTE', 'YAPE PENDIENTE'))
+         AND (id IN (SELECT cl.chat_id FROM chat_labels cl JOIN labels l ON l.id = cl.label_id WHERE l.store_id = ? AND l.name IN ('LIMA PENDIENTE', 'YAPE PENDIENTE'))
+           OR id IN (SELECT chat_id FROM orders WHERE store_id = ? AND chat_id IS NOT NULL AND status IN ('nuevo', 'por_pagar')))
        ORDER BY COALESCE(last_msg_at, created_at) DESC LIMIT 60`
-    ).bind(st.id, t - 3 * 864e5, st.id).all();
+    ).bind(st.id, t - 7 * 864e5, st.id, st.id).all();
     for (const x of pin) if (!have.has(x.id)) results.push(x);
   }
   return c.json({ t, chats: await attachLabels(db, results), more });
@@ -934,8 +935,13 @@ api.put('/chats/:id/labels/:labelId', async (c) => {
 });
 
 async function pedidoAlAgendar(env, store, chatId, zona, userId) {
-  const open = await env.DB.prepare("SELECT id, number FROM orders WHERE chat_id = ? AND status NOT IN ('cancelado') AND created_at > ? ORDER BY id DESC LIMIT 1").bind(chatId, now() - 3 * 864e5).first();
-  if (open) return { id: open.id, num: open.number, ya: true };
+  const open = await env.DB.prepare("SELECT * FROM orders WHERE chat_id = ? AND status NOT IN ('cancelado') AND created_at > ? ORDER BY id DESC LIMIT 1").bind(chatId, now() - 3 * 864e5).first();
+  if (open) {
+    // El pedido que creó la IA (🟡 Terminar de agendar) pasa a agendado: Lima → Confirmado, Shalom → Validado
+    const to = open.status === 'nuevo' ? 'confirmado' : open.status === 'por_pagar' ? 'validado' : null;
+    if (to) await setOrderStatus(env, store, open, to, userId, `Etiqueta ✅ ${zona === 'lima' ? 'LIMA' : 'PROVINCIA'}`);
+    return { id: open.id, num: open.number, ya: true, estado: to };
+  }
   const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
   let vars = {};
   try {

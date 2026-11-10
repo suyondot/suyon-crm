@@ -1942,6 +1942,16 @@ try {
     const row = (await call('GET', `/api/stores/${st.id}/chats?q=911111130`)).chats[0];
     assert.equal(row.last_sender, 'ase');
     await call('DELETE', `/api/pedidos/${o.id}`);
+    // 🟡 Terminar de agendar: pedido que dejó la IA en «Yape por validar» → ✅ PROVINCIA lo pasa a Validado
+    await inbound('51911111131', 'wamid.AG2', 'Ya yapeé');
+    const ch2 = await until(async () => (await call('GET', `/api/stores/${st.id}/chats?q=911111131`)).chats?.[0]);
+    const np = await call('POST', `/api/stores/${st.id}/pedidos`, { chat_id: ch2.id, modo: 'agencia', nombre: 'Rosa Q', dni: '41085894', celular: '949617857', ciudad: 'Piura', sede: 'Piura Centro', items: [{ talla: 'M', color: 'Negro', cantidad: 1 }] });
+    assert.equal(np.pedido.status, 'por_pagar');
+    assert.equal((await call('GET', `/api/stores/${st.id}/chats?q=911111131`)).chats[0].por_confirmar, 1);
+    const r3 = await call('PUT', `/api/chats/${ch2.id}/labels/${prov.id}`);
+    assert.equal(r3.pedido?.estado, 'validado', JSON.stringify(r3));
+    assert.equal((await call('GET', `/api/pedidos/${np.pedido.id}`)).pedido.status, 'validado');
+    await call('DELETE', `/api/pedidos/${np.pedido.id}`);
   });
   await step('ortografía: lo que escribe el equipo sale con mayúscula y tildes, sin cambiar palabras', async () => {
     const me = await call('GET', '/api/me');
