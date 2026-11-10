@@ -801,10 +801,13 @@ api.get('/sync', async (c) => {
 
 async function attachLabels(db, chats) {
   if (!chats.length) return chats;
-  const { results } = await db.prepare(`SELECT chat_id, label_id FROM chat_labels WHERE chat_id IN (${inList(chats.length)})`)
-    .bind(...chats.map((x) => x.id)).all();
+  // D1 acepta hasta 100 valores por consulta: de 90 en 90
   const by = {};
-  for (const r of results) (by[r.chat_id] ||= []).push(r.label_id);
+  for (let i = 0; i < chats.length; i += 90) {
+    const part = chats.slice(i, i + 90).map((x) => x.id);
+    const { results } = await db.prepare(`SELECT chat_id, label_id FROM chat_labels WHERE chat_id IN (${inList(part.length)})`).bind(...part).all();
+    for (const r of results) (by[r.chat_id] ||= []).push(r.label_id);
+  }
   return chats.map((x) => ({ ...x, labels: by[x.id] || [] }));
 }
 
