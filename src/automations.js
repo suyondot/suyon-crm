@@ -11,7 +11,7 @@ export const AUTOS = [
     text: 'Hola 👋 Confirma tu pedido #{pedido}:\n👤 {cliente}\n📱 {celular}\n🏠 {direccion}\n🛍️ {promo}: {colores}\n💰 Total: {total} (pagas al recibir)\n¿Confirmas que te llegue {entrega} de 2 a 8 p.m.?',
     buttons: ['Sí, confirmo', 'No'] },
   { key: 'confirmar_agencia', title: 'Confirmar pedido por Shalom (provincia)', when: 'Entra un pedido de Shopify que va por agencia. Al tocar «Sí» el bot pide DNI (si falta), la agencia Shalom y el adelanto.', cat: 'UTILITY',
-    text: 'Hola 👋 Confirma tus datos del pedido #{pedido}:\n👤 {cliente}\n🪪 DNI: {dni}\n📱 {celular}\n📍 {ciudad}\n🛍️ {promo}: {colores}\n💰 Total: {total}. Adelanto: {adelanto} y el resto lo pagas al recoger en Shalom.\n¿Tus datos están correctos?',
+    text: 'Hola 👋 Confirma tus datos del pedido #{pedido}:\n👤 {cliente}\n🪪 DNI: {dni}\n📱 {celular}\n📍 {ciudad}\n🛍️ {promo}: {colores}\n💰 Total: {total}. Adelanto: S/30 y el resto lo pagas al recoger en Shalom.\n¿Tus datos están correctos?',
     buttons: ['Sí, confirmo', 'No'] },
   { key: 'adelanto', title: 'Pedir adelanto (agencia)', when: 'Entra un pedido de Shopify que va por agencia (Shalom).', cat: 'UTILITY',
     text: 'Hola {nombre} 👋 Recibimos tu pedido #{pedido}:\n{productos}\nTotal: {total}. Para enviarlo por Shalom necesitamos un adelanto de {adelanto}.\nYape o Plin: {yape} a nombre de {titular}. Envíanos la captura por aquí 🙌' },
