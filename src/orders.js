@@ -272,7 +272,7 @@ export async function getOrder(env, id) {
 }
 
 // Crea el pedido con número correlativo por tienda
-export async function insertOrder(env, store, data, { userId = null, source = 'manual' } = {}) {
+export async function insertOrder(env, store, data, { userId = null, source = 'manual', createdAt = null, nota = '' } = {}) {
   const cfg = cfgOf(store);
   const clean = cleanOrder(data, cfg);
   const modo = clean.modo || 'lima';
@@ -284,6 +284,7 @@ export async function insertOrder(env, store, data, { userId = null, source = 'm
   if (!('adelanto' in clean)) clean.adelanto = modo === 'agencia' ? Number(cfg.adelanto) || 0 : 0;
   if (!clean.entrega && modo !== 'agencia') clean.entrega = (await defaultEntrega(env, store)).dia;
   const t = now();
+  const ct = Number(createdAt) || t;
   const row = {
     ...clean,
     modo,
@@ -298,15 +299,19 @@ export async function insertOrder(env, store, data, { userId = null, source = 'm
   const keys = Object.keys(row);
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const r = await env.DB.prepare(
+      // 2 viajes a la base en vez de 5: INSERT … RETURNING y luego todo lo demás junto (batch)
+      const o = await env.DB.prepare(
         `INSERT INTO orders (store_id, number, ${keys.join(', ')}, created_at, updated_at, status_at)
-         VALUES (?, (SELECT COALESCE(MAX(number), 0) + 1 FROM orders WHERE store_id = ?), ${keys.map(() => '?').join(', ')}, ?, ?, ?)`
-      ).bind(store.id, store.id, ...keys.map((k) => row[k] ?? null), t, t, t).run();
-      const id = r.meta.last_row_id;
-      if (row.chat_id) await env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(t, row.chat_id).run();
-      await addEvent(env, id, 'creado', `${source === 'shopify' ? 'Llegó de Shopify' : source === 'ia' ? 'Lo creó la IA' : 'Creado'} · ${ESTADOS[row.status]}`, userId);
-      await env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE id = ?').bind(store.id).run();
-      return getOrder(env, id);
+         VALUES (?, (SELECT COALESCE(MAX(number), 0) + 1 FROM orders WHERE store_id = ?), ${keys.map(() => '?').join(', ')}, ?, ?, ?) RETURNING *`
+      ).bind(store.id, store.id, ...keys.map((k) => row[k] ?? null), ct, t, t).first();
+      const ev = (kind, detail) => env.DB.prepare('INSERT INTO order_events (order_id, kind, detail, user_id, created_at) VALUES (?, ?, ?, ?, ?)')
+        .bind(o.id, kind, clip(String(detail || ''), 500), userId, t);
+      const q = [ev('creado', `${source === 'shopify' ? 'Llegó de Shopify' : source === 'ia' ? 'Lo creó la IA' : 'Creado'} · ${ESTADOS[row.status]}`)];
+      if (nota) q.push(ev('nota', nota));
+      if (row.chat_id) q.push(env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(t, row.chat_id));
+      q.push(env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE id = ?').bind(store.id));
+      await env.DB.batch(q);
+      return o;
     } catch (e) {
       if (/UNIQUE/.test(String(e.message)) && /ext/.test(String(e.message))) return null; // ya existía (Shopify reenvió)
       if (!/UNIQUE/.test(String(e.message)) || attempt === 2) throw e;

@@ -419,7 +419,7 @@ function drawReg() {
     <div class="gcard" style="--sc:#2f6fd0;margin-bottom:10px"><div class="gnm" style="margin-bottom:6px">📋 Pegar formularios</div>
       <textarea id="regIn" rows="3" class="gta" placeholder="Pega aquí el formulario (Ctrl+V). Se agrega solo y el cuadro queda listo para el siguiente."></textarea>
       <div class="gline"><label class="gsmall">Fecha <input type="date" id="regD" value="${e(EV.regD || today)}"></label><button class="gchip" data-ea="regadd">Agregar</button></div>
-      ${EV.regOut.length ? `<div class="gmsg">${EV.regOut.map((x, i) => `${x.ok ? '✅' : '⚠️'} ${e(x.text)}${x.dup ? ` <button class="gchip" data-eforce="${i}">Agregar igual</button>` : ''}`).join('<br>')}</div>` : ''}
+      ${EV.regOut.length ? `<div class="gmsg">${EV.regOut.map((x, i) => `${x.wait ? '⏳' : x.ok ? '✅' : '⚠️'} ${e(x.text)}${x.dup ? ` <button class="gchip" data-eforce="${i}">Agregar igual</button>` : ''}`).join('<br>')}</div>` : ''}
     </div>
     <div class="gcard" style="--sc:#2e8b57;margin-bottom:10px"><div class="gnm" style="margin-bottom:6px">🎫 Cruzar guía con su pedido</div>
       <div class="gline"><input id="cgC" placeholder="Código (ej. 7KJ9)" maxlength="8" style="width:120px;text-transform:uppercase"><input id="cgD" inputmode="numeric" placeholder="DNI de la guía" style="width:130px"><input id="cgO" inputmode="numeric" placeholder="Nro. orden (opcional)" style="width:160px"><select id="cgK" aria-label="Courier"><option value="shalom">Shalom</option><option value="olva">Olva</option></select><button class="gchip" data-ea="cruzar">Cruzar</button></div>
@@ -737,13 +737,34 @@ const patchLocal = (env) => {
   draw();
 };
 
+// Pegar formularios: se ve al instante «⏳ Agregando…» y, al responder, los pedidos nuevos entran a la lista
+// sin volver a bajar todos los envíos (antes tardaba varios segundos).
+let regSeq = 0;
 async function sendForms(text, force = false) {
   if (!text.trim()) return;
+  const key = ++regSeq;
+  const names = [...text.matchAll(/Nombre\s*:\s*([^\n]+)/gi)].map((m) => m[1].replace(/[*➡️]/gu, '').split(/\bdni\b|\bcel\b/i)[0].trim()).filter(Boolean);
+  const pend = (names.length ? names : ['formulario']).map((n) => ({ key, wait: true, text: `Agregando ${n}…` }));
+  EV.regOut = [...EV.regOut.filter((x) => x.wait), ...pend];
+  EV.dupForms = EV.regOut.map(() => null);
+  if (EV.tab === 'reg') draw();
+  setTimeout(() => H.$('#regIn')?.focus(), 30);
   const r = await act(() => H.api('POST', `/stores/${H.S.storeId}/envios/formularios`, { text, fecha: H.$('#regD')?.value || EV.data.hoy, force }));
-  if (!r) return;
-  EV.regOut = r.resultados.map((x) => ({ ...x }));
-  EV.dupForms = r.resultados.map((x) => x.form || null);
-  await load();
+  const rest = EV.regOut.filter((x) => x.wait && x.key !== key);
+  if (!r) {
+    EV.regOut = rest;
+    EV.dupForms = rest.map(() => null);
+    if (EV.tab === 'reg') draw();
+    return;
+  }
+  const nuevos = r.resultados.map((x) => x.envio).filter(Boolean);
+  if (nuevos.length && EV.data) {
+    const ids = new Set(nuevos.map((x) => x.id));
+    EV.data.envios = [...nuevos, ...EV.data.envios.filter((x) => !ids.has(x.id))];
+  }
+  EV.regOut = [...rest, ...r.resultados.map(({ envio, ...x }) => x)];
+  EV.dupForms = EV.regOut.map((x) => x.form || null);
+  draw();
   setTimeout(() => H.$('#regIn')?.focus(), 30);
 }
 

@@ -5,7 +5,7 @@ import { storeFor, requireUser } from './auth.js';
 import { getOrder, addEvent, shape } from './orders.js';
 import { setOrderStatus } from './automations.js';
 import { trackOrder } from './rastreo.js';
-import { envCfg, cleanEnvCfg, saveEnvCfg, addForms, crossGuide, readGuides, findPicked, importArtifact, compact } from './envios.js';
+import { envCfg, cleanEnvCfg, saveEnvCfg, addForms, crossGuide, readGuides, findPicked, importArtifact, compact, ENVIO_COLS } from './envios.js';
 
 const r = new Hono();
 const body = async (c) => {
@@ -20,7 +20,7 @@ const bump = (env, id) => env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE 
 r.get('/stores/:id/envios', async (c) => {
   const st = await storeFor(c, c.req.param('id'), 'any');
   const { results } = await c.env.DB.prepare(
-    "SELECT * FROM orders WHERE store_id = ? AND modo = 'agencia' AND status != 'cancelado' ORDER BY COALESCE(enviado_at, created_at) DESC LIMIT 6000"
+    `SELECT ${ENVIO_COLS} FROM orders WHERE store_id = ? AND modo = 'agencia' AND status != 'cancelado' ORDER BY COALESCE(enviado_at, created_at) DESC LIMIT 6000`
   ).bind(st.id).all();
   const e = envCfg(st);
   return c.json({

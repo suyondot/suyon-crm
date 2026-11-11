@@ -6,6 +6,9 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // El Worker corre cerca de la base de datos (D1) y no en la ciudad de quien usa la app:
+  // cada consulta a la base pasa de ~150 ms (ida y vuelta Sudamérica ↔ EE. UU.) a pocos ms.
+  "placement": { "mode": "smart" },
 
   // App web (PWA). Las rutas de la API y del webhook pasan primero por el Worker.
   "assets": {

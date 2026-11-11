@@ -1977,6 +1977,7 @@ try {
     let fr = await call('POST', `/api/stores/${sid}/envios/formularios`, { text: form });
     assert.equal(fr.resultados.length, 2);
     assert.ok(fr.resultados.every((x) => x.ok), JSON.stringify(fr.resultados));
+    assert.ok(fr.resultados.every((x) => x.envio?.id === x.id && x.envio.status === 'validado'), 'devuelve el envío creado para la pantalla');
     let L = (await call('GET', `/api/stores/${sid}/envios`)).envios;
     const maria = L.find((x) => x.nombre === 'Maria Lopez');
     assert.equal(maria.status, 'validado');
@@ -1985,6 +1986,9 @@ try {
     assert.equal(L.find((x) => x.nombre === 'Luz Perez').items[0].color, 'Celeste bebé');
     fr = await call('POST', `/api/stores/${sid}/envios/formularios`, { text: form.split('\n\n')[0] });
     assert.equal(fr.resultados[0].dup, true, 'no duplica a la misma clienta');
+    fr = await call('POST', `/api/stores/${sid}/envios/formularios`, { text: 'Nombre: Rosa Pegada Dos\nDNI: 71112223\nCel: 912 333 444\nShalom: Piura\n\nNombre: Rosa Pegada Dos\nDNI: 71112223\nCel: 912 333 444\nShalom: Piura' });
+    assert.deepEqual(fr.resultados.map((x) => !!x.ok), [true, false], 'el mismo formulario dos veces en un pegado = duplicado');
+    await call('DELETE', `/api/pedidos/${fr.resultados[0].id}`);
     // Cruzar a mano (código + DNI + orden)
     let cg = await call('POST', `/api/stores/${sid}/envios/cruzar`, { codigo: 'npjk', dni: '70000001', orden: '2000 0001' });
     assert.equal(cg.ok, true, cg.text);

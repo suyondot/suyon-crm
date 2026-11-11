@@ -209,57 +209,63 @@ export function unitsToItems(producto, n, cl = [], tl = []) {
 
 const OPEN_ANY = "status NOT IN ('recogido','no_recogido','cancelado')";
 
-async function chatByPhone(env, storeId, cel) {
-  const wa = normPhone(cel);
-  if (!wa) return null;
-  const ch = await env.DB.prepare('SELECT id, ad_id FROM chats WHERE store_id = ? AND wa_id = ? AND sim = 0').bind(storeId, wa).first().catch(() => null);
-  return ch || null;
-}
-
 // ¿Ya existe un envío abierto de esta clienta? (por DNI, celular o nombre)
-export async function dupOf(env, store, o) {
-  const { results } = await env.DB.prepare(
-    `SELECT id, number, nombre, dni, celular, status, guia, guia_codigo, created_at FROM orders WHERE store_id = ? AND modo = 'agencia' AND ${OPEN_ANY} ORDER BY id DESC LIMIT 3000`
-  ).bind(store.id).all();
+const openAgencia = (env, store) => env.DB.prepare(
+  `SELECT id, number, nombre, dni, celular, status, guia, guia_codigo FROM orders WHERE store_id = ? AND modo = 'agencia' AND ${OPEN_ANY} ORDER BY id DESC LIMIT 3000`
+).bind(store.id).all().then((r) => r.results);
+
+function dupIn(list, o) {
   const nn = nrm(o.nombre);
-  const hit = results.find((x) => (o.dni && o.dni.length >= 7 && dig(x.dni) === o.dni)
+  const hit = list.find((x) => (o.dni && o.dni.length >= 7 && dig(x.dni) === o.dni)
     || (o.celular && o.celular.length === 9 && dig(x.celular).slice(-9) === o.celular)
     || (nn && nn.split(' ').length >= 2 && nrm(x.nombre) === nn));
   if (!hit) return null;
   return REGISTRO.includes(hit.status) ? `ya está en Registro (pedido #${hit.number})` : `ya tiene guía ${hit.guia_codigo || hit.guia || ''} (pedido #${hit.number})`;
 }
 
+export async function dupOf(env, store, o) {
+  return dupIn(await openAgencia(env, store), o);
+}
+
 /* ---------------- Registro: formularios pegados → pedidos ---------------- */
 
+// Rápido: 2 consultas al inicio (envíos abiertos y chats) y 2 por formulario (crear + batch). Devuelve los envíos creados
+// para que la pantalla los agregue sin volver a bajar toda la lista.
 export async function addForms(env, store, { text, fecha, force }, userId) {
   if (!/Nombre\s*:/i.test(String(text || ''))) fail(400, 'No reconocí un formulario: falta la línea «Nombre:».');
   const ecfg = envCfg(store);
   const adel = Number(cfgOf(store).adelanto) || 0;
   const tz = store.timezone || 'America/Lima';
+  const forms = splitForms(text).slice(0, 30).map((fx) => ({ fx, o: parseForm(fx, ecfg, adel) }));
+  const was = [...new Set(forms.map((f) => normPhone(f.o.celular)).filter(Boolean))];
+  const [open, chats] = await Promise.all([
+    force ? [] : openAgencia(env, store),
+    was.length
+      ? env.DB.prepare(`SELECT id, ad_id, wa_id FROM chats WHERE store_id = ? AND sim = 0 AND wa_id IN (${was.map(() => '?').join(', ')})`).bind(store.id, ...was).all().then((r) => r.results).catch(() => [])
+      : [],
+  ]);
+  const chatBy = Object.fromEntries(chats.map((c) => [c.wa_id, c]));
+  let createdAt = null;
+  if (fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha) && fecha !== localDay(now(), tz)) createdAt = Date.parse(`${fecha}T19:00:00-05:00`) || null;
   const out = [];
-  for (const fx of splitForms(text).slice(0, 30)) {
-    const o = parseForm(fx, ecfg, adel);
+  for (const { fx, o } of forms) {
     if (!o.nombre) {
       out.push({ ok: false, text: 'Un formulario no tiene nombre: no se agregó.' });
       continue;
     }
-    const d = force ? null : await dupOf(env, store, o);
+    const d = force ? null : dupIn(open, o);
     if (d) {
       out.push({ ok: false, dup: true, nombre: o.nombre, text: `${o.nombre}: ${d}. No se agregó.`, form: fx });
       continue;
     }
-    const ch = await chatByPhone(env, store.id, o.celular);
+    const ch = chatBy[normPhone(o.celular)] || null;
     const order = await insertOrder(env, store, {
       modo: 'agencia', status: 'validado', nombre: o.nombre, dni: o.dni, celular: o.celular, sede: o.destino, ciudad: o.destino.split(/[(,–-]/)[0].trim(),
       items: o.items, ...(o.total !== undefined ? { total: o.total } : {}), adelanto: o.adelanto, courier: o.courier,
       chat_id: ch?.id || null, ad_id: ch?.ad_id || null,
-    }, { userId, source: 'manual' });
-    if (fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha) && fecha !== localDay(now(), tz)) {
-      const t = Date.parse(`${fecha}T19:00:00-05:00`);
-      if (t) await env.DB.prepare('UPDATE orders SET created_at = ? WHERE id = ?').bind(t, order.id).run();
-    }
-    await addEvent(env, order.id, 'nota', 'Registrado desde un formulario pegado', userId);
-    out.push({ ok: true, id: order.id, nombre: o.nombre, text: `${o.nombre} · ${o.items.map((i) => `${i.cantidad} ${[i.talla, i.color].filter(Boolean).join(' ')}`).join(', ')} · S/${order.total} → Registro (pedido #${order.number})` });
+    }, { userId, source: 'manual', createdAt, nota: 'Registrado desde un formulario pegado' });
+    if (!force) open.unshift(order); // el mismo formulario pegado dos veces en el mismo envío también es duplicado
+    out.push({ ok: true, id: order.id, nombre: o.nombre, envio: compact(order), text: `${o.nombre} · ${o.items.map((i) => `${i.cantidad} ${[i.talla, i.color].filter(Boolean).join(' ')}`).join(', ')} · S/${order.total} → Registro (pedido #${order.number})` });
   }
   return out;
 }
@@ -508,6 +514,8 @@ export async function importArtifact(env, store, data, userId) {
 
 /* ---------------- Lista compacta para la pantalla ---------------- */
 
+// Columnas que usa la pantalla de Envíos (no bajar todo el pedido)
+export const ENVIO_COLS = 'id, number, status, modo, nombre, celular, dni, ciudad, sede, items, total, adelanto, guia, guia_codigo, guia_qr, guia_estado, guia_at, courier, enviado_at, created_at, status_at, seg, no_quiere, rem, chat_id, notas, source';
 export function compact(o) {
   const s = shape(o);
   let seg = [];
