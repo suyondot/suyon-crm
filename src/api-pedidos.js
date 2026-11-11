@@ -5,7 +5,7 @@ import { storeFor, chatFor, requireUser } from './auth.js';
 import {
   MODOS, ESTADOS, FLUJO, VENDIDO, PERDIDO, cfgOf, DEFAULT_CFG, cleanOrder, insertOrder, getOrder, shape, draftFromChat, formText, varsFromForm, storeColors, defaultEntrega, addEvent, orderText, firstStatus, pedidoAbierto,
 } from './orders.js';
-import { loadAutos, saveAuto, submitTemplate, syncTemplates, setOrderStatus, onOrderCreated, AUTO_VARS } from './automations.js';
+import { loadAutos, saveAuto, submitTemplate, syncTemplates, setOrderStatus, onOrderCreated, AUTO_VARS, prevFrom } from './automations.js';
 import { ensureDataset } from './capi.js';
 import { trackOrder } from './rastreo.js';
 import { loadSettings } from './bot.js';
@@ -340,7 +340,7 @@ r.patch('/stores/:id/autos/:key', async (c) => {
     if (!t) fail(400, 'El mensaje no puede quedar vacío.');
     if (t.length > 900) fail(400, 'El mensaje puede tener hasta 900 letras.');
     patch.text = t;
-    if (t !== cur.text && cur.tpl_name) Object.assign(patch, { tpl_name: null, tpl_status: null, tpl_vars: null, tpl_reason: null }); // cambió el texto: hay que pedir otra plantilla
+    if (t !== cur.text && cur.tpl_name) Object.assign(patch, { tpl_name: null, tpl_status: null, tpl_vars: null, tpl_reason: null, tpl_prev: prevFrom(cur) }); // cambió el texto: hay que pedir otra plantilla (la aprobada se sigue usando mientras tanto)
   }
   if ('delay_min' in b) patch.delay_min = Math.min(Math.max(Math.round(Number(b.delay_min) || 0), 15), 365 * 1440);
   return c.json({ auto: await saveAuto(c.env, st.id, key, patch) });

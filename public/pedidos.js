@@ -500,6 +500,7 @@ function drawConfig(body) {
             ${a.key === 'carrito' ? `<label class="note">Minutos después <input type="number" min="15" data-adelay="1" value="${a.delay_min || 60}" style="width:70px"></label>` : ''}
             <span class="grow"></span>
             ${tp ? `<span class="opill t-${tp[1]}" title="${e(a.tpl_reason || '')}">Plantilla: ${tp[0]}</span>` : '<span class="note">Sin plantilla</span>'}
+            ${a.tpl_prev && a.tpl_status !== 'APPROVED' ? '<span class="note" title="Mientras Meta revisa la nueva, los avisos salen con la plantilla que ya estaba aprobada">· sigue saliendo la anterior</span>' : ''}
             ${CFG.plantillas_ok ? `<button class="iconbtn sm" data-atpl>${a.tpl_name ? 'Pedir otra plantilla' : 'Pedir plantilla a Meta'}</button>` : ''}
             <button class="iconbtn sm" data-asave>Guardar</button>
           </div></div>`;

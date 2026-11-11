@@ -1220,6 +1220,19 @@ try {
     const rr = await call('POST', `/api/messages/${tmsg.id}/retry`);
     assert.equal(rr.message.status, 'sent', JSON.stringify(rr));
     assert.equal(calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.type === 'template').length, nTpl + 1, 'se volvió a mandar la plantilla');
+    // Pedir otra plantilla (texto nuevo): mientras Meta la revisa, los avisos siguen saliendo con la aprobada
+    const oldTpl = rr.message.extra?.template || tmsg.extra.template;
+    const np = await call('POST', `/api/stores/${store.id}/autos/confirmar/plantilla`);
+    assert.equal(np.auto.tpl_status, 'PENDING');
+    assert.equal(np.auto.tpl_prev?.name, oldTpl);
+    const newTpl = calls.filter((x) => x.path === `${WABA_ID}/message_templates` && x.method === 'POST').pop();
+    assert.ok(/\n\n\*¿Confirmas que te llegue \{\{\d+\}\} de 2 a 8 p\.m\.\?\*/.test(newTpl.body.components[0].text), newTpl.body.components[0].text);
+    await hook(md({ statuses: [{ id: (await call('GET', `/api/chats/${lc.id}/messages?limit=20`)).messages.find((m) => m.id === tmsg.id).wamid, status: 'failed', timestamp: ts(), recipient_id: '51912345678', errors: [{ code: 131042 }] }] }));
+    await until(async () => (await call('GET', `/api/chats/${lc.id}/messages?limit=20`)).messages.find((m) => m.id === tmsg.id && m.status === 'failed'));
+    const rr2 = await call('POST', `/api/messages/${tmsg.id}/retry`);
+    assert.equal(rr2.message.status, 'sent', JSON.stringify(rr2));
+    assert.equal(calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.type === 'template').pop().body.template.name, oldTpl, 'usa la aprobada mientras la nueva está en revisión');
+    await call('POST', `/api/stores/${store.id}/autos/sync`);
   });
   await step('la clienta toca «Sí, confirmo» y el pedido queda Confirmado', async () => {
     const o = (await call('GET', `/api/stores/${store.id}/pedidos?q=Luz`)).pedidos[0];

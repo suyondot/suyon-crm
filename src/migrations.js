@@ -693,6 +693,11 @@ export const MIGRATIONS = [
     name: 'etiqueta ATENDER PENDIENTE (preguntas en tiendas Shopify: la asesora llama, el bot no contesta)',
     sql: [`INSERT OR IGNORE INTO labels (store_id, name, color, auto, sort, created_at) SELECT id, 'ATENDER PENDIENTE', '--t-orange', 0, 8, CAST(strftime('%s', 'now') AS INTEGER) * 1000 FROM stores`],
   },
+  {
+    id: 32,
+    name: 'plantilla anterior de cada aviso (se sigue usando mientras Meta revisa la nueva)',
+    sql: ['ALTER TABLE automations ADD COLUMN tpl_prev TEXT'],
+  },
 ];
 
 let ready = null;

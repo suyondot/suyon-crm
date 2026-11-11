@@ -8,10 +8,10 @@ import { shape, itemsText, cfgOf, normPhone, addEvent, getOrder, ESTADOS, VENDID
 
 export const AUTOS = [
   { key: 'confirmar', title: 'Confirmar pedido contra entrega (Lima)', when: 'Entra un pedido de Shopify para contraentrega. Al tocar «Sí» queda Confirmado y sube con 📌 para agendarlo; con «No» queda ATENDER PENDIENTE.', cat: 'UTILITY',
-    text: 'Hola 👋 Confirma tu pedido #{pedido}:\n👤 {cliente}\n📱 {celular}\n🏠 {direccion}\n🛍️ {promo}: {colores}\n💰 Total: {total} (pagas al recibir)\n¿Confirmas que te llegue {entrega} de 2 a 8 p.m.?',
+    text: 'Hola 👋 Confirma tu pedido #{pedido}:\n👤 {cliente}\n📱 {celular}\n🏠 {direccion}\n🛍️ {promo}: {colores}\n💰 Total: {total} (pagas al recibir)\n\n*¿Confirmas que te llegue {entrega} de 2 a 8 p.m.?*',
     buttons: ['Sí, confirmo', 'No'] },
   { key: 'confirmar_agencia', title: 'Confirmar pedido por Shalom (provincia)', when: 'Entra un pedido de Shopify que va por agencia. Al tocar «Sí» el bot pide DNI (si falta), la agencia Shalom y el adelanto.', cat: 'UTILITY',
-    text: 'Hola 👋 Confirma tus datos del pedido #{pedido}:\n👤 {cliente}\n🪪 DNI: {dni}\n📱 {celular}\n📍 {ciudad}\n🛍️ {promo}: {colores}\n💰 Total: {total}. Adelanto: S/30 y el resto lo pagas al recoger en Shalom.\n¿Tus datos están correctos?',
+    text: 'Hola 👋 Confirma tus datos del pedido #{pedido}:\n👤 {cliente}\n🪪 DNI: {dni}\n📱 {celular}\n📍 {ciudad}\n🛍️ {promo}: {colores}\n💰 Total: {total}. Adelanto: S/30 y el resto lo pagas al recoger en Shalom.\n\n*¿Tus datos están correctos?*',
     buttons: ['Sí, confirmo', 'No'] },
   { key: 'adelanto', title: 'Pedir adelanto (agencia)', when: 'Entra un pedido de Shopify que va por agencia (Shalom).', cat: 'UTILITY',
     text: 'Hola {nombre} 👋 Recibimos tu pedido #{pedido}:\n{productos}\nTotal: {total}. Para enviarlo por Shalom necesitamos un adelanto de {adelanto}.\nYape o Plin: {yape} a nombre de {titular}. Envíanos la captura por aquí 🙌' },
@@ -38,7 +38,7 @@ export async function loadAutos(env, storeId) {
   const by = Object.fromEntries(results.map((r) => [r.key, r]));
   return AUTOS.map((a) => {
     const r = by[a.key] || {};
-    return { key: a.key, title: a.title, when: a.when, cat: a.cat, buttons: a.buttons || [], default_text: a.text, on: !!r.on_, text: r.text || a.text, delay_min: r.delay_min ?? a.delay ?? null, tpl_name: r.tpl_name || null, tpl_status: r.tpl_status || null, tpl_reason: r.tpl_reason || null, tpl_vars: r.tpl_vars ? JSON.parse(r.tpl_vars) : null };
+    return { key: a.key, title: a.title, when: a.when, cat: a.cat, buttons: a.buttons || [], default_text: a.text, on: !!r.on_, text: r.text || a.text, delay_min: r.delay_min ?? a.delay ?? null, tpl_name: r.tpl_name || null, tpl_status: r.tpl_status || null, tpl_reason: r.tpl_reason || null, tpl_vars: r.tpl_vars ? JSON.parse(r.tpl_vars) : null, tpl_prev: r.tpl_prev ? JSON.parse(r.tpl_prev) : null };
   });
 }
 
@@ -46,10 +46,10 @@ export async function saveAuto(env, storeId, key, patch) {
   const cur = (await loadAutos(env, storeId)).find((a) => a.key === key);
   const next = { ...cur, ...patch };
   await env.DB.prepare(
-    `INSERT INTO automations (store_id, key, on_, text, delay_min, tpl_name, tpl_status, tpl_vars, tpl_reason, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO automations (store_id, key, on_, text, delay_min, tpl_name, tpl_status, tpl_vars, tpl_reason, tpl_prev, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (store_id, key) DO UPDATE SET on_ = excluded.on_, text = excluded.text, delay_min = excluded.delay_min, tpl_name = excluded.tpl_name,
-       tpl_status = excluded.tpl_status, tpl_vars = excluded.tpl_vars, tpl_reason = excluded.tpl_reason, updated_at = excluded.updated_at`
-  ).bind(storeId, key, next.on ? 1 : 0, next.text === BY[key].text ? null : next.text, next.delay_min, next.tpl_name, next.tpl_status, next.tpl_vars ? JSON.stringify(next.tpl_vars) : null, next.tpl_reason, now()).run();
+       tpl_status = excluded.tpl_status, tpl_vars = excluded.tpl_vars, tpl_reason = excluded.tpl_reason, tpl_prev = excluded.tpl_prev, updated_at = excluded.updated_at`
+  ).bind(storeId, key, next.on ? 1 : 0, next.text === BY[key].text ? null : next.text, next.delay_min, next.tpl_name, next.tpl_status, next.tpl_vars ? JSON.stringify(next.tpl_vars) : null, next.tpl_reason, next.tpl_prev ? JSON.stringify(next.tpl_prev) : null, now()).run();
   return (await loadAutos(env, storeId)).find((a) => a.key === key);
 }
 
@@ -98,6 +98,18 @@ async function chatForPhone(env, store, phone, name) {
   return env.DB.prepare('SELECT * FROM chats WHERE store_id = ? AND wa_id = ?').bind(store.id, wa).first();
 }
 
+// La plantilla que se puede usar ahora: la nueva si ya está aprobada; si Meta todavía la revisa, la anterior
+export function tplUsable(a) {
+  if (a.tpl_name && a.tpl_status === 'APPROVED') return { name: a.tpl_name, vars: a.tpl_vars || [] };
+  if (a.tpl_prev?.name) return { name: a.tpl_prev.name, vars: a.tpl_prev.vars || [] };
+  return null;
+}
+// Guarda la plantilla aprobada como «anterior» antes de reemplazarla (para no quedarse sin aviso mientras Meta revisa)
+export function prevFrom(a) {
+  if (a.tpl_name && a.tpl_status === 'APPROVED') return { name: a.tpl_name, vars: a.tpl_vars || [] };
+  return a.tpl_prev || null;
+}
+
 // Manda un mensaje automático: gratis si la ventana está abierta; si no, con la plantilla aprobada
 export async function sendAuto(env, store, key, ctx) {
   const a = (await loadAutos(env, store.id)).find((x) => x.key === key);
@@ -113,6 +125,7 @@ export async function sendAuto(env, store, key, ctx) {
   const open = windowOpen(chat);
   let type = 'text';
   let wamid;
+  let tplUsed = null;
   const label = `«${a.title}»`;
   try {
     if (store.status !== 'activo') throw Object.assign(new Error('El número de la tienda no está conectado.'), { soft: true });
@@ -121,9 +134,10 @@ export async function sendAuto(env, store, key, ctx) {
         type = 'interactive';
         wamid = await sendButtons(env, store, chat.wa_id, text, [{ id: `ord:ok:${order.id}`, title: 'Sí, confirmo' }, { id: `ord:edit:${order.id}`, title: 'Cambiar algo' }]);
       } else wamid = await sendText(env, store, chat.wa_id, text);
-    } else if (a.tpl_name && a.tpl_status === 'APPROVED') {
+    } else if (tplUsable(a)) {
       type = 'template';
-      wamid = await sendTemplate(env, store, chat.wa_id, a.tpl_name, 'es', (a.tpl_vars || []).map((k) => v[k] ?? ''));
+      tplUsed = tplUsable(a).name;
+      wamid = await sendTemplate(env, store, chat.wa_id, tplUsed, 'es', tplUsable(a).vars.map((k) => v[k] ?? ''));
     } else {
       throw Object.assign(new Error('Pasaron más de 24 h desde su último mensaje y la plantilla de este aviso no está aprobada por Meta. Créala en Configuración → Pedidos y Shopify.'), { soft: true });
     }
@@ -135,7 +149,7 @@ export async function sendAuto(env, store, key, ctx) {
   const t = now();
   await env.DB.prepare(
     `INSERT INTO messages (chat_id, store_id, wamid, direction, sender, type, body, status, extra, created_at, updated_at) VALUES (?, ?, ?, 'out', 'bot', ?, ?, 'sent', ?, ?, ?)`
-  ).bind(chat.id, store.id, wamid || null, type === 'template' ? 'text' : type, text, JSON.stringify({ auto: key, order: order?.id || null, template: type === 'template' ? a.tpl_name : undefined }), t, t).run();
+  ).bind(chat.id, store.id, wamid || null, type === 'template' ? 'text' : type, text, JSON.stringify({ auto: key, order: order?.id || null, template: type === 'template' ? tplUsed : undefined }), t, t).run();
   await env.DB.prepare("UPDATE chats SET last_msg_at = ?, last_preview = ?, last_dir = 'out', updated_at = ? WHERE id = ?").bind(t, clip(text.split('\n')[0], 120), t, chat.id).run();
   await env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE id = ?').bind(store.id).run();
   if (order) await addEvent(env, order.id, 'mensaje', `Se mandó ${label}${type === 'template' ? ' (plantilla)' : ''}`);
@@ -151,12 +165,13 @@ export async function retryAutoTemplate(env, store, chat, m) {
   } catch {}
   if (!x.template || !x.auto) return null;
   const a = (await loadAutos(env, store.id)).find((y) => y.key === x.auto);
-  if (!a || a.tpl_status !== 'APPROVED' || !a.tpl_name) throw new Error('La plantilla de este aviso ya no está aprobada por Meta.');
+  const tp = a && tplUsable(a);
+  if (!tp) throw new Error('La plantilla de este aviso ya no está aprobada por Meta.');
   const order = x.order ? await getOrder(env, x.order) : null;
   const v = await varsFor(env, store, { order });
-  const wamid = await sendTemplate(env, store, chat.wa_id, a.tpl_name, 'es', (a.tpl_vars || []).map((k) => v[k] ?? ''));
+  const wamid = await sendTemplate(env, store, chat.wa_id, tp.name, 'es', tp.vars.map((k) => v[k] ?? ''));
   await env.DB.prepare("UPDATE messages SET wamid = ?, status = 'sent', error = NULL, body = ?, extra = ?, updated_at = ? WHERE id = ?")
-    .bind(wamid || null, fill(a.text, v), JSON.stringify({ ...x, template: a.tpl_name }), now(), m.id).run();
+    .bind(wamid || null, fill(a.text, v), JSON.stringify({ ...x, template: tp.name }), now(), m.id).run();
   if (order) await addEvent(env, order.id, 'mensaje', `Se volvió a mandar «${a.title}» (plantilla)`);
   return true;
 }
@@ -278,7 +293,8 @@ export async function submitTemplate(env, store, key) {
   const { body, vars, example } = templateFrom(a, { ...SAMPLE, tienda: store.name });
   const name = `suyon_${key}_${store.id}_${Date.now().toString(36)}`.toLowerCase();
   const r = await createTemplate(env, store, { name, category: a.cat, body, example, buttons: a.buttons });
-  return saveAuto(env, store.id, key, { tpl_name: name, tpl_status: r.status || 'PENDING', tpl_vars: vars, tpl_reason: null });
+  const st = r.status || 'PENDING';
+  return saveAuto(env, store.id, key, { tpl_name: name, tpl_status: st, tpl_vars: vars, tpl_reason: null, tpl_prev: st === 'APPROVED' ? null : prevFrom(a) });
 }
 
 export async function syncTemplates(env, store) {
@@ -286,7 +302,7 @@ export async function syncTemplates(env, store) {
     if (!a.tpl_name) continue;
     try {
       const t = await templateStatus(env, store, a.tpl_name);
-      if (t) await saveAuto(env, store.id, a.key, { tpl_status: t.status, tpl_reason: t.rejected_reason && t.rejected_reason !== 'NONE' ? t.rejected_reason : null });
+      if (t) await saveAuto(env, store.id, a.key, { tpl_status: t.status, tpl_reason: t.rejected_reason && t.rejected_reason !== 'NONE' ? t.rejected_reason : null, ...(t.status === 'APPROVED' ? { tpl_prev: null } : {}) });
     } catch {}
   }
   return loadAutos(env, store.id);
