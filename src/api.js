@@ -11,6 +11,7 @@ import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
 import { quitarPendientes } from './bot.js';
 import { pedidoAlAgendar } from './agendar.js';
 import pagosApi from './api-pagos.js';
+import gastoApi from './api-gasto.js';
 import reportesApi from './api-reportes.js';
 import pedidosApi from './api-pedidos.js';
 import billingApi from './api-billing.js';
@@ -1426,5 +1427,6 @@ api.route('/', asistenteApi);
 api.route('/', carritosApi);
 api.route('/', respuestasApi);
 api.route('/', pagosApi);
+api.route('/', gastoApi);
 
 export default api;

@@ -263,16 +263,22 @@ export async function marcarListo(env, chatId) {
   } catch {}
   const f = await env.DB.prepare("SELECT id, body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' ORDER BY id DESC LIMIT 1").bind(chat.id).first();
   if (f?.body) for (const [k, x] of Object.entries(varsFromForm(f.body))) if (!v[k]) v[k] = x;
+  // Pedido de Shopify por Shalom (sin formulario de la IA): los datos salen del pedido
+  const ord = await env.DB.prepare("SELECT nombre, dni, sede, modo, created_at FROM orders WHERE chat_id = ? AND status = 'por_pagar' ORDER BY id DESC LIMIT 1").bind(chat.id).first();
+  if (ord) for (const k of ['nombre', 'dni']) if (!v[k] && ord[k]) v[k] = ord[k];
   const completo = String(v.nombre || '').trim().split(/\s+/).filter((w) => w.length >= 2).length >= 2;
   if (!completo) return null;
   const form = String(f?.body || '');
-  const prov = /Monto restante|Sede:|Shalom:/i.test(form) || !!String(v.sede_shalom || '').trim();
+  const prov = /Monto restante|Sede:|Shalom:/i.test(form) || !!String(v.sede_shalom || '').trim() || ord?.modo === 'agencia';
   let at = null;
   if (prov) {
     if (!String(v.dni || '').trim()) return null;
-    const cap = await env.DB.prepare("SELECT id, created_at FROM messages WHERE chat_id = ? AND direction = 'in' AND type IN ('image', 'document') AND id > ? ORDER BY id DESC LIMIT 1").bind(chat.id, f?.id || 0).first();
+    // La captura tiene que ser posterior al formulario o, en pedidos de Shopify, al primer mensaje que se le mandó por ese pedido
+    let desdeId = f?.id || 0;
+    if (!f && ord) desdeId = (await env.DB.prepare("SELECT MIN(id) AS id FROM messages WHERE chat_id = ? AND direction = 'out' AND created_at >= ?").bind(chat.id, ord.created_at).first())?.id || 0;
+    const cap = await env.DB.prepare("SELECT id, created_at FROM messages WHERE chat_id = ? AND direction = 'in' AND type IN ('image', 'document') AND id > ? ORDER BY id DESC LIMIT 1").bind(chat.id, desdeId).first();
     if (!cap) return null;
-    at = cap.created_at;
+    at = Math.max(cap.created_at, now() - 5e3);
   } else {
     const lima = /Env[ií]o para:\s*Lima/i.test(form) || esDistritoLima(v.distrito) || esDistritoLima(v.destino);
     if (!lima || !String(v.direccion || '').trim() || !String(v.colores || '').trim()) return null;

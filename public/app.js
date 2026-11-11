@@ -575,7 +575,7 @@ function navItems() {
   if (canChats() || !store()) items.push(['chats', 'Chats', ICON.chat, S.unread[S.storeId] || 0]);
   if (store() && canChats()) items.push(['clientes', 'Clientes', ICON.users, 0]);
   if (store()) items.push(['pedidos', 'Pedidos', ICON.box, 0]);
-  if (store() && canChats() && store().canal !== 'shopify') items.push(['pagos', 'Pagos', ICON.wallet, (S.pagosN || {})[S.storeId] || 0]);
+  if (store() && canChats()) items.push(['pagos', 'Pagos', ICON.wallet, (S.pagosN || {})[S.storeId] || 0]);
   if (store()?.canal === 'shopify' && canChats()) items.push(['carritos', 'Carritos', ICON.cart, 0]);
   if (store()) items.push(['envios', 'Envíos', ICON.truck, 0]);
   if (store() && canChats()) items.push(['avisos', 'Avisos', ICON.bell, S.avisos[S.storeId] || 0]);
@@ -635,7 +635,7 @@ function render() {
   if (asisOn()) return renderAsis();
   if (S.view === 'asis') S.view = 'chats';
   if (S.view === 'carritos' && store()?.canal !== 'shopify') S.view = 'pedidos';
-  if (S.view === 'pagos' && (store()?.canal === 'shopify' || !canChats())) S.view = 'pedidos';
+  if (S.view === 'pagos' && !canChats()) S.view = 'pedidos';
   const st = store();
   document.body.dataset.rubro = st?.rubro || 'ropa';
   const co = currentCompany();
@@ -879,7 +879,7 @@ function renderListHead() {
   const list = $('#list');
   if (!list) return;
   const all = [...S.chats.values()];
-  list.innerHTML = `${storeBanner()}<div id="callbar"></div><div class="list-head">
+  list.innerHTML = `${storeBanner()}<div id="wabar"></div><div id="callbar"></div><div class="list-head">
       <div class="searchrow">
         <div class="search"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="Buscar nombre o número" value="${esc(S.q)}" aria-label="Buscar chats" autocomplete="off"></div>
         <button class="filterbtn ${S.tagf.length ? 'on' : ''}" data-act="tagmenu" aria-expanded="${S.tagMenu}">${ICON.filter}Etiqueta${S.tagf.length ? ` · ${S.tagf.length}` : ''}</button>
@@ -897,6 +897,7 @@ function renderListHead() {
     </div>
     <div class="items" id="items"></div>`;
   renderCallbar();
+  loadWabar();
   const q = $('#q');
   let deb;
   q.addEventListener('input', () => {
@@ -1566,7 +1567,7 @@ function renderFicha({ ifChanged = false } = {}) {
       ${c.profile_name ? `<dt>En WhatsApp</dt><dd>${esc(c.profile_name)}</dd>` : ''}
       <dt>Celular</dt><dd class="mono" style="display:flex;gap:6px;align-items:center">${esc(fmtPhone(c.wa_id))}<button class="iconbtn" data-copy="${esc(c.wa_id.replace(/^51/, ''))}" aria-label="Copiar celular" style="padding:2px 6px">${ICON.copy}</button></dd>
     </dl></div>
-    <div class="sec"><h3>Ventana de WhatsApp</h3><p class="note" style="margin:0"><b style="color:${w.canSend ? 'var(--ok)' : 'var(--muted)'}">${esc(w.label)}</b> · ${esc(w.title)}</p></div>
+    <div class="sec"><h3>Ventana de WhatsApp</h3><p class="note" style="margin:0"><b style="color:${w.canSend ? 'var(--ok)' : 'var(--muted)'}">${esc(w.label)}</b> · ${esc(w.title)}</p><p class="note" id="fgasto" style="margin:4px 0 0"></p></div>
     ${botFicha(c)}
     <div class="sec"><h3>Pedidos</h3><div id="fpeds"><span class="note">Cargando…</span></div></div>
     <div class="sec"><h3>Notas</h3><textarea class="notesbox" id="cnotes" placeholder="Solo las ve tu equipo">${esc(c.notes || '')}</textarea></div>
@@ -1588,6 +1589,12 @@ function renderFicha({ ifChanged = false } = {}) {
   nm.addEventListener('keydown', (e) => e.key === 'Enter' && nm.blur());
   const nt = $('#cnotes');
   nt.addEventListener('change', () => save('notes', nt.value.trim()));
+  api('GET', `/chats/${c.id}/wa-gasto`).then((g) => {
+    const el = $('#fgasto');
+    if (!el || S.openId !== c.id) return;
+    const tpl = g.plantillas.utility + g.plantillas.marketing + g.plantillas.authentication;
+    el.textContent = g.cobrados ? `💸 Este chat costó ${soles(g.pen)} en WhatsApp (${g.cobrados} ${g.cobrados === 1 ? 'mensaje cobrado' : 'mensajes cobrados'}${tpl ? `, ${tpl} ${tpl === 1 ? 'plantilla' : 'plantillas'}` : ''})` : '💸 Este chat no costó nada en WhatsApp';
+  }).catch(() => {});
   const fp = $('#fpeds');
   if (S.fpCache?.id === c.id && Date.now() - S.fpCache.at < 20000) {
     fp.innerHTML = S.fpCache.html;
@@ -1645,6 +1652,39 @@ function startOfToday() {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d.getTime();
+}
+
+// Barra de gasto de WhatsApp del mes (pedido de Jordan): mensajes gratis que quedan y lo gastado en plantillas
+const soles = (n) => `S/${Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+async function loadWabar(force) {
+  const sid = S.storeId;
+  if (!sid || !store()?.phone_number_id) return;
+  const c = S.wabar?.[sid];
+  if (!force && c && Date.now() - c.at < 60e3) return renderWabar();
+  try {
+    const v = await api('GET', `/stores/${sid}/wa-gasto`);
+    S.wabar = { ...(S.wabar || {}), [sid]: { at: Date.now(), v } };
+  } catch {}
+  renderWabar();
+}
+function renderWabar() {
+  const el = $('#wabar');
+  const v = S.wabar?.[S.storeId]?.v;
+  if (!el || !v) return;
+  const usados = v.servicio;
+  const pct = Math.min(100, Math.round((usados / v.gratis) * 100));
+  const tpl = v.plantillas.utility + v.plantillas.marketing + v.plantillas.authentication;
+  const low = v.quedan < 100;
+  el.innerHTML = `<button class="wabar ${low ? 'low' : ''} ${S.wabarOpen ? 'open' : ''}" data-wabar aria-expanded="${!!S.wabarOpen}">
+    <span class="wb-l">💬 WhatsApp · ${esc(v.mes)}: <b>quedan ${v.quedan.toLocaleString('es-PE')}</b> de ${v.gratis.toLocaleString('es-PE')} gratis</span>
+    <span class="wb-r">Gastado <b>${soles(v.pen)}</b></span>
+    <span class="wb-bar" aria-hidden="true"><i style="width:${pct}%"></i></span>
+    ${S.wabarOpen ? `<span class="wb-d">Mensajes normales usados: ${usados.toLocaleString('es-PE')}${v.servicio_cobrado ? ` (${v.servicio_cobrado} cobrados)` : ''} · Gratis por anuncio (72 h): ${v.gratis_entrada.toLocaleString('es-PE')}<br>Plantillas: ${tpl} (utilidad ${v.plantillas.utility}, marketing ${v.plantillas.marketing}) · Cobrados: ${v.cobrados} · US$${v.usd.toFixed(2)}<br><span class="note">Precio aprox. de Meta Perú: utilidad US$${v.precios.utility}, marketing US$${v.precios.marketing}, normal después de los ${v.gratis} gratis US$${v.precios.service}. Se cuenta con lo que Meta avisa por cada mensaje.</span></span>` : ''}
+  </button>`;
+  el.querySelector('[data-wabar]').onclick = () => {
+    S.wabarOpen = !S.wabarOpen;
+    renderWabar();
+  };
 }
 
 function renderCallbar() {
@@ -2890,6 +2930,7 @@ initReportes({ api, esc, $, S, store, goChat });
 initPedidos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, listTime, canChats });
 initEnvios({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, canChats });
 initPanel({ api, esc, toast });
+setInterval(() => S.view === 'chats' && !document.hidden && loadWabar(), 60e3);
 initPagos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, canChats, modal, closeModal, setPagosCount(n) {
   S.pagosN = { ...(S.pagosN || {}), [S.storeId]: n };
   const b = document.querySelector('.navbtn[data-nav="pagos"]');

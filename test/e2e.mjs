@@ -1222,6 +1222,62 @@ try {
     const c = await until(async () => { const x = await chatOf('51912345678'); return x?.bot_paused === 1 ? x : null; });
     assert.equal(c.handler, 'asesora');
   });
+  await step('Shopify provincia: confirma con botones y el bot pide DNI → agencia → adelanto; captura a Pagos; gasto de WhatsApp', async () => {
+    await call('PATCH', `/api/stores/${store.id}/autos/confirmar_agencia`, { on: true });
+    let r = await call('POST', `/api/stores/${store.id}/autos/confirmar_agencia/plantilla`);
+    assert.equal(r.status, 200, JSON.stringify(r));
+    const created = calls.filter((x) => x.path === `${WABA_ID}/message_templates` && x.method === 'POST').pop();
+    assert.deepEqual(created.body.components[1].buttons.map((b) => b.text), ['Sí, confirmo', 'Cambiar algo']);
+    await call('POST', `/api/stores/${store.id}/autos/sync`);
+    await shopHook('orders/create', { id: 5560, name: '#1010', total_price: '139.00', shipping_address: { first_name: 'Rosa', last_name: 'Quispe', phone: '915555555', address1: 'Jr. Lima 120', city: 'Piura', province: 'Piura' }, line_items: [{ title: 'Pantalón formal', variant_title: 'M / Negro', quantity: 2 }] }, 'shp-secret', shopUrl);
+    const o = await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Rosa`)).pedidos[0]);
+    assert.equal(o.modo, 'agencia');
+    const tpl = await until(() => calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.to === '51915555555' && x.body?.type === 'template').pop());
+    assert.equal(tpl.body.template.name, created.body.name);
+    const said = (id, body) => hook(md({ contacts: [{ profile: { name: 'Rosa' }, wa_id: '51915555555' }], messages: [{ from: '51915555555', id, timestamp: ts(), type: 'text', text: { body } }] }));
+    const lastText = () => calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.to === '51915555555' && x.body?.type === 'text').pop()?.body.text.body || '';
+    await hook(md({ contacts: [{ profile: { name: 'Rosa' }, wa_id: '51915555555' }], messages: [{ from: '51915555555', id: 'wamid.PV1', timestamp: ts(), type: 'button', button: { text: 'Sí, confirmo', payload: 'Sí, confirmo' } }] }));
+    await until(() => /DNI/.test(lastText()));
+    await said('wamid.PV2', 'mi dni es 41 085 894');
+    await until(async () => (await call('GET', `/api/pedidos/${o.id}`)).pedido.dni === '41085894');
+    await until(() => /agencia Shalom|Elige la agencia/i.test(lastText()) || calls.some((x) => x.body?.to === '51915555555' && x.body?.type === 'interactive'));
+    if (!calls.some((x) => x.body?.to === '51915555555' && x.body?.type === 'interactive')) await said('wamid.PV3', 'Agencia Piura Centro');
+    else {
+      const lst = calls.filter((x) => x.body?.to === '51915555555' && x.body?.type === 'interactive').pop();
+      const row = lst.body.interactive.action.sections[0].rows[0];
+      await hook(md({ contacts: [{ profile: { name: 'Rosa' }, wa_id: '51915555555' }], messages: [{ from: '51915555555', id: 'wamid.PV3', timestamp: ts(), type: 'interactive', interactive: { type: 'list_reply', list_reply: { id: row.id, title: row.title } } }] }));
+    }
+    const o2 = await until(async () => { const x = (await call('GET', `/api/pedidos/${o.id}`)).pedido; return x.sede ? x : null; });
+    assert.ok(o2.sede);
+    await until(() => /adelanto de \*S\/30\*/.test(lastText()) || /asesora te env/i.test(lastText()));
+    let ch = await chatOf('51915555555');
+    const labs = (await call('GET', `/api/stores/${store.id}/labels`)).labels;
+    assert.ok(ch.labels.includes(labs.find((l) => l.name === 'YAPE PENDIENTE').id), 'queda YAPE PENDIENTE');
+    // la captura cae en Pagos y sube a 📌
+    await hook(md({ contacts: [{ profile: { name: 'Rosa' }, wa_id: '51915555555' }], messages: [{ from: '51915555555', id: 'wamid.PV4', timestamp: ts(), type: 'image', image: { id: 'MEDIA_IMG2', mime_type: 'image/jpeg' } }] }));
+    await until(() => /Recibido/.test(lastText()));
+    const pg = await until(async () => (await call('GET', `/api/stores/${store.id}/pagos`)).pendientes.find((x) => x.chat_id === ch.id && x.captura));
+    assert.equal(pg.order.id, o.id);
+    ch = await chatOf('51915555555');
+    assert.ok(ch.listo_at > (ch.pin_visto || 0), 'nombre completo + DNI + captura → 📌');
+    // gasto de WhatsApp: Meta avisa que la plantilla se cobró como utilidad
+    const msgs = (await call('GET', `/api/chats/${ch.id}/messages?limit=50`)).messages;
+    const tm = msgs.find((m) => m.direction === 'out' && m.wamid);
+    await hook(md({ statuses: [{ id: tm.wamid, status: 'delivered', timestamp: ts(), recipient_id: '51915555555', pricing: { billable: true, category: 'utility', type: 'regular' } }] }));
+    const ms2 = msgs.filter((m) => m.direction === 'out' && m.wamid && m.id !== tm.id)[0];
+    if (ms2) await hook(md({ statuses: [{ id: ms2.wamid, status: 'delivered', timestamp: ts(), recipient_id: '51915555555', pricing: { billable: false, category: 'service', type: 'free_customer_service' } }] }));
+    const g = await until(async () => { const x = await call('GET', `/api/chats/${ch.id}/wa-gasto`); return x.cobrados ? x : null; });
+    assert.equal(g.plantillas.utility, 1);
+    assert.ok(g.pen > 0.1 && g.pen < 0.2, JSON.stringify(g));
+    const G = await call('GET', `/api/stores/${store.id}/wa-gasto`);
+    assert.equal(G.gratis, 1000);
+    assert.ok(G.quedan <= 1000 && G.plantillas.utility >= 1, JSON.stringify(G));
+    const { resumirGasto } = await import('../src/api-gasto.js');
+    const R = resumirGasto([{ cat: 'service', typ: 'regular', bill: 0, n: 1000 }, { cat: 'service', typ: 'regular', bill: 1, n: 10 }, { cat: 'marketing', typ: 'regular', bill: 1, n: 2 }], { marketing: 0.07, utility: 0.03, service: 0.03, gratis: 1000, tc: 3.8 });
+    assert.equal(R.quedan, 0);
+    assert.equal(R.usd, 0.44);
+    await call('DELETE', `/api/pedidos/${o.id}`);
+  });
   await step('Shopify: provincia va por agencia, cancelar y carrito abandonado', async () => {
     await shopHook('orders/create', { id: 5553, name: '#1003', total_price: '139.00', shipping_address: { first_name: 'Eva', phone: '913333333', address1: 'Av. Sol 1', city: 'Cusco', province: 'Cusco' }, line_items: [{ title: 'Pantalón formal', variant_title: 'M / Perla', quantity: 2 }] }, 'shp-secret', shopUrl);
     const o = await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Eva`)).pedidos[0]);

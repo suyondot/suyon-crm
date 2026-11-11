@@ -454,7 +454,7 @@ export async function renderPedidosConfig(body) {
   }
 }
 
-const SOLO_SHOPIFY = ['confirmar', 'adelanto', 'carrito'];
+const SOLO_SHOPIFY = ['confirmar', 'confirmar_agencia', 'adelanto', 'carrito'];
 const TPL = { APPROVED: ['Aprobada', 'ok'], PENDING: ['En revisión', 'warn'], REJECTED: ['Rechazada', 'bad'], PAUSED: ['Pausada', 'warn'], DISABLED: ['Desactivada', 'bad'] };
 
 function drawConfig(body) {

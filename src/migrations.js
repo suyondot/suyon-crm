@@ -683,6 +683,11 @@ export const MIGRATIONS = [
     name: 'chats listos para agendar (arriba hasta que se abren)',
     sql: [`ALTER TABLE chats ADD COLUMN listo_at INTEGER`, `ALTER TABLE chats ADD COLUMN pin_visto INTEGER`],
   },
+  {
+    id: 30,
+    name: 'pedido de Jordan (10 nov): el número de Porte (941, tienda 1) pasa a vender por Shopify',
+    sql: [`UPDATE stores SET canal = 'shopify' WHERE id = 1 AND name = 'Porte' AND phone_number_id = '1438552302669955'`],
+  },
 ];
 
 let ready = null;

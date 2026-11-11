@@ -3,11 +3,15 @@ import { now, clip, windowOpen, localDay } from './util.js';
 import { sendText, sendButtons, sendTemplate, createTemplate, templateStatus } from './whatsapp.js';
 import { notify, loadSettings, addLabel, cancelJobs } from './bot.js';
 import { sendPurchase } from './capi.js';
+import { provinciaSiguiente } from './provincia.js';
 import { shape, itemsText, cfgOf, normPhone, addEvent, getOrder, ESTADOS, VENDIDO } from './orders.js';
 
 export const AUTOS = [
   { key: 'confirmar', title: 'Confirmar pedido contra entrega', when: 'Entra un pedido de Shopify para contraentrega.', cat: 'UTILITY',
     text: 'Hola {nombre} 👋 Recibimos tu pedido #{pedido} en {tienda}:\n{productos}\nTotal: {total}, pagas al recibir.\nTe llega {entrega}, {horario}. ¿Confirmas tu pedido?',
+    buttons: ['Sí, confirmo', 'Cambiar algo'] },
+  { key: 'confirmar_agencia', title: 'Confirmar pedido por Shalom (provincia)', when: 'Entra un pedido de Shopify que va por agencia. Al tocar «Sí» el bot pide DNI (si falta), la agencia Shalom y el adelanto.', cat: 'UTILITY',
+    text: 'Hola {nombre} 👋 Recibimos tu pedido #{pedido} en {tienda}:\n{productos}\nTotal: {total}. Te lo enviamos por Shalom a {ciudad}: adelantas {adelanto} y el resto lo pagas al recoger.\n¿Confirmas tu pedido?',
     buttons: ['Sí, confirmo', 'Cambiar algo'] },
   { key: 'adelanto', title: 'Pedir adelanto (agencia)', when: 'Entra un pedido de Shopify que va por agencia (Shalom).', cat: 'UTILITY',
     text: 'Hola {nombre} 👋 Recibimos tu pedido #{pedido}:\n{productos}\nTotal: {total}. Para enviarlo por Shalom necesitamos un adelanto de {adelanto}.\nYape o Plin: {yape} a nombre de {titular}. Envíanos la captura por aquí 🙌' },
@@ -27,7 +31,7 @@ export const AUTOS = [
     text: 'Hola {nombre} 👋 Vimos que dejaste tu pedido a medio camino:\n{productos}\n¿Te ayudo a terminarlo? Pagas al recibir 😊' },
 ];
 const BY = Object.fromEntries(AUTOS.map((a) => [a.key, a]));
-export const AUTO_VARS = ['nombre', 'pedido', 'tienda', 'productos', 'total', 'adelanto', 'saldo', 'entrega', 'horario', 'cuando', 'sede', 'yape', 'titular', 'link'];
+export const AUTO_VARS = ['nombre', 'pedido', 'tienda', 'productos', 'total', 'adelanto', 'saldo', 'entrega', 'horario', 'cuando', 'sede', 'ciudad', 'yape', 'titular', 'link'];
 
 export async function loadAutos(env, storeId) {
   const { results } = await env.DB.prepare('SELECT * FROM automations WHERE store_id = ?').bind(storeId).all();
@@ -67,7 +71,7 @@ async function varsFor(env, store, { order, cart }) {
   const cuando = o.modo === 'agencia' ? `Sale por Shalom hacia ${o.sede || 'tu sede'} y te avisamos cuando llegue 🚚` : `Te llega ${entrega}, ${s.entrega_horario} 🛵`;
   return {
     nombre: first(o.nombre), pedido: String(o.number), tienda: store.name, productos: itemsText(o.items), total: money(o.total), adelanto: money(o.adelanto), saldo: money(o.saldo),
-    entrega, horario: s.entrega_horario, cuando, sede: o.sede || 'tu sede', yape: s.pay_yape || '', titular: s.pay_titular || '', link: '',
+    entrega, horario: s.entrega_horario, cuando, sede: o.sede || 'tu sede', ciudad: o.ciudad || o.distrito || 'tu ciudad', yape: s.pay_yape || '', titular: s.pay_titular || '', link: '',
   };
 }
 
@@ -99,7 +103,7 @@ export async function sendAuto(env, store, key, ctx) {
   try {
     if (store.status !== 'activo') throw Object.assign(new Error('El número de la tienda no está conectado.'), { soft: true });
     if (open) {
-      if (key === 'confirmar' && order) {
+      if ((key === 'confirmar' || key === 'confirmar_agencia') && order) {
         type = 'interactive';
         wamid = await sendButtons(env, store, chat.wa_id, text, [{ id: `ord:ok:${order.id}`, title: 'Sí, confirmo' }, { id: `ord:edit:${order.id}`, title: 'Cambiar algo' }]);
       } else wamid = await sendText(env, store, chat.wa_id, text);
@@ -131,7 +135,10 @@ export async function onOrderCreated(env, store, order) {
   await sendPurchase(env, store, order);
   if (order.checkout_token) await env.DB.prepare('UPDATE carts SET order_id = ? WHERE store_id = ? AND token = ?').bind(order.id, store.id, order.checkout_token).run();
   if (order.source !== 'shopify') return;
-  await sendAuto(env, store, order.modo === 'agencia' ? 'adelanto' : 'confirmar', { order });
+  if (order.modo !== 'agencia') return sendAuto(env, store, 'confirmar', { order });
+  // Provincia: confirmar con botones y, al «Sí», DNI → agencia → adelanto. Si ese aviso está apagado, el de adelanto de siempre
+  const conf = (await loadAutos(env, store.id)).find((a) => a.key === 'confirmar_agencia');
+  await sendAuto(env, store, conf?.on ? 'confirmar_agencia' : 'adelanto', { order });
 }
 
 // Al cambiar de estado: el aviso que toca y, si se entregó, programa la recompra
@@ -189,6 +196,9 @@ export async function handleOrderReply(env, store, chat, msg) {
       const willSend = autos.find((a) => a.key === 'agendado')?.on;
       await setOrderStatus(env, store, order, 'confirmado', null, 'La clienta confirmó por WhatsApp');
       if (!willSend) await reply(`¡Gracias${first ? `, ${first}` : ''}! ✅ Tu pedido #${order.number} quedó confirmado.`);
+    } else if (order.status === 'por_pagar' && order.modo === 'agencia') {
+      await addEvent(env, order.id, 'nota', 'La clienta confirmó por WhatsApp');
+      await provinciaSiguiente(env, store, chat, order);
     } else await addEvent(env, order.id, 'nota', 'La clienta volvió a confirmar por WhatsApp');
   } else {
     await addLabel(env, store.id, chat.id, 'ASESOR');
@@ -216,7 +226,7 @@ export function templateFrom(a, example) {
   return { body, vars, example: vars.map((k) => example[k] || k) };
 }
 
-const SAMPLE = { nombre: 'María', pedido: '128', tienda: 'Porte Perú', productos: '2 × Pantalón formal · talla M · Negro', total: 'S/139', adelanto: 'S/30', saldo: 'S/109', entrega: 'HOY', horario: 'entre 2 y 8 p.m.', cuando: 'Te llega HOY, entre 2 y 8 p.m.', sede: 'Arequipa Av. Ejército', yape: '999 999 999', titular: 'Porte Perú', link: 'https://porte.pe' };
+const SAMPLE = { nombre: 'María', pedido: '128', tienda: 'Porte Perú', productos: '2 × Pantalón formal · talla M · Negro', total: 'S/139', adelanto: 'S/30', saldo: 'S/109', entrega: 'HOY', horario: 'entre 2 y 8 p.m.', cuando: 'Te llega HOY, entre 2 y 8 p.m.', sede: 'Arequipa Av. Ejército', ciudad: 'Arequipa', yape: '999 999 999', titular: 'Porte Perú', link: 'https://porte.pe' };
 
 export async function submitTemplate(env, store, key) {
   const a = (await loadAutos(env, store.id)).find((x) => x.key === key);

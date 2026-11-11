@@ -4,6 +4,7 @@ import { downloadMedia, friendlyMetaError } from './whatsapp.js';
 import { onInbound, notify, loadSettings, marcarListo } from './bot.js';
 import { transcribe } from './voz.js';
 import { handleOrderReply } from './automations.js';
+import { handleProvinciaStep } from './provincia.js';
 
 const MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
 const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3 };
@@ -171,6 +172,8 @@ async function handleInbound(env, ctx, store, msg, profileName) {
       if (await handleOrderReply(env, store, chat, { type: msg.type, body: said, payload })) return;
       // Captura del pago con todos sus datos → 📌 arriba (aunque el bot esté en pausa)
       if (msg.type === 'image' || msg.type === 'document') await marcarListo(env, chat.id).catch((e) => console.error('listo', e));
+      // Pedido de Shopify por Shalom: DNI → agencia → adelanto
+      if (await handleProvinciaStep(env, store, chat, { type: msg.type, body: said, payload })) return;
       await onInbound(env, ctx, store, chat.id, { id: msgId, type: msg.type, body: said, payload, fromAd: !!msg.referral });
     } catch (e) {
       console.error('bot', e);
