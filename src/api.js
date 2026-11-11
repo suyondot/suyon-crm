@@ -816,6 +816,8 @@ async function attachLabels(db, chats) {
 const CHAT_COLS = `id, store_id, wa_id, name, profile_name, handler, unread, last_msg_at, last_preview, last_dir, last_inbound_at,
   ad_id, ad_headline, ad_source_url, referral_at, first_reply_at, notes, created_at, updated_at, bot_flow_id, bot_node, bot_wait, bot_paused, bot_vars, listo_at, pin_visto,
   (SELECT COUNT(*) FROM orders o WHERE o.chat_id = chats.id AND o.status IN ('nuevo', 'por_pagar')) AS por_confirmar,
+  EXISTS(SELECT 1 FROM orders o WHERE o.chat_id = chats.id AND o.source = 'shopify') AS shop_lead,
+  EXISTS(SELECT 1 FROM orders o JOIN order_events e ON e.order_id = o.id WHERE o.chat_id = chats.id AND o.status IN ('nuevo', 'por_pagar') AND e.detail LIKE 'La clienta confirmó por WhatsApp%') AS dijo_si,
   (SELECT sender FROM messages m WHERE m.chat_id = chats.id ORDER BY m.id DESC LIMIT 1) AS last_sender`;
 
 api.get('/stores/:id/chats', async (c) => {

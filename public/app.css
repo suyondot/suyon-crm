@@ -1571,3 +1571,9 @@ body[data-rubro="simple"] .pit{grid-template-columns:minmax(0,1fr) 64px auto}
 .kp-tr{white-space:nowrap;font-weight:600}
 .kp-tr.up{color:var(--ok)}
 .kp-tr.down{color:var(--bad)}
+
+/* Lead de Shopify (amarillo fijo) y «Dijo Sí» */
+.shopb{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:800;color:#1d1400;background:#F5C518;border-radius:10px;padding:1px 7px;white-space:nowrap}
+.sib{font-size:11px;font-weight:700;color:#14532d;background:#d8f3e0;border:1px solid #9ad5ad;border-radius:10px;padding:0 6px;white-space:nowrap}
+.item .meta .shopi{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:#5E8E3E;color:#fff}
+.item .meta .shopi svg{width:12px;height:12px}

@@ -174,7 +174,8 @@ r.get('/chats/:id/formulario', async (c) => {
 
 r.get('/chats/:id/pedidos', async (c) => {
   const { chat } = await chatFor(c, c.req.param('id'));
-  const { results } = await c.env.DB.prepare(`SELECT o.*, EXISTS (SELECT 1 FROM order_events e WHERE e.order_id = o.id AND e.detail LIKE 'Mandó la captura%') AS captura
+  const { results } = await c.env.DB.prepare(`SELECT o.*, EXISTS (SELECT 1 FROM order_events e WHERE e.order_id = o.id AND e.detail LIKE 'Mandó la captura%') AS captura,
+    EXISTS (SELECT 1 FROM order_events e WHERE e.order_id = o.id AND e.detail LIKE 'La clienta confirmó por WhatsApp%') AS dijo_si
     FROM orders o WHERE o.chat_id = ? ORDER BY o.id DESC LIMIT 30`).bind(chat.id).all();
   return c.json({ pedidos: results.map(shape) });
 });

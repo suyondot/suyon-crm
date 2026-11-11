@@ -1,6 +1,12 @@
 // Migraciones de la base de datos. Se aplican solas al primer pedido después de cada deploy.
 // Para cambiar el esquema: agrega una migración NUEVA al final (nunca edites una ya aplicada).
 
+// Migración 34: pedidos en Confirmado de los últimos 7 días cuyo último cambio de estado fue el «Sí» de la clienta y sin ✅ LIMA/PROVINCIA
+const M34 = `o.status = 'confirmado'
+  AND o.created_at > (CAST(strftime('%s','now') AS INTEGER) - 7 * 86400) * 1000
+  AND (SELECT e.detail FROM order_events e WHERE e.order_id = o.id AND e.kind = 'estado' ORDER BY e.id DESC LIMIT 1) LIKE '%La clienta confirmó por WhatsApp%'
+  AND NOT EXISTS (SELECT 1 FROM chat_labels cl JOIN labels l ON l.id = cl.label_id WHERE cl.chat_id = o.chat_id AND l.name IN ('✅ LIMA', '✅ PROVINCIA'))`;
+
 export const MIGRATIONS = [
   {
     id: 1,
@@ -702,6 +708,17 @@ export const MIGRATIONS = [
     id: 33,
     name: 'compra confirmada a los píxeles de Meta y TikTok (una vez por pedido)',
     sql: ['ALTER TABLE stores ADD COLUMN conv TEXT', 'ALTER TABLE stores ADD COLUMN conv_last TEXT', 'ALTER TABLE orders ADD COLUMN conv_at INTEGER'],
+  },
+  {
+    id: 34,
+    name: 'el «Sí» de la clienta ya no agenda: pedidos confirmados solo por el Sí (sin ✅ LIMA/PROVINCIA) vuelven a Nuevo',
+    sql: [
+      `INSERT INTO order_events (order_id, kind, detail, user_id, created_at)
+         SELECT o.id, 'estado', 'Confirmado → Nuevo · La clienta confirmó por WhatsApp (dijo Sí) · falta agendar con ✅ LIMA', NULL, CAST(strftime('%s','now') AS INTEGER) * 1000 FROM orders o WHERE ${M34}`,
+      `UPDATE chats SET updated_at = CAST(strftime('%s','now') AS INTEGER) * 1000 WHERE id IN (SELECT o.chat_id FROM orders o WHERE ${M34})`,
+      `UPDATE orders AS o SET status = 'nuevo', updated_at = CAST(strftime('%s','now') AS INTEGER) * 1000 WHERE ${M34}`,
+      `UPDATE stores SET rev = rev + 1`,
+    ],
   },
 ];
 

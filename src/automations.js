@@ -267,12 +267,13 @@ export async function handleOrderReply(env, store, chat, msg) {
   }
   if (kind === 'ok') {
     if (order.status === 'nuevo') {
-      const autos = await loadAutos(env, store.id);
-      const willSend = autos.find((a) => a.key === 'agendado')?.on;
-      await setOrderStatus(env, store, order, 'confirmado', null, 'La clienta confirmó por WhatsApp');
-      if (!willSend) await reply(`¡Gracias${first ? `, ${first}` : ''}! ✅ Tu pedido #${order.number} quedó confirmado.`);
+      // Decisión de Jordan (11 nov): el «Sí» de la clienta NO agenda. El pedido sigue Nuevo con «👍 Dijo Sí»
+      // y queda agendado (Confirmado) recién cuando el equipo pone ✅ LIMA / ✅ PROVINCIA.
+      await addEvent(env, order.id, 'nota', 'La clienta confirmó por WhatsApp (dijo Sí) · falta agendar con ✅ LIMA');
+      await reply(`¡Gracias${first ? `, ${first}` : ''}! ✅ Tu pedido #${order.number} quedó confirmado.`);
       // 📌 arriba de la lista para que el equipo lo agende
       await env.DB.prepare('UPDATE chats SET listo_at = ?, updated_at = ? WHERE id = ?').bind(now(), now(), chat.id).run();
+      await env.DB.prepare('UPDATE stores SET rev = rev + 1 WHERE id = ?').bind(store.id).run();
     } else if (order.status === 'por_pagar' && order.modo === 'agencia') {
       await addEvent(env, order.id, 'nota', 'La clienta confirmó por WhatsApp');
       await provinciaSiguiente(env, store, chat, order);

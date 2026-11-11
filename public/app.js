@@ -14,6 +14,8 @@ import { initCarritos, renderCarritos, resetCarritos } from './carritos.js';
 import { initPagos, renderPagos, resetPagos } from './pagos.js';
 import { initPanel, renderMiPlan, renderPaywall, renderPanel } from './panel.js';
 import { initRespuestas, attachSlash, openPicker, openPlantilla, renderRapidasCfg, renderPlantillasCfg } from './respuestas.js';
+// Bolsita de compras (ícono genérico) para los chats que llegaron por un pedido de la web de Shopify
+const SHOP_ICON = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M3 5h10l-.8 9H3.8L3 5zm2.5 0V4a2.5 2.5 0 0 1 5 0v1H9.3V4a1.3 1.3 0 0 0-2.6 0v1H5.5z"/></svg>';
 
 /* =================== Utilidades =================== */
 const $ = (s, el = document) => el.querySelector(s);
@@ -932,12 +934,23 @@ function renderItems() {
     const done = all.some((l) => /✅\s*(LIMA|PROVINCIA)/i.test(l.name));
     const pc = x.por_confirmar > 0 && !done;
     const pin = porAgendar(x);
+    // Lead de Shopify (pedido de la web): etiqueta amarilla fija + bolsita a la derecha. Agendado = solo con ✅ LIMA / ✅ PROVINCIA
+    const shop = !!x.shop_lead;
+    const si = !!x.dijo_si && !done;
+    const chips = [
+      shop ? `<span class="shopb">${SHOP_ICON} LEAD SHOPIFY</span>` : '',
+      pin && !pc ? '<span class="pinb">📌 Por agendar</span>' : '',
+      pc && !shop ? '<span class="pcb">🟡 Terminar de agendar</span>' : '',
+      si ? '<span class="sib">👍 Dijo Sí · falta agendar</span>' : '',
+      x.bot_paused && x.last_dir !== 'out' && store()?.canal !== 'shopify' ? '<span class="bpz">⏸️ Bot en pausa</span>' : '',
+      ...labs.map(tagHTML),
+    ].filter(Boolean).join('');
     return `<button class="item${pc ? ' pc' : ''}${done ? ' done' : ''}${pin ? ' pin' : ''}" data-open="${x.id}" aria-current="${x.id === S.openId}">${pc ? '<i class="pcdot" aria-hidden="true"></i>' : ''}
       <span class="av" style="background:${avColor(x.id)}">${esc(initials(chatName(x)))}</span>
       <span style="min-width:0"><span class="nm">${esc(chatName(x))}</span>
         <span class="lm">${x.last_dir === 'out' ? 'Tú: ' : ''}${esc(x.last_preview || '')}</span>
-        ${labs.length || pc || pin || (x.bot_paused && x.last_dir !== 'out' && store()?.canal !== 'shopify') ? `<span class="row">${pin && !pc ? '<span class="pinb">📌 Por agendar</span>' : ''}${pc ? '<span class="pcb">🟡 Terminar de agendar</span>' : ''}${x.bot_paused && x.last_dir !== 'out' && store()?.canal !== 'shopify' ? '<span class="bpz">⏸️ Bot en pausa</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
-      <span class="meta"><span>${listTime(x.last_msg_at)}</span>${x.unread ? `<span class="unread">${x.unread}</span>` : ''}</span>
+        ${chips ? `<span class="row">${chips}</span>` : ''}</span>
+      <span class="meta"><span>${listTime(x.last_msg_at)}</span>${shop ? `<span class="shopi" title="Llegó de Shopify">${SHOP_ICON}</span>` : ''}${x.unread ? `<span class="unread">${x.unread}</span>` : ''}</span>
     </button>`;
   }).map((html, i) => ({ key: 'c' + list[i].id, sig: html, html }));
   if (S.chatsMore && !S.q) rows.push({ key: 'more', sig: 'more', html: '<button class="iconbtn loadmore" data-act="morechats" style="margin:10px auto;display:flex">Cargar más</button>' });
@@ -1559,7 +1572,7 @@ function renderFicha({ ifChanged = false } = {}) {
   if (f.contains(document.activeElement) && document.activeElement.matches('input,textarea')) return;
   const w = windowInfo(c);
   // En cada sincronización solo se vuelve a dibujar si algo de la ficha cambió (no salta ni parpadea)
-  const sig = [c.id, c.name, c.profile_name, c.notes, c.bot_paused, c.bot_node, c.bot_wait, c.handler, c.bot_vars, c.por_confirmar, w.label, w.title, window.innerWidth <= 1180].join('|');
+  const sig = [c.id, c.name, c.profile_name, c.notes, c.bot_paused, c.bot_node, c.bot_wait, c.handler, c.bot_vars, c.por_confirmar, c.dijo_si, w.label, w.title, window.innerWidth <= 1180].join('|');
   if (ifChanged && f.dataset.sig === sig && f.firstElementChild) return;
   f.dataset.sig = sig;
   f.innerHTML = `

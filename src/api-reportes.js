@@ -306,6 +306,11 @@ async function kpiOf(db, st, t0, t1) {
       K[o.modo === 'lima' ? 'lima' : 'provincia'] += o.n;
     }
   }
+  const si = await db.prepare(
+    `SELECT COUNT(*) AS n FROM orders o WHERE o.store_id = ? AND o.created_at >= ? AND o.created_at < ? AND o.status IN ('nuevo', 'por_pagar')
+       AND EXISTS (SELECT 1 FROM order_events e WHERE e.order_id = o.id AND e.detail LIKE 'La clienta confirmó por WhatsApp%')`
+  ).bind(st.id, t0, t1).first();
+  K.dijo_si = si?.n || 0;
   if (st.canal === 'shopify') K.leads = K.pedidos;
   else {
     const ch = await db.prepare('SELECT COUNT(*) AS n FROM chats WHERE store_id = ? AND sim = 0 AND created_at >= ? AND created_at < ?').bind(st.id, t0, t1).first();

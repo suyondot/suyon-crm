@@ -38,9 +38,9 @@ function draw(el, v, esc) {
     <div class="kp-seg" role="group" aria-label="Periodo">${Object.entries(LBL).map(([k, l]) => `<button data-kp="${k}" aria-pressed="${v.p === k}">${l}</button>`).join('')}</div>
     <div class="kp-nums">
       <div class="kp"><b>${v.leads}</b><span>${shop ? 'Leads (pedidos web)' : 'Leads (chats nuevos)'}</span></div>
-      <div class="kp"><b>${v.confirmados}</b><span>Confirmados</span></div>
+      <div class="kp"><b>${v.confirmados}</b><span>Agendados (✅)</span></div>
       <div class="kp kp-t ${low ? 'low' : v.tasa != null && v.tasa >= 0.55 ? 'ok' : ''}"><b>${pct(v.tasa)}</b><span>${shop ? 'Tasa de confirmación' : 'Tasa de cierre'}</span></div>
     </div>
-    <div class="kp-sub">${[v.por_confirmar ? `⏳ ${v.por_confirmar} por confirmar` : '', v.confirmados ? `Lima ${v.lima} · Provincia ${v.provincia}` : '', v.cancelados ? `${v.cancelados} cancelado${v.cancelados > 1 ? 's' : ''}` : ''].filter(Boolean).map(esc).join(' · ')}${trend ? ` ${trend}` : ''}</div>
+    <div class="kp-sub">${[v.dijo_si ? `👍 ${v.dijo_si} dijeron Sí` : '', v.por_confirmar ? `⏳ ${v.por_confirmar} por agendar` : '', v.confirmados ? `Lima ${v.lima} · Provincia ${v.provincia}` : '', v.cancelados ? `${v.cancelados} cancelado${v.cancelados > 1 ? 's' : ''}` : ''].filter(Boolean).map(esc).join(' · ')}${trend ? ` ${trend}` : ''}</div>
   </div>`;
 }

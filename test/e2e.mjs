@@ -1245,7 +1245,7 @@ try {
     assert.equal(calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.type === 'template').pop().body.template.name, oldTpl, 'usa la aprobada mientras la nueva está en revisión');
     await call('POST', `/api/stores/${store.id}/autos/sync`);
   });
-  await step('la clienta toca «Sí, confirmo» y el pedido queda Confirmado', async () => {
+  await step('la clienta toca «Sí, confirmo»: queda «Dijo Sí» (Nuevo) y se agenda recién con ✅ LIMA', async () => {
     const o = (await call('GET', `/api/stores/${store.id}/pedidos?q=Luz`)).pedidos[0];
     assert.equal(o.status, 'nuevo');
     // compra confirmada a los píxeles de Meta y TikTok (solo al quedar 100% confirmado)
@@ -1255,8 +1255,19 @@ try {
     assert.equal(cv.conv.meta_token, true);
     assert.equal(calls.filter((x) => x.path === '111222333444555/events').length, 0, 'al crear el pedido todavía no');
     await hook(md({ contacts: [{ profile: { name: 'Luz' }, wa_id: '51912345678' }], messages: [{ from: '51912345678', id: 'wamid.BTN1', timestamp: ts(), type: 'button', button: { text: 'Sí, confirmo', payload: 'Sí, confirmo' } }] }));
+    // El «Sí» no agenda: el pedido sigue Nuevo, el chat muestra LEAD SHOPIFY + «Dijo Sí» y no sale compra a los píxeles
+    const lz = await until(async () => { const x = await chatOf('51912345678'); return x?.dijo_si ? x : null; });
+    assert.equal(lz.shop_lead, 1);
+    assert.equal((await call('GET', `/api/stores/${store.id}/pedidos?q=Luz`)).pedidos[0].status, 'nuevo');
+    assert.equal(calls.filter((x) => x.path === '111222333444555/events').length, 0, 'con el Sí todavía no');
+    assert.equal((await call('GET', `/api/stores/${store.id}/kpi?p=hoy`)).dijo_si >= 1, true);
+    // Jade pone ✅ LIMA → recién ahí queda agendado (Confirmado)
+    const labsL = (await call('GET', `/api/stores/${store.id}/labels`)).labels;
+    const put = await call('PUT', `/api/chats/${lz.id}/labels/${labsL.find((l) => l.name === '✅ LIMA').id}`);
+    assert.equal(put.pedido?.estado, 'confirmado', JSON.stringify(put));
     const ok = await until(async () => { const x = (await call('GET', `/api/stores/${store.id}/pedidos?q=Luz`)).pedidos[0]; return x.status === 'confirmado' ? x : null; });
     assert.equal(ok.status, 'confirmado');
+    assert.equal((await chatOf('51912345678')).dijo_si, 0);
     const pe = await until(() => calls.find((x) => x.path === '111222333444555/events'));
     assert.equal(pe.body.data[0].event_name, 'CompraConfirmada');
     assert.equal(pe.body.data[0].custom_data.value, 89);

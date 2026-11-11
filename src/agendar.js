@@ -4,7 +4,7 @@ import { draftFromChat, insertOrder, varsFromForm } from './orders.js';
 import { onOrderCreated, setOrderStatus } from './automations.js';
 
 export async function pedidoAlAgendar(env, store, chatId, zona, userId) {
-  const open = await env.DB.prepare("SELECT * FROM orders WHERE chat_id = ? AND status NOT IN ('cancelado') AND created_at > ? ORDER BY id DESC LIMIT 1").bind(chatId, now() - 3 * 864e5).first();
+  const open = await env.DB.prepare("SELECT * FROM orders WHERE chat_id = ? AND status NOT IN ('cancelado') AND created_at > ? ORDER BY id DESC LIMIT 1").bind(chatId, now() - 7 * 864e5).first();
   if (open) {
     // El pedido que creó la IA (🟡 Terminar de agendar) pasa a agendado: Lima → Confirmado, Shalom → Validado
     const to = open.status === 'nuevo' ? 'confirmado' : open.status === 'por_pagar' ? 'validado' : null;
