@@ -1256,6 +1256,11 @@ try {
     }
     const o2 = await until(async () => { const x = (await call('GET', `/api/pedidos/${o.id}`)).pedido; return x.sede ? x : null; });
     assert.ok(o2.sede);
+    // «Copiar formulario» del chat sale del pedido de Shopify, con el formato Shalom de siempre
+    const chf = await chatOf('51915555555');
+    const fm = await call('GET', `/api/chats/${chf.id}/formulario`);
+    assert.ok(/^Shalom: 🚚📦/.test(fm.texto) && /➡️ DNI: 41085894/.test(fm.texto) && /➡️ Sede: \S/.test(fm.texto) && /Monto total: S\/139/.test(fm.texto), fm.texto);
+    assert.equal(fm.pedido, o.number);
     const vid = () => calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.to === '51915555555' && x.body?.type === 'video').pop();
     await until(() => /adelanto de \*S\/30\*/.test(vid()?.body.video.caption || '') || /asesora te env/i.test(lastText()));
     if (vid()) assert.ok(/Yape o Plin/.test(vid().body.video.caption) && !/adelanto de/.test(lastText()), 'el adelanto va una sola vez, con el video');

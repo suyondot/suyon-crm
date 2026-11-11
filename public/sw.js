@@ -2,7 +2,7 @@
 // - Archivos de la app: se sirven de la copia guardada y se revisa la red en segundo plano.
 //   Si hay versión nueva, se guarda y la app muestra «Nueva versión · Actualizar».
 // - Cambiar CACHE en cada cambio de la app: así la versión nueva se baja completa de una vez.
-const CACHE = 'scrm-v59';
+const CACHE = 'scrm-v60';
 const SHELL = ['/', '/app.css', '/app.js', '/bot.js', '/clientes.js', '/reportes.js', '/pedidos.js', '/envios.js', '/asistente.js', '/carritos.js', '/pagos.js', '/panel.js', '/respuestas.js', '/ogg.js', '/icon.svg', '/logo-mark.png', '/icon-192.png', '/manifest.webmanifest'];
 // Páginas que arma el servidor (no son la app): siempre de la red
 const SERVER = /^\/(api|webhook|privacidad|eliminar-datos|terminos|planes|inicio|shopify|__test|sw\.js)(\/|$)/;

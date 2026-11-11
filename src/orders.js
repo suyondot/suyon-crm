@@ -327,7 +327,9 @@ export function formText(d, cfg) {
     return ['Shalom: 🚚📦', '', `➡️ Nombre: ${d.nombre || ''}`, `➡️ DNI: ${d.dni || ''}`, `➡️ CEL: ${String(d.celular || '').replace(/^51(?=9\d{8}$)/, '')}`, `➡️ Sede: ${d.sede || ''}`, '', pedido, '',
       `Monto total: ${money(d.total)}`, ...(adel ? [`Adelanto: ${money(adel)}`, `Monto restante: ${money(Math.max(0, d.total - adel))}`] : [])].join('\n');
   }
-  return ['Envío para: Lima 📦', '', `➡️ Nombre: ${d.nombre || ''}`, `➡️ CEL: ${String(d.celular || '').replace(/^51(?=9\d{8}$)/, '')}`, `➡️ Dirección: ${[d.direccion, d.distrito].filter(Boolean).join(', ')}`, '', pedido, '', `Monto total: ${money(d.total)}`].join('\n');
+  const dest = d.modo === 'ce_prov' && d.ciudad ? d.ciudad : 'Lima';
+  const lugar = [d.direccion, d.distrito, d.modo === 'ce_prov' ? d.ciudad : null].filter((x) => String(x || '').trim()).join(', ');
+  return [`Envío para: ${dest} 📦`, '', `➡️ Nombre: ${d.nombre || ''}`, `➡️ CEL: ${String(d.celular || '').replace(/^51(?=9\d{8}$)/, '')}`, `➡️ Dirección: ${lugar}`, '', pedido, '', `Monto total: ${money(d.total)}`].join('\n');
 }
 
 // Borrador desde la conversación: lo que guardó el bot + el chat

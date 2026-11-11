@@ -156,9 +156,11 @@ async function chatConForm(env, chat) {
 }
 
 // Formulario listo para copiar (ficha del chat): datos del bot + lo que falte del último formulario de la IA
+// Si la clienta ya tiene un pedido (de Shopify, de la IA o a mano), el formulario sale de ese pedido: es lo que se acordó
 r.get('/chats/:id/formulario', async (c) => {
   const { chat, store } = await chatFor(c, c.req.param('id'));
-  const d = draftFromChat(await chatConForm(c.env, chat), store);
+  const o = await pedidoAbierto(c.env, chat.id, 7);
+  const d = o ? shape(o) : draftFromChat(await chatConForm(c.env, chat), store);
   const falta = [];
   if (!d.nombre || d.nombre === chat.profile_name) falta.push('nombre');
   if (d.modo === 'agencia') {
@@ -166,7 +168,7 @@ r.get('/chats/:id/formulario', async (c) => {
     if (!d.sede) falta.push('sede');
   } else if (!d.direccion) falta.push('dirección');
   if (!d.items.some((i) => i.color)) falta.push('colores');
-  return c.json({ texto: formText(d, cfgOf(store)), falta, modo: d.modo });
+  return c.json({ texto: formText(d, cfgOf(store)), falta, modo: d.modo, pedido: o ? o.number : null });
 });
 
 r.get('/chats/:id/pedidos', async (c) => {
