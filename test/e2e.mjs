@@ -1245,6 +1245,20 @@ try {
     const c = await until(async () => { const x = await chatOf('51912345678'); return x?.bot_paused === 1 ? x : null; });
     assert.equal(c.handler, 'asesora');
   });
+  await step('Shopify: si dijo «No» y luego toca «Sí», no se confirma solo (lo revisa el equipo)', async () => {
+    await shopHook('orders/create', { id: 5554, name: '#1004', total_price: '169.00', shipping_address: { first_name: 'Carmen', last_name: 'Calsin', phone: '967856123', address1: 'Urb. María Auxiliadora', city: 'San Juan de Miraflores', province: 'Lima' }, line_items: [{ title: 'Leggings Cargo', variant_title: 'M / Negro', quantity: 2 }] }, 'shp-secret', shopUrl);
+    const o = await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Carmen`)).pedidos[0]);
+    await until(() => calls.some((x) => x.path === `${PHONE_ID}/messages` && x.body?.to === '51967856123' && x.body?.type === 'template'));
+    const btn = (id, text) => hook(md({ contacts: [{ profile: { name: 'Carmen' }, wa_id: '51967856123' }], messages: [{ from: '51967856123', id, timestamp: ts(), type: 'button', button: { text, payload: text } }] }));
+    await btn('wamid.CN1', 'No');
+    await until(async () => (await chatOf('51967856123'))?.bot_paused === 1);
+    await btn('wamid.CN2', 'Sí, confirmo');
+    await until(() => calls.some((x) => x.body?.to === '51967856123' && /asesora revisa tu pedido/.test(x.body?.text?.body || '')));
+    const x = (await call('GET', `/api/pedidos/${o.id}`)).pedido;
+    assert.equal(x.status, 'nuevo', 'no se confirmó solo');
+    await shopHook('orders/cancelled', { id: 5554, cancelled_at: new Date().toISOString() }, 'shp-secret', shopUrl);
+    await until(async () => (await call('GET', `/api/pedidos/${o.id}`)).pedido.status === 'cancelado');
+  });
   await step('Shopify provincia: confirma con botones y el bot pide DNI → agencia → adelanto; captura a Pagos; gasto de WhatsApp', async () => {
     await call('PATCH', `/api/stores/${store.id}/autos/confirmar_agencia`, { on: true });
     let r = await call('POST', `/api/stores/${store.id}/autos/confirmar_agencia/plantilla`);

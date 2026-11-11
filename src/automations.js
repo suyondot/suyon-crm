@@ -247,6 +247,19 @@ export async function handleOrderReply(env, store, chat, msg) {
     } catch {}
   };
   const first = String(order.nombre || '').split(/\s+/)[0];
+  // Si ya pidió un cambio («No») o escribió algo y el equipo todavía no la atendió, su «Sí» de después NO confirma solo:
+  // queda para que el equipo lo revise (ej.: «No… quiero que llegue la otra semana» y luego «Sí, confirmo»)
+  if (kind === 'ok') {
+    const pend = await env.DB.prepare("SELECT 1 FROM chat_labels cl JOIN labels l ON l.id = cl.label_id WHERE cl.chat_id = ? AND l.name IN ('ATENDER PENDIENTE', 'ASESOR') LIMIT 1").bind(chat.id).first();
+    const pidioCambio = await env.DB.prepare("SELECT 1 FROM order_events WHERE order_id = ? AND detail = 'La clienta quiere cambiar algo del pedido' LIMIT 1").bind(order.id).first();
+    if (pend && pidioCambio) {
+      await addEvent(env, order.id, 'nota', 'La clienta tocó «Sí» después de pedir un cambio: no se confirmó solo, revísalo');
+      await env.DB.prepare('UPDATE chats SET unread = MAX(unread, 1), updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
+      await notify(env, store.id, { kind: 'asesora', chatId: chat.id, title: `${order.nombre || 'Una clienta'} tocó «Sí» después de pedir un cambio (pedido #${order.number})`, body: 'Revisa lo que pidió antes de confirmarlo.' });
+      await reply('¡Gracias! 😊 Una asesora revisa tu pedido y te confirma en un momento.');
+      return true;
+    }
+  }
   if (kind === 'ok') {
     if (order.status === 'nuevo') {
       const autos = await loadAutos(env, store.id);

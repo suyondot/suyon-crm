@@ -427,7 +427,7 @@ export async function fichaPedidos(chatId, el, cached = false) {
   if (cached) return;
   try {
     const r = await H.api('GET', `/chats/${chatId}/pedidos`);
-    el.innerHTML = `${r.pedidos.length ? `<ul class="fped">${r.pedidos.slice(0, 5).map((o) => `<li><button data-fpo="${o.id}"><b class="mono">#${o.number}</b> ${pill(o.status)} <span class="note">${e(resumen(o))} · ${money(o.total)}</span></button></li>`).join('')}</ul>` : '<p class="note" style="margin:0 0 8px">Todavía no tiene pedidos.</p>'}
+    el.innerHTML = `<button class="btn primary" data-cbot="form" data-chat="${chatId}" style="width:100%;margin-bottom:8px">📋 Copiar formulario</button>${r.pedidos.length ? `<ul class="fped">${r.pedidos.slice(0, 5).map((o) => `<li><button data-fpo="${o.id}"><b class="mono">#${o.number}</b> ${pill(o.status)} <span class="note">${e(resumen(o))} · ${money(o.total)}</span></button></li>`).join('')}</ul>` : '<p class="note" style="margin:0 0 8px">Todavía no tiene pedidos.</p>'}
       <button class="iconbtn" data-fpnew>+ Crear pedido</button>`;
   } catch (er) {
     el.innerHTML = `<span class="note">${e(er.message)}</span>`;

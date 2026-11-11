@@ -934,7 +934,7 @@ function renderItems() {
       <span class="av" style="background:${avColor(x.id)}">${esc(initials(chatName(x)))}</span>
       <span style="min-width:0"><span class="nm">${esc(chatName(x))}</span>
         <span class="lm">${x.last_dir === 'out' ? 'Tú: ' : ''}${esc(x.last_preview || '')}</span>
-        ${labs.length || pc || pin || (x.bot_paused && x.last_dir !== 'out') ? `<span class="row">${pin && !pc ? '<span class="pinb">📌 Por agendar</span>' : ''}${pc ? '<span class="pcb">🟡 Terminar de agendar</span>' : ''}${x.bot_paused && x.last_dir !== 'out' ? '<span class="bpz">⏸️ Bot en pausa</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
+        ${labs.length || pc || pin || (x.bot_paused && x.last_dir !== 'out' && store()?.canal !== 'shopify') ? `<span class="row">${pin && !pc ? '<span class="pinb">📌 Por agendar</span>' : ''}${pc ? '<span class="pcb">🟡 Terminar de agendar</span>' : ''}${x.bot_paused && x.last_dir !== 'out' && store()?.canal !== 'shopify' ? '<span class="bpz">⏸️ Bot en pausa</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
       <span class="meta"><span>${listTime(x.last_msg_at)}</span>${x.unread ? `<span class="unread">${x.unread}</span>` : ''}</span>
     </button>`;
   }).map((html, i) => ({ key: 'c' + list[i].id, sig: html, html }));
@@ -1114,7 +1114,7 @@ function renderConvHead() {
     <span class="av" style="background:${avColor(c.id)};width:34px;height:34px;font-size:12px">${esc(initials(chatName(c)))}</span>
     <div class="t" style="min-width:0;flex:1"><b style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(chatName(c))}</b><span class="mono">${esc(fmtPhone(c.wa_id))}</span></div>
     <span class="window ${w.canSend ? '' : 'off'}" title="${esc(w.title)}">${esc(w.label)}</span>
-    ${c.bot_paused ? '<button class="botpill off" data-cbot="resume" title="El bot está en pausa: tócalo para que retome y conteste lo pendiente">⏸️ Bot en pausa · Seguir</button>' : c.bot_flow_id ? '<button class="botpill" data-cbot="pause" title="El bot atiende este chat. Toca para pausarlo">🤖 Bot</button>' : ''}
+    ${store()?.canal === 'shopify' ? '' : c.bot_paused ? '<button class="botpill off" data-cbot="resume" title="El bot está en pausa: tócalo para que retome y conteste lo pendiente">⏸️ Bot en pausa · Seguir</button>' : c.bot_flow_id ? '<button class="botpill" data-cbot="pause" title="El bot atiende este chat. Toca para pausarlo">🤖 Bot</button>' : ''}
     <button class="iconbtn" data-act="ficha">${S.ficha ? 'Ocultar ficha' : 'Ficha'}</button>`;
 }
 
@@ -1568,7 +1568,7 @@ function renderFicha({ ifChanged = false } = {}) {
       <dt>Celular</dt><dd class="mono" style="display:flex;gap:6px;align-items:center">${esc(fmtPhone(c.wa_id))}<button class="iconbtn" data-copy="${esc(c.wa_id.replace(/^51/, ''))}" aria-label="Copiar celular" style="padding:2px 6px">${ICON.copy}</button></dd>
     </dl></div>
     <div class="sec"><h3>Ventana de WhatsApp</h3><p class="note" style="margin:0"><b style="color:${w.canSend ? 'var(--ok)' : 'var(--muted)'}">${esc(w.label)}</b> · ${esc(w.title)}</p><p class="note" id="fgasto" style="margin:4px 0 0"></p></div>
-    ${botFicha(c)}
+    ${store()?.canal === 'shopify' ? '' : botFicha(c)}
     <div class="sec"><h3>Pedidos</h3><div id="fpeds"><span class="note">Cargando…</span></div></div>
     <div class="sec"><h3>Notas</h3><textarea class="notesbox" id="cnotes" placeholder="Solo las ve tu equipo">${esc(c.notes || '')}</textarea></div>
     <div class="sec" style="display:flex;gap:8px;flex-wrap:wrap"><button class="iconbtn" data-act="markunread">Marcar como no leído</button><button class="iconbtn" data-act="vercliente">Ficha completa en Clientes</button></div>`;
