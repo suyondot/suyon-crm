@@ -79,12 +79,19 @@ export async function handleShopify(c) {
     return c.text('esta tienda vende por mensajes', 200);
   }
   const raw = await c.req.arrayBuffer();
-  const secret = env[store.shopify_secret || 'SHOPIFY_SECRET'];
+  // Una tienda de Control Total puede recibir de 2 tiendas de Shopify (ej. leggings y pantalón formal):
+  // cada una firma con su propia clave → se prueba la principal y la «_2»
+  const sname = store.shopify_secret || 'SHOPIFY_SECRET';
+  const secrets = [env[sname], env[`${sname}_2`]].filter(Boolean);
+  const secret = secrets[0];
   if (!secret) {
     await notify(env, store.id, { kind: 'error', title: 'Llegó un aviso de Shopify pero falta la clave', body: `Pon en Cloudflare el secreto «${store.shopify_secret || 'SHOPIFY_SECRET'}» con la clave que muestra Shopify en Notificaciones → Webhooks.`, dedupe: true });
     return c.text('falta la clave', 401);
   }
-  if (!safeEqual(await hmacB64(secret, raw), c.req.header('x-shopify-hmac-sha256') || '')) return c.text('firma', 401);
+  const firma = c.req.header('x-shopify-hmac-sha256') || '';
+  let okFirma = false;
+  for (const s of secrets) if (safeEqual(await hmacB64(s, raw), firma)) okFirma = true;
+  if (!okFirma) return c.text('firma', 401);
   const topic = c.req.header('x-shopify-topic') || '';
   let body;
   try {

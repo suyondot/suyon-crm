@@ -68,15 +68,25 @@ async function varsFor(env, store, { order, cart }) {
   const o = shape(order);
   // Datos cortos para las plantillas de confirmar (Meta no acepta variables vacías: «—»)
   const dash = (x) => String(x || '').trim() || '—';
-  const unidades = o.items.reduce((a, it) => a + (Number(it.cantidad) || 0), 0) || o.unidades || 0;
-  const prod = o.items[0]?.producto || cfgOf(store).producto || 'prendas';
-  const porTalla = new Map();
+  // Un mismo número puede vender varios productos (leggings cargo + pantalón formal + adicionales):
+  // {promo} = «2 Leggings Cargo + 1 Pantalón formal» y {colores} se agrupa por producto y talla
+  const prodDef = cfgOf(store).producto || 'prendas';
+  const porProd = new Map();
   for (const it of o.items) {
+    const p = String(it.producto || prodDef).trim();
+    if (!porProd.has(p)) porProd.set(p, { n: 0, tallas: new Map() });
+    const g = porProd.get(p);
+    g.n += Number(it.cantidad) || 1;
     const k = it.talla ? `talla ${it.talla}` : '';
-    if (!porTalla.has(k)) porTalla.set(k, []);
-    for (let i = 0; i < (Number(it.cantidad) || 1); i++) if (it.color) porTalla.get(k).push(it.color);
+    if (!g.tallas.has(k)) g.tallas.set(k, []);
+    for (let i = 0; i < (Number(it.cantidad) || 1); i++) if (it.color) g.tallas.get(k).push(it.color);
   }
-  const colores = [...porTalla].map(([t, cs]) => [t, cs.join(', ')].filter(Boolean).join(' · ')).filter(Boolean).join(' / ');
+  const varios = porProd.size > 1;
+  const promo = porProd.size ? [...porProd].map(([p, g]) => `${g.n} ${p}`).join(' + ') : `${o.unidades || 0} ${prodDef}`;
+  const colores = [...porProd].map(([p, g]) => {
+    const t = [...g.tallas].map(([k, cs]) => [k, cs.join(', ')].filter(Boolean).join(' · ')).filter(Boolean).join(' / ');
+    return varios && t ? `${p}: ${t}` : t;
+  }).filter(Boolean).join(' | ');
   const cel = String(o.celular || '').replace(/\D/g, '').replace(/^51(?=9\d{8}$)/, '');
   const today = localDay(now(), tz);
   const tomorrow = localDay(now() + 864e5, tz);
@@ -84,7 +94,7 @@ async function varsFor(env, store, { order, cart }) {
   const cuando = o.modo === 'agencia' ? `Sale por Shalom hacia ${o.sede || 'tu sede'} y te avisamos cuando llegue 🚚` : `Te llega ${entrega}, ${s.entrega_horario} 🛵`;
   return {
     cliente: dash(o.nombre), celular: dash(cel.length === 9 ? cel.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3') : cel), direccion: dash([o.direccion, o.distrito].filter(Boolean).join(', ')),
-    dni: dash(o.dni), promo: `${unidades} ${prod}`, colores: dash(colores),
+    dni: dash(o.dni), promo, colores: dash(colores),
     nombre: first(o.nombre), pedido: String(o.number), tienda: store.name, productos: itemsText(o.items), total: money(o.total), adelanto: money(o.adelanto), saldo: money(o.saldo),
     entrega, horario: s.entrega_horario, cuando, sede: o.sede || 'tu sede', ciudad: o.ciudad || o.distrito || 'tu ciudad', yape: s.pay_yape || '', titular: s.pay_titular || '', link: '',
   };

@@ -1282,9 +1282,13 @@ try {
     assert.equal(c.handler, 'asesora');
   });
   await step('Shopify: si dijo «No» y luego toca «Sí», no se confirma solo (lo revisa el equipo)', async () => {
-    await shopHook('orders/create', { id: 5554, name: '#1004', total_price: '169.00', shipping_address: { first_name: 'Carmen', last_name: 'Calsin', phone: '967856123', address1: 'Urb. María Auxiliadora', city: 'San Juan de Miraflores', province: 'Lima' }, line_items: [{ title: 'Leggings Cargo', variant_title: 'M / Negro', quantity: 2 }] }, 'shp-secret', shopUrl);
+    await shopHook('orders/create', { id: 5554, name: '#1004', total_price: '169.00', shipping_address: { first_name: 'Carmen', last_name: 'Calsin', phone: '967856123', address1: 'Urb. María Auxiliadora', city: 'San Juan de Miraflores', province: 'Lima' }, line_items: [{ title: 'Leggings Cargo', variant_title: 'M / Negro', quantity: 2 }, { title: 'Pantalón formal', variant_title: 'S / Vino', quantity: 1 }] }, 'shp-secret', shopUrl);
     const o = await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Carmen`)).pedidos[0]);
-    await until(() => calls.some((x) => x.path === `${PHONE_ID}/messages` && x.body?.to === '51967856123' && x.body?.type === 'template'));
+    const tc = await until(() => calls.find((x) => x.path === `${PHONE_ID}/messages` && x.body?.to === '51967856123' && x.body?.type === 'template'));
+    // leggings + pantalón formal en el mismo pedido: la plantilla lo dice bien
+    const tv = JSON.stringify(tc.body.template.components);
+    assert.ok(tv.includes('2 Leggings Cargo + 1 Pantalón formal'), tv);
+    assert.ok(tv.includes('Pantalón formal: talla S · Vino'), tv);
     const btn = (id, text) => hook(md({ contacts: [{ profile: { name: 'Carmen' }, wa_id: '51967856123' }], messages: [{ from: '51967856123', id, timestamp: ts(), type: 'button', button: { text, payload: text } }] }));
     await btn('wamid.CN1', 'No');
     await until(async () => (await chatOf('51967856123'))?.bot_paused === 1);
