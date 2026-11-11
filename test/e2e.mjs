@@ -1230,6 +1230,11 @@ try {
     const created = calls.filter((x) => x.path === `${WABA_ID}/message_templates` && x.method === 'POST').pop();
     assert.deepEqual(created.body.components[1].buttons.map((b) => b.text), ['Sí, confirmo', 'No']);
     await call('POST', `/api/stores/${store.id}/autos/sync`);
+    // video del adelanto (opcional): si existe, el adelanto va como video con el texto debajo
+    const fdv = new FormData();
+    fdv.append('key', 'video-adelanto');
+    fdv.append('file', new Blob([IMG], { type: 'video/mp4' }), 'adelanto.mp4');
+    assert.equal((await call('POST', `/api/stores/${store.id}/bot/assets`, undefined, { form: fdv })).status, 200);
     await shopHook('orders/create', { id: 5560, name: '#1010', total_price: '139.00', shipping_address: { first_name: 'Rosa', last_name: 'Quispe', phone: '915555555', address1: 'Jr. Lima 120', city: 'Piura', province: 'Piura' }, line_items: [{ title: 'Pantalón formal', variant_title: 'M / Negro', quantity: 2 }] }, 'shp-secret', shopUrl);
     const o = await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Rosa`)).pedidos[0]);
     assert.equal(o.modo, 'agencia');
@@ -1251,15 +1256,17 @@ try {
     }
     const o2 = await until(async () => { const x = (await call('GET', `/api/pedidos/${o.id}`)).pedido; return x.sede ? x : null; });
     assert.ok(o2.sede);
-    await until(() => /adelanto de \*S\/30\*/.test(lastText()) || /asesora te env/i.test(lastText()));
+    const vid = () => calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.to === '51915555555' && x.body?.type === 'video').pop();
+    await until(() => /adelanto de \*S\/30\*/.test(vid()?.body.video.caption || '') || /asesora te env/i.test(lastText()));
+    if (vid()) assert.ok(/Yape o Plin/.test(vid().body.video.caption) && !/adelanto de/.test(lastText()), 'el adelanto va una sola vez, con el video');
     let ch = await chatOf('51915555555');
     const labs = (await call('GET', `/api/stores/${store.id}/labels`)).labels;
     assert.ok(ch.labels.includes(labs.find((l) => l.name === 'YAPE PENDIENTE').id), 'queda YAPE PENDIENTE');
     // la captura cae en Pagos y sube a 📌
     await hook(md({ contacts: [{ profile: { name: 'Rosa' }, wa_id: '51915555555' }], messages: [{ from: '51915555555', id: 'wamid.PV4', timestamp: ts(), type: 'image', image: { id: 'MEDIA_IMG2', mime_type: 'image/jpeg' } }] }));
-    await until(() => /Recibido/.test(lastText()));
     const pg = await until(async () => (await call('GET', `/api/stores/${store.id}/pagos`)).pendientes.find((x) => x.chat_id === ch.id && x.captura));
     assert.equal(pg.order.id, o.id);
+    assert.ok(!/Recibido/.test(lastText()), 'a la captura no se le responde nada');
     ch = await chatOf('51915555555');
     assert.ok(ch.listo_at > (ch.pin_visto || 0), 'nombre completo + DNI + captura → 📌');
     // Si pregunta algo, el bot no contesta: queda ATENDER PENDIENTE (y sale en la franja de llamadas)

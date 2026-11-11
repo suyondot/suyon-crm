@@ -3,7 +3,7 @@
 // La captura cae en Pagos para que el equipo la confirme. El paso va en chats.bot_vars.__shp.
 import { now, clip } from './util.js';
 import { sendText, sendList } from './whatsapp.js';
-import { notify, loadSettings, addLabel } from './bot.js';
+import { notify, loadSettings, addLabel, botSend } from './bot.js';
 import { cfgOf, addEvent, getOrder, shape } from './orders.js';
 import { agenciesNear, agenciesIn, agencyOptions } from './shalom.js';
 
@@ -69,6 +69,20 @@ async function mandarAgencias(env, store, chat, order, r) {
   return false;
 }
 
+// Mensaje del adelanto (también va como texto debajo del video, máx. 1024 letras)
+export function textoAdelanto({ first, adelanto, saldo, yape, titular }) {
+  return [
+    `¡Perfecto${first ? `, ${first}` : ''}! 🙌✨ Ya separamos tu pedido 🛍️`,
+    '',
+    `Para despacharlo 🚚 solo falta el adelanto de *${money(adelanto)}* 💸`,
+    `📲 Yape o Plin: *${yape}*`,
+    titular ? `👤 A nombre de: *${titular}*` : null,
+    '',
+    saldo > 0 ? `El resto (*${money(saldo)}*) lo pagas cuando lo recojas en Shalom 📦` : null,
+    'Envíame la captura por aquí y listo 📸💕',
+  ].filter((x) => x !== null).join('\n');
+}
+
 // Siguiente paso según lo que le falta al pedido
 export async function provinciaSiguiente(env, store, chat, order0) {
   const order = shape(await getOrder(env, order0.id));
@@ -96,7 +110,10 @@ export async function provinciaSiguiente(env, store, chat, order0) {
     await out(env, store, chat, '¡Perfecto! ✅ Una asesora te envía los datos para el adelanto en un momento 🙌');
     await aAsesora(env, store, chat, order, 'Falta poner el Yape de la tienda en Bot Suyon AI → IA Suyon (datos de pago).');
   } else {
-    await out(env, store, chat, `¡Perfecto! ✅ Para despacharlo necesitamos el adelanto de *${money(adelanto)}* por Yape o Plin al *${s.pay_yape}*${s.pay_titular ? ` a nombre de *${s.pay_titular}*` : ''}.\nEl resto (${money(saldo)}) lo pagas al recoger en Shalom. Envíame la captura por aquí 🙌`);
+    const txt = textoAdelanto({ first, adelanto, saldo, yape: s.pay_yape, titular: s.pay_titular });
+    // Si la tienda subió el archivo «video-adelanto» (Bot Suyon AI → Archivos), va el video con este texto debajo
+    const v = store.status === 'activo' ? await botSend(env, store, chat, { kind: 'file', asset: 'video-adelanto', caption: txt, opcional: true }, { node: 'provincia:adelanto' }).catch(() => null) : null;
+    if (!v?.ok) await out(env, store, chat, txt);
   }
   await addEvent(env, order.id, 'mensaje', `Se pidió el adelanto (${money(adelanto)})`);
   return setPaso(env, chat.id, { o: order.id, paso: 'pago' });
@@ -122,7 +139,7 @@ export async function handleProvinciaStep(env, store, chat0, msg) {
   };
   if (st.paso === 'pago' || st.paso === 'listo') {
     if (media) {
-      if (st.paso === 'pago') await out(env, store, chat, '¡Recibido! 🙌 Validamos tu pago y te confirmamos en un momento.');
+      // Sin respuesta automática: la captura cae en Pagos y el equipo la confirma
       await setPaso(env, chat.id, { ...st, paso: 'listo' });
       return true;
     }
