@@ -96,11 +96,34 @@ export function zonasSin(text) {
 }
 
 // Lima con cobertura → contraentrega; Lima sin cobertura o provincia → según la tienda
+// Lima Metropolitana + Callao (contra entrega) vs. provincias del departamento de Lima (van por agencia: Oyón, Huacho, Cañete…)
+const LIMA_METRO = ['lima', 'cercado', 'ancon', 'ate', 'vitarte', 'barranco', 'brena', 'carabayllo', 'chaclacayo', 'chorrillos', 'cieneguilla', 'comas', 'el agustino',
+  'independencia', 'jesus maria', 'la molina', 'la victoria', 'lince', 'los olivos', 'lurigancho', 'chosica', 'lurin', 'magdalena', 'miraflores', 'pachacamac',
+  'pucusana', 'pueblo libre', 'puente piedra', 'punta hermosa', 'punta negra', 'rimac', 'san bartolo', 'san borja', 'san isidro', 'san juan de lurigancho', 'sjl',
+  'san juan de miraflores', 'sjm', 'san luis', 'san martin de porres', 'smp', 'san miguel', 'santa anita', 'santa maria del mar', 'santa rosa', 'santiago de surco',
+  'surco', 'surquillo', 'villa el salvador', 'ves', 'villa maria del triunfo', 'vmt', 'callao', 'bellavista', 'carmen de la legua', 'la perla', 'la punta',
+  'ventanilla', 'mi peru', 'huaycan', 'manchay', 'canto grande', 'zarate', 'collique', 'mangomarca', 'jicamarca', 'magdalena del mar'];
+const LIMA_PROV = ['barranca', 'paramonga', 'pativilca', 'supe', 'cajatambo', 'canta', 'huamantanga', 'santa rosa de quives', 'obrajillo', 'canete', 'san vicente de canete',
+  'imperial', 'nuevo imperial', 'mala', 'chilca', 'asia', 'cerro azul', 'lunahuana', 'quilmana', 'huaral', 'chancay', 'aucallama', 'huaura', 'huacho', 'hualmay', 'sayan',
+  'vegueta', 'carquin', 'huarochiri', 'matucana', 'san mateo', 'ricardo palma', 'santa eulalia', 'callahuanca', 'oyon', 'churin', 'andajes', 'yauyos', 'pachangara', 'naván', 'navan'];
+const words = (x) => ` ${norm(x).replace(/[^a-z0-9]+/g, ' ').trim()} `;
+// 'metro' | 'prov' | '?' (no lo reconoce)
+export function lugarLima(distrito) {
+  const t = words(distrito);
+  if (!t.trim()) return 'metro';
+  if (LIMA_PROV.some((n) => t.includes(` ${norm(n)} `))) return 'prov';
+  if (LIMA_METRO.some((n) => t.includes(` ${n} `))) return 'metro';
+  return '?';
+}
+
 export function modoFor({ ciudad, provincia, distrito, sede }, cfg) {
   if (sede) return 'agencia';
   const lugar = norm([provincia, ciudad].filter(Boolean).join(' '));
   const isLima = !lugar || /lima|callao/.test(lugar);
-  if (!isLima) return cfg.prov_modo === 'ce_prov' ? 'ce_prov' : 'agencia';
+  const prov = cfg.prov_modo === 'ce_prov' ? 'ce_prov' : 'agencia';
+  if (!isLima) return prov;
+  // Departamento de Lima pero fuera de Lima Metropolitana (Oyón, Huaral, Cañete…) → provincia
+  if (lugarLima(distrito) === 'prov' || lugarLima(ciudad === provincia ? '' : ciudad) === 'prov') return prov;
   const d = norm(distrito);
   // Solo las zonas sin cobertura completa; las parciales (Ate…) dependen de la dirección: se deja en Lima
   const sin = zonasSin(cfg.sin_cobertura).filter((z) => !z.parcial).map((z) => z.name);

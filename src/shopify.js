@@ -1,6 +1,6 @@
 // Shopify: los pedidos y carritos llegan por webhook (Configuración → Notificaciones → Webhooks en Shopify)
 import { now, clip, safeEqual, b64 } from './util.js';
-import { cfgOf, modoFor, normPhone, priceFor, insertOrder, getOrder, ESTADOS } from './orders.js';
+import { cfgOf, modoFor, normPhone, priceFor, insertOrder, getOrder, ESTADOS, lugarLima } from './orders.js';
 import { onOrderCreated, setOrderStatus } from './automations.js';
 import { notify } from './bot.js';
 import { colorsOf, tallaOf } from './catalogo.js';
@@ -98,7 +98,16 @@ export async function handleShopify(c) {
     if (topic === 'orders/create' || topic === 'orders/paid' || (topic === 'orders/updated' && !body.cancelled_at)) {
       const exists = await env.DB.prepare("SELECT id FROM orders WHERE store_id = ? AND source = 'shopify' AND ext_id = ?").bind(store.id, String(body.id)).first();
       if (exists) return;
-      const o = await insertOrder(env, store, orderFromShopify(body, cfg), { source: 'shopify' });
+      const data = orderFromShopify(body, cfg);
+      // Distrito que no reconocemos en «Lima»: si Shalom tiene agencias en ese lugar fuera de Lima Metropolitana, es provincia
+      if (data.modo === 'lima' && data.distrito && lugarLima(data.distrito) === '?') {
+        const nz = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+        const q = nz(data.distrito);
+        const { results = [] } = await env.DB.prepare("SELECT prov, dist FROM shalom_agencies WHERE upper(dep) LIKE 'LIMA%'").all().catch(() => ({}));
+        const ag = q && results.find((r) => nz(r.prov) !== 'lima' && nz(r.prov) !== 'callao' && (nz(r.dist) === q || nz(r.prov) === q));
+        if (ag) Object.assign(data, { modo: cfg.prov_modo === 'ce_prov' ? 'ce_prov' : 'agencia', ciudad: [data.distrito, 'Lima'].join(', '), distrito: '' });
+      }
+      const o = await insertOrder(env, store, data, { source: 'shopify' });
       if (o) await onOrderCreated(env, store, o);
     } else if (topic === 'orders/cancelled' || (topic === 'orders/updated' && body.cancelled_at)) {
       const o = await env.DB.prepare("SELECT * FROM orders WHERE store_id = ? AND source = 'shopify' AND ext_id = ?").bind(store.id, String(body.id)).first();

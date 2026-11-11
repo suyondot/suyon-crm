@@ -1368,6 +1368,12 @@ try {
     assert.equal(o.status, 'por_pagar');
     assert.equal(o.adelanto, 30);
     await shopHook('orders/cancelled', { id: 5553, cancelled_at: new Date().toISOString() }, 'shp-secret', shopUrl);
+    // Departamento de Lima pero fuera de Lima Metropolitana (Oyón, Huacho, Cañete…) → provincia por agencia
+    await shopHook('orders/create', { id: 5556, name: '#1006', total_price: '169.00', shipping_address: { first_name: 'Jesus', last_name: 'Espinoza', phone: '912457351', address1: 'Nuevo horizonte', city: 'Oyón', province: 'Lima' }, line_items: [{ title: 'Leggings Cargo', variant_title: 'M / Beige', quantity: 2 }] }, 'shp-secret', shopUrl);
+    const oy = await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Jesus`)).pedidos[0]);
+    assert.equal(oy.modo, 'agencia', 'Oyón es provincia');
+    await shopHook('orders/cancelled', { id: 5556, cancelled_at: new Date().toISOString() }, 'shp-secret', shopUrl);
+    await until(async () => (await call('GET', `/api/pedidos/${oy.id}`)).pedido.status === 'cancelado');
     await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Eva`)).pedidos[0]?.status === 'cancelado');
     await call('PATCH', `/api/stores/${store.id}/autos/carrito`, { on: true, delay_min: 30 });
     await shopHook('checkouts/create', { token: 'ck-abc', total_price: '89.00', shipping_address: { first_name: 'Noa', phone: '914444444' }, line_items: [{ title: 'Pantalón formal', variant_title: 'XS / Vino', quantity: 1 }] }, 'shp-secret', shopUrl);

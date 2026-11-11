@@ -244,7 +244,7 @@ export function esDistritoLima(x) {
   const t = ` ${normL(x)} `;
   if (t.trim().length < 3) return false;
   // «Miraflores Arequipa», «Bellavista San Martín»: si nombra otra región, no es Lima
-  if (/ (arequipa|cusco|piura|trujillo|libertad|chiclayo|lambayeque|ica|junin|huancayo|puno|tacna|ancash|chimbote|huanuco|cajamarca|loreto|iquitos|ucayali|pucallpa|san martin tarapoto|tarapoto|moquegua|ayacucho|apurimac|tumbes|amazonas|madre de dios|pasco|huancavelica|huaral|huacho|barranca|canete|chancay) /.test(t)) return false;
+  if (/ (arequipa|cusco|piura|trujillo|libertad|chiclayo|lambayeque|ica|junin|huancayo|puno|tacna|ancash|chimbote|huanuco|cajamarca|loreto|iquitos|ucayali|pucallpa|san martin tarapoto|tarapoto|moquegua|ayacucho|apurimac|tumbes|amazonas|madre de dios|pasco|huancavelica|huaral|huacho|barranca|canete|chancay|oyon|huaura|cajatambo|canta|yauyos|huarochiri|mala|chilca|imperial|paramonga|supe|churin) /.test(t)) return false;
   return DISTRITOS_LIMA.some((dname) => t.includes(` ${dname} `));
 }
 
