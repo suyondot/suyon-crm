@@ -288,6 +288,51 @@ r.get('/stores/:id/reporte-web', async (c) => {
   });
 });
 
+/* ---------- Franja de arriba: leads de hoy, confirmados y tasa (pedido de Jordan) ---------- */
+// Shopify: lead = pedido que entró (web o a mano); confirmado = ese pedido ya pasó a confirmado/validado o más allá.
+// Mensajes: lead = conversación nueva; confirmado = pedido creado en el periodo que ya está confirmado/validado o más allá.
+const KPI_CACHE = new Map();
+async function kpiOf(db, st, t0, t1) {
+  const ord = await db.prepare(
+    `SELECT status, modo, COUNT(*) AS n FROM orders WHERE store_id = ? AND created_at >= ? AND created_at < ? GROUP BY status, modo`
+  ).bind(st.id, t0, t1).all();
+  const K = { leads: 0, confirmados: 0, por_confirmar: 0, cancelados: 0, lima: 0, provincia: 0, pedidos: 0 };
+  for (const o of ord.results) {
+    K.pedidos += o.n;
+    if (o.status === 'cancelado') K.cancelados += o.n;
+    else if (['nuevo', 'por_pagar'].includes(o.status)) K.por_confirmar += o.n;
+    if (CONFIRMADOS.includes(o.status)) {
+      K.confirmados += o.n;
+      K[o.modo === 'lima' ? 'lima' : 'provincia'] += o.n;
+    }
+  }
+  if (st.canal === 'shopify') K.leads = K.pedidos;
+  else {
+    const ch = await db.prepare('SELECT COUNT(*) AS n FROM chats WHERE store_id = ? AND sim = 0 AND created_at >= ? AND created_at < ?').bind(st.id, t0, t1).first();
+    K.leads = ch?.n || 0;
+  }
+  K.tasa = K.leads ? K.confirmados / K.leads : null;
+  return K;
+}
+
+r.get('/stores/:id/kpi', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'any');
+  const tz = st.timezone || 'America/Lima';
+  const p = ['hoy', 'ayer', '7d'].includes(c.req.query('p')) ? c.req.query('p') : 'hoy';
+  const key = `${st.id}:${p}`;
+  const hit = KPI_CACHE.get(key);
+  if (hit && hit.t > Date.now() - 30e3) return c.json(hit.v);
+  const today = dayStart(localDay(now(), tz), tz);
+  const len = p === '7d' ? 7 * DAY : DAY;
+  const t1 = p === 'ayer' ? today : p === '7d' ? today + DAY : now() + 1;
+  const t0 = p === 'ayer' ? today - DAY : p === '7d' ? today - 6 * DAY : today;
+  const [cur, prev] = await Promise.all([kpiOf(c.env.DB, st, t0, t1), kpiOf(c.env.DB, st, t0 - len, t0 - len + (t1 - t0))]);
+  const v = { p, canal: st.canal || 'mensajes', ...cur, antes: { leads: prev.leads, confirmados: prev.confirmados, tasa: prev.tasa } };
+  KPI_CACHE.set(key, { t: Date.now(), v });
+  if (KPI_CACHE.size > 500) KPI_CACHE.clear();
+  return c.json(v);
+});
+
 export default r;
 
 /* ---------------- Embudo: hasta qué paso llega cada conversación ---------------- */

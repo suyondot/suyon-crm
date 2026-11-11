@@ -6,6 +6,7 @@ import { initReportes, renderReportes, resetReportes } from './reportes.js';
 
 // Marca: C y T (la T en rosado). Sin fondo: el fondo lo pone el contenedor.
 const LOGO = '<img src="/logo-mark.png" alt="" width="128" height="128">';
+import { kpiBar } from './kpi.js';
 import { initPedidos, renderPedidos, resetPedidos, fichaPedidos, renderPedidosConfig } from './pedidos.js';
 import { initEnvios, renderEnvios, resetEnvios } from './envios.js';
 import { initAsistente, renderAsistente, resetAsistente, rubroPicker } from './asistente.js';
@@ -879,7 +880,7 @@ function renderListHead() {
   const list = $('#list');
   if (!list) return;
   const all = [...S.chats.values()];
-  list.innerHTML = `${storeBanner()}<div id="wabar"></div><div id="callbar"></div><div class="list-head">
+  list.innerHTML = `${storeBanner()}<div id="kpibar"></div><div id="wabar"></div><div id="callbar"></div><div class="list-head">
       <div class="searchrow">
         <div class="search"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="Buscar nombre o número" value="${esc(S.q)}" aria-label="Buscar chats" autocomplete="off"></div>
         <button class="filterbtn ${S.tagf.length ? 'on' : ''}" data-act="tagmenu" aria-expanded="${S.tagMenu}">${ICON.filter}Etiqueta${S.tagf.length ? ` · ${S.tagf.length}` : ''}</button>
@@ -898,6 +899,7 @@ function renderListHead() {
     <div class="items" id="items"></div>`;
   renderCallbar();
   loadWabar();
+  kpiBar($('#kpibar'), { api, esc, S });
   const q = $('#q');
   let deb;
   q.addEventListener('input', () => {
@@ -2928,10 +2930,11 @@ initClientes({
 });
 
 initReportes({ api, esc, $, S, store, goChat });
-initPedidos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, listTime, canChats });
+initPedidos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, listTime, canChats, kpiBar });
 initEnvios({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, canChats });
 initPanel({ api, esc, toast });
 setInterval(() => S.view === 'chats' && !document.hidden && loadWabar(), 60e3);
+setInterval(() => !document.hidden && kpiBar($('#kpibar'), { api, esc, S }), 60e3);
 initPagos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, canChats, modal, closeModal, setPagosCount(n) {
   S.pagosN = { ...(S.pagosN || {}), [S.storeId]: n };
   const b = document.querySelector('.navbtn[data-nav="pagos"]');

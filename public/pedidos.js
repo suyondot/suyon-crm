@@ -38,6 +38,7 @@ export async function renderPedidos(content) {
   const grupos = role === 'despacho_prov' ? [['prov', 'Provincia y agencia']] : [['', 'Todos'], ['lima', 'Lima'], ['prov', 'Provincia y agencia']];
   if (role === 'despacho_prov') P.grupo = 'prov';
   content.innerHTML = `<div class="ped">
+    <div id="kpibar"></div>
     <div class="pedhead">
       <div class="seg" role="tablist" aria-label="Tipo">${grupos.map(([k, l]) => `<button data-pg="${k}" aria-pressed="${P.grupo === k}">${l}</button>`).join('')}</div>
       <div class="seg" role="tablist" aria-label="Vista"><button data-pv="dia" aria-pressed="${P.vista === 'dia'}">Por día</button><button data-pv="pendientes" aria-pressed="${P.vista === 'pendientes'}">Pendientes</button></div>
@@ -61,6 +62,7 @@ export async function renderPedidos(content) {
     }, 300);
   };
   if (P.data) draw();
+  H.kpiBar?.(H.$('#kpibar'), H);
   await load();
 }
 

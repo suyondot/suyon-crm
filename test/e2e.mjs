@@ -1977,6 +1977,9 @@ try {
     let fr = await call('POST', `/api/stores/${sid}/envios/formularios`, { text: form });
     assert.equal(fr.resultados.length, 2);
     assert.ok(fr.resultados.every((x) => x.ok), JSON.stringify(fr.resultados));
+    const kp = await call('GET', `/api/stores/${sid}/kpi?p=hoy`);
+    assert.ok(kp.leads >= 0 && kp.confirmados >= 0 && 'tasa' in kp && kp.antes, 'franja de leads y tasa');
+    assert.ok((await call('GET', `/api/stores/${sid}/kpi?p=7d`)).confirmados >= 2, 'los envíos validados cuentan como confirmados');
     assert.ok(fr.resultados.every((x) => x.envio?.id === x.id && x.envio.status === 'validado'), 'devuelve el envío creado para la pantalla');
     let L = (await call('GET', `/api/stores/${sid}/envios`)).envios;
     const maria = L.find((x) => x.nombre === 'Maria Lopez');
