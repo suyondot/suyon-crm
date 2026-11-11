@@ -305,7 +305,7 @@ export async function ponerPendiente(env, store, chat, vars, textos) {
   return want;
 }
 
-async function removeLabel(env, storeId, chatId, name) {
+export async function removeLabel(env, storeId, chatId, name) {
   const l = await env.DB.prepare('SELECT id FROM labels WHERE store_id = ? AND name = ? COLLATE NOCASE').bind(storeId, String(name || '').trim()).first();
   if (l) await env.DB.prepare('DELETE FROM chat_labels WHERE chat_id = ? AND label_id = ?').bind(chatId, l.id).run();
 }

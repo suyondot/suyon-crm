@@ -7,12 +7,12 @@ import { provinciaSiguiente } from './provincia.js';
 import { shape, itemsText, cfgOf, normPhone, addEvent, getOrder, ESTADOS, VENDIDO } from './orders.js';
 
 export const AUTOS = [
-  { key: 'confirmar', title: 'Confirmar pedido contra entrega', when: 'Entra un pedido de Shopify para contraentrega.', cat: 'UTILITY',
-    text: 'Hola {nombre} 👋 Recibimos tu pedido #{pedido} en {tienda}:\n{productos}\nTotal: {total}, pagas al recibir.\nTe llega {entrega}, {horario}. ¿Confirmas tu pedido?',
-    buttons: ['Sí, confirmo', 'Cambiar algo'] },
+  { key: 'confirmar', title: 'Confirmar pedido contra entrega (Lima)', when: 'Entra un pedido de Shopify para contraentrega. Al tocar «Sí» queda Confirmado y sube con 📌 para agendarlo; con «No» queda ATENDER PENDIENTE.', cat: 'UTILITY',
+    text: 'Hola 👋 Confirma tu pedido #{pedido}:\n👤 {cliente}\n📱 {celular}\n🏠 {direccion}\n🛍️ {promo}: {colores}\n💰 Total: {total} (pagas al recibir)\n¿Confirmas que te llegue {entrega} de 2 a 8 p.m.?',
+    buttons: ['Sí, confirmo', 'No'] },
   { key: 'confirmar_agencia', title: 'Confirmar pedido por Shalom (provincia)', when: 'Entra un pedido de Shopify que va por agencia. Al tocar «Sí» el bot pide DNI (si falta), la agencia Shalom y el adelanto.', cat: 'UTILITY',
-    text: 'Hola {nombre} 👋 Recibimos tu pedido #{pedido} en {tienda}:\n{productos}\nTotal: {total}. Te lo enviamos por Shalom a {ciudad}: adelantas {adelanto} y el resto lo pagas al recoger.\n¿Confirmas tu pedido?',
-    buttons: ['Sí, confirmo', 'Cambiar algo'] },
+    text: 'Hola 👋 Confirma tus datos del pedido #{pedido}:\n👤 {cliente}\n🪪 DNI: {dni}\n📱 {celular}\n📍 {ciudad}\n🛍️ {promo}: {colores}\n💰 Total: {total}. Adelanto: {adelanto} y el resto lo pagas al recoger en Shalom.\n¿Tus datos están correctos?',
+    buttons: ['Sí, confirmo', 'No'] },
   { key: 'adelanto', title: 'Pedir adelanto (agencia)', when: 'Entra un pedido de Shopify que va por agencia (Shalom).', cat: 'UTILITY',
     text: 'Hola {nombre} 👋 Recibimos tu pedido #{pedido}:\n{productos}\nTotal: {total}. Para enviarlo por Shalom necesitamos un adelanto de {adelanto}.\nYape o Plin: {yape} a nombre de {titular}. Envíanos la captura por aquí 🙌' },
   { key: 'agendado', title: 'Pedido confirmado', when: 'El pedido pasa a Confirmado o Validado.', cat: 'UTILITY',
@@ -31,7 +31,7 @@ export const AUTOS = [
     text: 'Hola {nombre} 👋 Vimos que dejaste tu pedido a medio camino:\n{productos}\n¿Te ayudo a terminarlo? Pagas al recibir 😊' },
 ];
 const BY = Object.fromEntries(AUTOS.map((a) => [a.key, a]));
-export const AUTO_VARS = ['nombre', 'pedido', 'tienda', 'productos', 'total', 'adelanto', 'saldo', 'entrega', 'horario', 'cuando', 'sede', 'ciudad', 'yape', 'titular', 'link'];
+export const AUTO_VARS = ['nombre', 'cliente', 'celular', 'direccion', 'dni', 'promo', 'colores', 'pedido', 'tienda', 'productos', 'total', 'adelanto', 'saldo', 'entrega', 'horario', 'cuando', 'sede', 'ciudad', 'yape', 'titular', 'link'];
 
 export async function loadAutos(env, storeId) {
   const { results } = await env.DB.prepare('SELECT * FROM automations WHERE store_id = ?').bind(storeId).all();
@@ -65,11 +65,25 @@ async function varsFor(env, store, { order, cart }) {
     return { nombre: first(cart.nombre), tienda: store.name, productos: itemsText(items), total: money(cart.total), link: cart.url || '', horario: s.entrega_horario };
   }
   const o = shape(order);
+  // Datos cortos para las plantillas de confirmar (Meta no acepta variables vacías: «—»)
+  const dash = (x) => String(x || '').trim() || '—';
+  const unidades = o.items.reduce((a, it) => a + (Number(it.cantidad) || 0), 0) || o.unidades || 0;
+  const prod = o.items[0]?.producto || cfgOf(store).producto || 'prendas';
+  const porTalla = new Map();
+  for (const it of o.items) {
+    const k = it.talla ? `talla ${it.talla}` : '';
+    if (!porTalla.has(k)) porTalla.set(k, []);
+    for (let i = 0; i < (Number(it.cantidad) || 1); i++) if (it.color) porTalla.get(k).push(it.color);
+  }
+  const colores = [...porTalla].map(([t, cs]) => [t, cs.join(', ')].filter(Boolean).join(' · ')).filter(Boolean).join(' / ');
+  const cel = String(o.celular || '').replace(/\D/g, '').replace(/^51(?=9\d{8}$)/, '');
   const today = localDay(now(), tz);
   const tomorrow = localDay(now() + 864e5, tz);
   const entrega = !o.entrega ? 'pronto' : o.entrega === today ? 'HOY' : o.entrega === tomorrow ? 'MAÑANA' : `el ${o.entrega.split('-').reverse().slice(0, 2).join('/')}`;
   const cuando = o.modo === 'agencia' ? `Sale por Shalom hacia ${o.sede || 'tu sede'} y te avisamos cuando llegue 🚚` : `Te llega ${entrega}, ${s.entrega_horario} 🛵`;
   return {
+    cliente: dash(o.nombre), celular: dash(cel.length === 9 ? cel.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3') : cel), direccion: dash([o.direccion, o.distrito].filter(Boolean).join(', ')),
+    dni: dash(o.dni), promo: `${unidades} ${prod}`, colores: dash(colores),
     nombre: first(o.nombre), pedido: String(o.number), tienda: store.name, productos: itemsText(o.items), total: money(o.total), adelanto: money(o.adelanto), saldo: money(o.saldo),
     entrega, horario: s.entrega_horario, cuando, sede: o.sede || 'tu sede', ciudad: o.ciudad || o.distrito || 'tu ciudad', yape: s.pay_yape || '', titular: s.pay_titular || '', link: '',
   };
@@ -175,7 +189,16 @@ export async function handleOrderReply(env, store, chat, msg) {
   const m = /^ord:(ok|edit):(\d+)$/.exec(payload);
   if (m) [kind, id] = [m[1], Number(m[2])];
   else if (msg.type === 'button' && /^s[ií],?\s*confirmo/i.test(body)) kind = 'ok';
-  else if (msg.type === 'button' && /^cambiar algo/i.test(body)) kind = 'edit';
+  else if (msg.type === 'button' && /^(cambiar algo|no)\b/i.test(body)) kind = 'edit';
+  else if (msg.type === 'text' && body.length <= 40) {
+    // También escrito («sí», «si confirmo», «ok», «no»), pero solo si lo último que le mandamos fue el «¿Confirmas…?»
+    const si = /^(s[ií]+|sip|ok(ey)?|okay|correcto|confirmo|dale|claro|de acuerdo|s[ií],?\s*(confirmo|correcto|est[aá]n? bien|todo bien|claro)?)[\s.!👍✅🙌😊]*$/i.test(body);
+    const no = /^(no|nop|no,? .*|cambiar.*|est[aá] mal.*|corregir.*)$/i.test(body);
+    if (si || no) {
+      const last = await env.DB.prepare("SELECT extra FROM messages WHERE chat_id = ? AND direction = 'out' ORDER BY id DESC LIMIT 1").bind(chat.id).first();
+      if (/"auto":"confirmar(_agencia)?"/.test(last?.extra || '')) kind = si ? 'ok' : 'edit';
+    }
+  }
   if (!kind) return false;
   const order = id
     ? await env.DB.prepare('SELECT * FROM orders WHERE id = ? AND store_id = ?').bind(id, store.id).first()
@@ -196,17 +219,20 @@ export async function handleOrderReply(env, store, chat, msg) {
       const willSend = autos.find((a) => a.key === 'agendado')?.on;
       await setOrderStatus(env, store, order, 'confirmado', null, 'La clienta confirmó por WhatsApp');
       if (!willSend) await reply(`¡Gracias${first ? `, ${first}` : ''}! ✅ Tu pedido #${order.number} quedó confirmado.`);
+      // 📌 arriba de la lista para que el equipo lo agende
+      await env.DB.prepare('UPDATE chats SET listo_at = ?, updated_at = ? WHERE id = ?').bind(now(), now(), chat.id).run();
     } else if (order.status === 'por_pagar' && order.modo === 'agencia') {
       await addEvent(env, order.id, 'nota', 'La clienta confirmó por WhatsApp');
       await provinciaSiguiente(env, store, chat, order);
     } else await addEvent(env, order.id, 'nota', 'La clienta volvió a confirmar por WhatsApp');
   } else {
-    await addLabel(env, store.id, chat.id, 'ASESOR');
+    // «No»: sin bot; queda para que la asesora la atienda o la llame
+    await addLabel(env, store.id, chat.id, store.canal === 'shopify' ? 'ATENDER PENDIENTE' : 'ASESOR');
     await cancelJobs(env, chat.id);
     await env.DB.prepare("UPDATE chats SET bot_paused = 1, handler = 'asesora', unread = MAX(unread, 1), updated_at = ? WHERE id = ?").bind(now(), chat.id).run();
     await addEvent(env, order.id, 'nota', 'La clienta quiere cambiar algo del pedido');
     await notify(env, store.id, { kind: 'asesora', chatId: chat.id, title: `${order.nombre || 'Una clienta'} quiere cambiar su pedido #${order.number}` });
-    await reply('Claro 😊 Una asesora te escribe en un momento para cambiarlo.');
+    await reply('Claro 😊 Una asesora te contacta en un momento para corregirlo.');
   }
   return true;
 }
@@ -226,7 +252,7 @@ export function templateFrom(a, example) {
   return { body, vars, example: vars.map((k) => example[k] || k) };
 }
 
-const SAMPLE = { nombre: 'María', pedido: '128', tienda: 'Porte Perú', productos: '2 × Pantalón formal · talla M · Negro', total: 'S/139', adelanto: 'S/30', saldo: 'S/109', entrega: 'HOY', horario: 'entre 2 y 8 p.m.', cuando: 'Te llega HOY, entre 2 y 8 p.m.', sede: 'Arequipa Av. Ejército', ciudad: 'Arequipa', yape: '999 999 999', titular: 'Porte Perú', link: 'https://porte.pe' };
+const SAMPLE = { nombre: 'María', pedido: '128', tienda: 'Porte Perú', productos: '2 × Pantalón formal · talla M · Negro', total: 'S/139', adelanto: 'S/30', saldo: 'S/109', entrega: 'HOY', horario: 'entre 2 y 8 p.m.', cuando: 'Te llega HOY, entre 2 y 8 p.m.', sede: 'Arequipa Av. Ejército', ciudad: 'Arequipa', cliente: 'María López', celular: '987 654 321', direccion: 'Av. Perú 123, Los Olivos', dni: '41085894', promo: '3 Leggings Cargo', colores: 'talla M · Negro, Beige, Azul noche', yape: '999 999 999', titular: 'Porte Perú', link: 'https://porte.pe' };
 
 export async function submitTemplate(env, store, key) {
   const a = (await loadAutos(env, store.id)).find((x) => x.key === key);

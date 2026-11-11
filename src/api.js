@@ -8,7 +8,7 @@ import { createSession, destroySession, currentUser, requireUser, checkPassword,
 import { sendText, uploadMedia, sendMediaById, listTemplates, sendTemplateFull, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES, getProfile, setProfile, setProfilePhoto, VERTICALS } from './whatsapp.js';
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
-import { quitarPendientes } from './bot.js';
+import { quitarPendientes, removeLabel } from './bot.js';
 import { pedidoAlAgendar } from './agendar.js';
 import pagosApi from './api-pagos.js';
 import gastoApi from './api-gasto.js';
@@ -1197,6 +1197,8 @@ api.post('/chats/:id/messages', async (c) => {
      VALUES (?, ?, 'out', 'ase', ?, 'text', ?, 'sending', ?, ?, ?)`
   ).bind(chat.id, store.id, u.id, text, reply?.wamid || null, t, t).run();
   const msg = { id: r.meta.last_row_id, type: 'text', body: text, context_wamid: reply?.wamid || null };
+  // La asesora ya le escribió: deja de estar «por atender»
+  await removeLabel(c.env, store.id, chat.id, 'ATENDER PENDIENTE');
   return c.json({ message: await deliver(c.env, store, chat, msg) });
 });
 

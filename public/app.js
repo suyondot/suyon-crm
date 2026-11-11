@@ -1085,7 +1085,7 @@ function renderConv() {
 }
 
 // Barra de etiquetas rápidas encima del cuadro de escribir (como en Pancake)
-const QUICK_ORDER = ['LIMA PENDIENTE', 'YAPE PENDIENTE', '🔥 URGENTE', '✅ LIMA', '✅ PROVINCIA'];
+const QUICK_ORDER = ['LIMA PENDIENTE', 'YAPE PENDIENTE', 'ATENDER PENDIENTE', '🔥 URGENTE', '✅ LIMA', '✅ PROVINCIA'];
 function quickLabels() {
   const list = S.labels.filter((l) => !l.auto || l.name === 'YAPE PENDIENTE');
   const rank = (l) => {
@@ -1694,7 +1694,8 @@ function renderCallbar() {
   const todo = S.calls.filter((c) => !c.last_at || c.last_at < t0);
   if (!S.calls.length) return (el.innerHTML = '');
   const nY = todo.filter((c) => c.label === 'YAPE PENDIENTE').length;
-  const nL = todo.length - nY;
+  const nA = todo.filter((c) => c.label === 'ATENDER PENDIENTE').length;
+  const nL = todo.length - nY - nA;
   const groups = new Map();
   for (const c of S.calls) {
     const k = dayLabel(c.since);
@@ -1704,7 +1705,7 @@ function renderCallbar() {
   el.innerHTML = `<div class="callbar ${todo.length ? 'hot' : ''} ${S.callsOpen ? 'open' : ''}">
     <button class="cb-head" data-calltoggle aria-expanded="${S.callsOpen}">
       <span class="cb-ic">${ICON.phone}</span>
-      <span class="cb-t"><b>${todo.length ? `${todo.length} para llamar` : 'Llamadas al día'}</b><span>${todo.length ? `Yape ${nY} · Lima ${nL}` : 'Todas llamadas hoy'}</span></span>
+      <span class="cb-t"><b>${todo.length ? `${todo.length} para llamar` : 'Llamadas al día'}</b><span>${todo.length ? [`Yape ${nY}`, `Lima ${nL}`, nA ? `Atender ${nA}` : ''].filter(Boolean).join(' · ') : 'Todas llamadas hoy'}</span></span>
       <span class="caret">${S.callsOpen ? '▴' : '▾'}</span>
     </button>
     ${S.callsOpen ? `<div class="cb-list">${[...groups].map(([day, list]) => `<h5>${esc(day)} <span>${list.length}</span></h5>${list.map((c) => {
@@ -1712,7 +1713,7 @@ function renderCallbar() {
       const res = CALL_RES[c.last_result];
       return `<div class="cb-row ${done ? 'done' : ''}">
         <button class="cb-name" data-open="${c.id}"><b>${esc(c.name || c.profile_name || fmtPhone(c.wa_id))}</b>
-          <span class="cb-tag ${c.label === 'YAPE PENDIENTE' ? 'y' : 'l'}">${c.label === 'YAPE PENDIENTE' ? 'Yape' : 'Lima'}</span>
+          <span class="cb-tag ${c.label === 'YAPE PENDIENTE' ? 'y' : c.label === 'ATENDER PENDIENTE' ? 'a' : 'l'}">${c.label === 'YAPE PENDIENTE' ? 'Yape' : c.label === 'ATENDER PENDIENTE' ? 'Atender' : 'Lima'}</span>
           ${res ? `<span class="cb-res ${res[1]}">${res[0]}${c.tries > 1 ? ` · ${c.tries} veces` : ''}${c.last_by ? ` · ${esc(c.last_by)}` : ''}</span>` : ''}</button>
         <div class="cb-acts"><a class="iconbtn" href="tel:+${esc(c.wa_id)}" aria-label="Llamar">${ICON.phone}</a>
           ${Object.entries(CALL_RES).map(([k, [l, cls]]) => `<button class="cb-btn ${cls}" data-callr="${c.id}|${esc(c.label)}|${k}">${l}</button>`).join('')}</div>

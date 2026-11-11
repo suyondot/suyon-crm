@@ -106,6 +106,7 @@ export const DEFAULT_LABELS = [
   ['COMPRÓ', '--t-green', 1],
   ['YAPE PENDIENTE', '--t-orange', 1],
   ['LIMA PENDIENTE', '--t-yellow', 0],
+  ['ATENDER PENDIENTE', '--t-orange', 0],
   ['✅ LIMA', '--t-green', 0],
   ['✅ PROVINCIA', '--t-blue', 0],
   ['🔥 URGENTE', '--t-wine', 0],

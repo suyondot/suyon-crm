@@ -254,7 +254,7 @@ try {
     store = r.stores.find((s) => s.id === r.store_id);
     assert.equal(store.status, 'pendiente');
     const l = await call('GET', `/api/stores/${store.id}/labels`);
-    assert.equal(l.labels.length, 12);
+    assert.equal(l.labels.length, 13);
     const r2 = await call('POST', `/api/companies/${me.companies[0].id}/stores`, { name: 'Leggings cargo' });
     store2 = r2.stores.find((s) => s.id === r2.store_id);
   });
@@ -1193,7 +1193,7 @@ try {
     // Clienta nueva: ventana cerrada y sin plantilla → aviso, no se manda nada
     await wait(1500);
     const avx = await call('GET', `/api/stores/${store.id}/avisos`);
-    assert.ok(avx.events.some((e) => /No se mandó «Confirmar pedido contra entrega» del pedido/.test(e.title)), JSON.stringify(avx.events.slice(0, 4).map((e) => e.title + ' :: ' + e.body)));
+    assert.ok(avx.events.some((e) => /No se mandó «Confirmar pedido contra entrega \(Lima\)» del pedido/.test(e.title)), JSON.stringify(avx.events.slice(0, 4).map((e) => e.title + ' :: ' + e.body)));
   });
   await step('plantilla de Meta: se pide, se aprueba y el siguiente pedido sale con plantilla', async () => {
     let r = await call('POST', `/api/stores/${store.id}/autos/confirmar/plantilla`);
@@ -1202,14 +1202,15 @@ try {
     const created = calls.filter((x) => x.path === `${WABA_ID}/message_templates` && x.method === 'POST').pop();
     assert.equal(created.body.category, 'UTILITY');
     assert.match(created.body.components[0].text, /\{\{1\}\}/);
-    assert.deepEqual(created.body.components[1].buttons.map((b) => b.text), ['Sí, confirmo', 'Cambiar algo']);
+    assert.deepEqual(created.body.components[1].buttons.map((b) => b.text), ['Sí, confirmo', 'No']);
     r = await call('POST', `/api/stores/${store.id}/autos/sync`);
     assert.equal(r.autos.find((a) => a.key === 'confirmar').tpl_status, 'APPROVED');
     await shopHook('orders/create', { id: 5552, name: '#1002', total_price: '89.00', shipping_address: { first_name: 'Luz', phone: '912345678', address1: 'Calle 1', city: 'Comas', province: 'Lima' }, line_items: [{ title: 'Pantalón formal', variant_title: 'S / Negro', quantity: 1 }] }, 'shp-secret', shopUrl);
     const sent = await until(() => calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.type === 'template').pop());
     assert.equal(sent.body.to, '51912345678');
     assert.equal(sent.body.template.name, created.body.name);
-    assert.equal(sent.body.template.components[0].parameters[0].text, 'Luz');
+    assert.ok(sent.body.template.components[0].parameters.some((p) => p.text === 'Luz'), JSON.stringify(sent.body.template.components[0].parameters));
+    assert.ok(sent.body.template.components[0].parameters.every((p) => String(p.text).trim()), 'sin variables vacías');
   });
   await step('la clienta toca «Sí, confirmo» y el pedido queda Confirmado', async () => {
     const o = (await call('GET', `/api/stores/${store.id}/pedidos?q=Luz`)).pedidos[0];
@@ -1227,7 +1228,7 @@ try {
     let r = await call('POST', `/api/stores/${store.id}/autos/confirmar_agencia/plantilla`);
     assert.equal(r.status, 200, JSON.stringify(r));
     const created = calls.filter((x) => x.path === `${WABA_ID}/message_templates` && x.method === 'POST').pop();
-    assert.deepEqual(created.body.components[1].buttons.map((b) => b.text), ['Sí, confirmo', 'Cambiar algo']);
+    assert.deepEqual(created.body.components[1].buttons.map((b) => b.text), ['Sí, confirmo', 'No']);
     await call('POST', `/api/stores/${store.id}/autos/sync`);
     await shopHook('orders/create', { id: 5560, name: '#1010', total_price: '139.00', shipping_address: { first_name: 'Rosa', last_name: 'Quispe', phone: '915555555', address1: 'Jr. Lima 120', city: 'Piura', province: 'Piura' }, line_items: [{ title: 'Pantalón formal', variant_title: 'M / Negro', quantity: 2 }] }, 'shp-secret', shopUrl);
     const o = await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Rosa`)).pedidos[0]);
@@ -1236,7 +1237,8 @@ try {
     assert.equal(tpl.body.template.name, created.body.name);
     const said = (id, body) => hook(md({ contacts: [{ profile: { name: 'Rosa' }, wa_id: '51915555555' }], messages: [{ from: '51915555555', id, timestamp: ts(), type: 'text', text: { body } }] }));
     const lastText = () => calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.to === '51915555555' && x.body?.type === 'text').pop()?.body.text.body || '';
-    await hook(md({ contacts: [{ profile: { name: 'Rosa' }, wa_id: '51915555555' }], messages: [{ from: '51915555555', id: 'wamid.PV1', timestamp: ts(), type: 'button', button: { text: 'Sí, confirmo', payload: 'Sí, confirmo' } }] }));
+    // «Sí» escrito (no con el botón) también vale porque lo último que le mandamos fue el «¿Tus datos están correctos?»
+    await said('wamid.PV1', 'Sí 👍');
     await until(() => /DNI/.test(lastText()));
     await said('wamid.PV2', 'mi dni es 41 085 894');
     await until(async () => (await call('GET', `/api/pedidos/${o.id}`)).pedido.dni === '41085894');
@@ -1260,6 +1262,14 @@ try {
     assert.equal(pg.order.id, o.id);
     ch = await chatOf('51915555555');
     assert.ok(ch.listo_at > (ch.pin_visto || 0), 'nombre completo + DNI + captura → 📌');
+    // Si pregunta algo, el bot no contesta: queda ATENDER PENDIENTE (y sale en la franja de llamadas)
+    await said('wamid.PV5', '¿A qué hora abre la agencia?');
+    const atl = labs.find((l) => l.name === 'ATENDER PENDIENTE') || (await call('GET', `/api/stores/${store.id}/labels`)).labels.find((l) => l.name === 'ATENDER PENDIENTE');
+    await until(async () => (await chatOf('51915555555')).labels.includes(atl.id));
+    assert.ok((await call('GET', `/api/stores/${store.id}/llamadas`)).calls.some((x) => x.wa_id === '51915555555' && x.label === 'ATENDER PENDIENTE'));
+    // la asesora le escribe → se quita
+    await call('POST', `/api/chats/${ch.id}/messages`, { text: 'Abre de 9 a 6 😊', raw: true });
+    await until(async () => !(await chatOf('51915555555')).labels.includes(atl.id));
     // gasto de WhatsApp: Meta avisa que la plantilla se cobró como utilidad
     const msgs = (await call('GET', `/api/chats/${ch.id}/messages?limit=50`)).messages;
     const tm = msgs.find((m) => m.direction === 'out' && m.wamid);

@@ -1546,3 +1546,4 @@ body[data-rubro="simple"] .pit{grid-template-columns:minmax(0,1fr) 64px auto}
 .wabar.low .wb-bar i{background:var(--bad)}
 .wabar.low .wb-l b{color:var(--bad)}
 .wabar .wb-d{grid-column:1/-1;font-size:12px;line-height:1.5;color:var(--muted)}
+.cb-tag.a{background:color-mix(in srgb,#e8742c 18%,var(--surface));color:#a3460c}

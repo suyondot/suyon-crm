@@ -43,8 +43,9 @@ async function out(env, store, chat, body, { list } = {}) {
 }
 
 // Algo que el bot no entiende: lo ve la asesora
-async function aAsesora(env, store, chat, order, why) {
-  await addLabel(env, store.id, chat.id, 'ASESOR');
+export async function aAsesora(env, store, chat, order, why) {
+  // Sin bot (para no gastar): queda para que la asesora la atienda o la llame
+  await addLabel(env, store.id, chat.id, 'ATENDER PENDIENTE');
   await env.DB.prepare('UPDATE chats SET unread = MAX(unread, 1), updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
   await notify(env, store.id, { kind: 'asesora', chatId: chat.id, title: `${order?.nombre || 'Una clienta'} (pedido #${order?.number || '?'}) necesita respuesta`, body: why });
 }

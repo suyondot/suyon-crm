@@ -1,7 +1,7 @@
 // Webhook de Meta: mensajes entrantes, estados de entrega y ecos de la app del celular
 import { now, hmacSha256hex, safeEqual, clip } from './util.js';
 import { downloadMedia, friendlyMetaError } from './whatsapp.js';
-import { onInbound, notify, loadSettings, marcarListo } from './bot.js';
+import { onInbound, notify, loadSettings, marcarListo, addLabel } from './bot.js';
 import { transcribe } from './voz.js';
 import { handleOrderReply } from './automations.js';
 import { handleProvinciaStep } from './provincia.js';
@@ -174,6 +174,13 @@ async function handleInbound(env, ctx, store, msg, profileName) {
       if (msg.type === 'image' || msg.type === 'document') await marcarListo(env, chat.id).catch((e) => console.error('listo', e));
       // Pedido de Shopify por Shalom: DNI → agencia → adelanto
       if (await handleProvinciaStep(env, store, chat, { type: msg.type, body: said, payload })) return;
+      // Tienda por Shopify: el bot no contesta (para no gastar). Lo que pregunte queda ATENDER PENDIENTE para la asesora
+      // (un «gracias», «ok» o un emoji no cuenta)
+      if (store.canal === 'shopify') {
+        const trivial = msg.type === 'reaction' || msg.type === 'sticker' || /^(gracias|muchas gracias|ok|okey|okay|listo|perfecto|genial|de nada|bendiciones|👍|🙏|❤️|😊|🥰|🙌|ya)[\s.!]*$/i.test(String(said || '').trim());
+        if (!trivial) await addLabel(env, store.id, chat.id, 'ATENDER PENDIENTE');
+        return;
+      }
       await onInbound(env, ctx, store, chat.id, { id: msgId, type: msg.type, body: said, payload, fromAd: !!msg.referral });
     } catch (e) {
       console.error('bot', e);

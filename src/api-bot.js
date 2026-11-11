@@ -376,7 +376,7 @@ r.post('/stores/:id/avisos/read', async (c) => {
 
 /* ---------- Llamadas (franja arriba de los chats) ---------- */
 
-const CALL_LABELS = ['YAPE PENDIENTE', 'LIMA PENDIENTE'];
+const CALL_LABELS = ['YAPE PENDIENTE', 'LIMA PENDIENTE', 'ATENDER PENDIENTE'];
 
 r.get('/stores/:id/llamadas', async (c) => {
   const st = await storeFor(c, c.req.param('id'));
@@ -387,7 +387,7 @@ r.get('/stores/:id/llamadas', async (c) => {
        (SELECT u.name FROM calls x LEFT JOIN users u ON u.id = x.user_id WHERE x.chat_id = c.id AND x.created_at >= cl.created_at ORDER BY x.id DESC LIMIT 1) AS last_by,
        (SELECT COUNT(*) FROM calls WHERE chat_id = c.id AND created_at >= cl.created_at) AS tries
      FROM chats c JOIN chat_labels cl ON cl.chat_id = c.id JOIN labels l ON l.id = cl.label_id
-     WHERE c.store_id = ? AND c.sim = 0 AND l.name IN ('YAPE PENDIENTE', 'LIMA PENDIENTE') ORDER BY cl.created_at DESC LIMIT 300`
+     WHERE c.store_id = ? AND c.sim = 0 AND l.name IN ('YAPE PENDIENTE', 'LIMA PENDIENTE', 'ATENDER PENDIENTE') ORDER BY cl.created_at DESC LIMIT 300`
   ).bind(st.id).all();
   return c.json({ t: now(), calls: results });
 });
@@ -403,7 +403,7 @@ r.post('/chats/:id/llamada', async (c) => {
     .bind(store.id, chat.id, label, b.result, u.id, now()).run();
   if (b.result === 'cerro') {
     // Cerró: sale de la franja. Lima → ✅ LIMA · Yape → COMPRÓ
-    const names = label ? [label] : CALL_LABELS;
+    const names = label ? [label] : CALL_LABELS.slice(0, 2);
     await db.prepare(`DELETE FROM chat_labels WHERE chat_id = ? AND label_id IN (SELECT id FROM labels WHERE store_id = ? AND name IN (${inList(names.length)}))`)
       .bind(chat.id, store.id, ...names).run();
     if (!label || label === 'LIMA PENDIENTE') await addLabel(c.env, store.id, chat.id, '✅ LIMA');

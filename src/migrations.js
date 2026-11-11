@@ -688,6 +688,11 @@ export const MIGRATIONS = [
     name: 'pedido de Jordan (10 nov): el número de Porte (941, tienda 1) pasa a vender por Shopify',
     sql: [`UPDATE stores SET canal = 'shopify' WHERE id = 1 AND name = 'Porte' AND phone_number_id = '1438552302669955'`],
   },
+  {
+    id: 31,
+    name: 'etiqueta ATENDER PENDIENTE (preguntas en tiendas Shopify: la asesora llama, el bot no contesta)',
+    sql: [`INSERT OR IGNORE INTO labels (store_id, name, color, auto, sort, created_at) SELECT id, 'ATENDER PENDIENTE', '--t-orange', 0, 8, CAST(strftime('%s', 'now') AS INTEGER) * 1000 FROM stores`],
+  },
 ];
 
 let ready = null;
