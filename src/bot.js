@@ -248,6 +248,43 @@ export function esDistritoLima(x) {
   return DISTRITOS_LIMA.some((dname) => t.includes(` ${dname} `));
 }
 
+// 📌 Listo para agendar (pedido de Jordan): sube arriba de la lista hasta que alguien abre el chat.
+//  · Lima: nombre completo (nombre y apellido) + dirección + colores, y es de Lima
+//  · Provincia: nombre completo + DNI + mandó la captura del pago después del formulario
+// Cada captura nueva lo vuelve a subir. Con ✅ LIMA / ✅ PROVINCIA ya no.
+export async function marcarListo(env, chatId) {
+  const chat = await env.DB.prepare('SELECT id, store_id, bot_vars, listo_at, sim FROM chats WHERE id = ?').bind(chatId).first();
+  if (!chat) return null;
+  const labs = (await chatLabels(env, chat.id)).map((x) => x.toUpperCase());
+  if (labs.some((x) => /✅\s*(LIMA|PROVINCIA)/.test(x))) return null;
+  let v = {};
+  try {
+    v = JSON.parse(chat.bot_vars || '{}') || {};
+  } catch {}
+  const f = await env.DB.prepare("SELECT id, body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' ORDER BY id DESC LIMIT 1").bind(chat.id).first();
+  if (f?.body) for (const [k, x] of Object.entries(varsFromForm(f.body))) if (!v[k]) v[k] = x;
+  const completo = String(v.nombre || '').trim().split(/\s+/).filter((w) => w.length >= 2).length >= 2;
+  if (!completo) return null;
+  const form = String(f?.body || '');
+  const prov = /Monto restante|Sede:|Shalom:/i.test(form) || !!String(v.sede_shalom || '').trim();
+  let at = null;
+  if (prov) {
+    if (!String(v.dni || '').trim()) return null;
+    const cap = await env.DB.prepare("SELECT id, created_at FROM messages WHERE chat_id = ? AND direction = 'in' AND type IN ('image', 'document') AND id > ? ORDER BY id DESC LIMIT 1").bind(chat.id, f?.id || 0).first();
+    if (!cap) return null;
+    at = cap.created_at;
+  } else {
+    const lima = /Env[ií]o para:\s*Lima/i.test(form) || esDistritoLima(v.distrito) || esDistritoLima(v.destino);
+    if (!lima || !String(v.direccion || '').trim() || !String(v.colores || '').trim()) return null;
+    if (chat.listo_at) return null; // en Lima sube una sola vez
+    at = now();
+  }
+  if (chat.listo_at && chat.listo_at >= at) return null;
+  await env.DB.prepare('UPDATE chats SET listo_at = ?, updated_at = ? WHERE id = ?').bind(at, now(), chat.id).run();
+  await bump(env, chat.store_id);
+  return at;
+}
+
 export async function ponerPendiente(env, store, chat, vars, textos) {
   const want = pendienteDe(store, vars, textos);
   if (!want) return null;
@@ -551,6 +588,8 @@ async function orderFromBot(env, store, chatId, vars) {
   try {
     const o = await insertOrder(env, store, draft, { source: 'ia' });
     if (o) await onOrderCreated(env, store, o);
+    // 🟡 la IA lo dejó listo: arriba hasta que alguien lo abra
+    await env.DB.prepare('UPDATE chats SET listo_at = ?, updated_at = ? WHERE id = ?').bind(now(), now(), chat.id).run();
   } catch (e) {
     await notify(env, store.id, { kind: 'error', chatId: chat.id, title: 'La IA no pudo crear el pedido', body: e.message });
   }
@@ -1287,6 +1326,7 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   if (JSON.stringify(ag) !== (chat.bot_ag || '{}')) await env.DB.prepare('UPDATE chats SET bot_ag = ? WHERE id = ?').bind(JSON.stringify(ag), chat.id).run();
   // Está por agendar → LIMA PENDIENTE o YAPE PENDIENTE (solo si se mandó la respuesta)
   if (sendIt) await ponerPendiente(env, store, chat, vars, reply.mensajes.map((m) => m.texto || '').join('\n')).catch((e) => console.error('pendiente', e));
+  if (sendIt) await marcarListo(env, chat.id).catch((e) => console.error('listo', e));
   // Si no responde, la IA sigue sola una vez
   if (!cs && Number(settings.ia_follow_min) > 0 && (Number(settings.ia_follow_auto) !== 0 || String(settings.ia_follow_text || '').trim())) {
     await env.DB.prepare(

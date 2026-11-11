@@ -1965,6 +1965,14 @@ try {
     await hook(md({ contacts: [{ profile: { name: 'Ana Ruiz' }, wa_id: '51911111132' }], messages: [{ from: '51911111132', id: 'wamid.PG2', timestamp: ts(), type: 'image', image: { id: 'MEDIA_IMG1', mime_type: 'image/jpeg' } }] }));
     const p = await until(async () => (await call('GET', `/api/stores/${st.id}/pagos`)).pendientes.find((x) => x.chat_id === ch.id));
     assert.ok(p.captura?.id, JSON.stringify(p));
+    // 📌 Nombre completo + DNI + captura → arriba hasta que alguien abre el chat
+    let rowL = (await call('GET', `/api/stores/${st.id}/chats?q=911111132`)).chats[0];
+    assert.ok(rowL.listo_at > (rowL.pin_visto || 0), 'la captura con todos los datos lo sube');
+    await call('POST', `/api/chats/${ch.id}/read`);
+    rowL = (await call('GET', `/api/stores/${st.id}/chats?q=911111132`)).chats[0];
+    assert.ok(rowL.pin_visto >= rowL.listo_at, 'abrirlo lo baja');
+    const { marcarListo } = await import('../src/bot.js');
+    assert.equal(typeof marcarListo, 'function');
     assert.equal(p.esperado.adelanto, 30);
     assert.equal(p.esperado.total, 209);
     assert.equal(p.zona, 'provincia');

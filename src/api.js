@@ -812,7 +812,7 @@ async function attachLabels(db, chats) {
 }
 
 const CHAT_COLS = `id, store_id, wa_id, name, profile_name, handler, unread, last_msg_at, last_preview, last_dir, last_inbound_at,
-  ad_id, ad_headline, ad_source_url, referral_at, first_reply_at, notes, created_at, updated_at, bot_flow_id, bot_node, bot_wait, bot_paused, bot_vars,
+  ad_id, ad_headline, ad_source_url, referral_at, first_reply_at, notes, created_at, updated_at, bot_flow_id, bot_node, bot_wait, bot_paused, bot_vars, listo_at, pin_visto,
   (SELECT COUNT(*) FROM orders o WHERE o.chat_id = chats.id AND o.status IN ('nuevo', 'por_pagar')) AS por_confirmar,
   (SELECT sender FROM messages m WHERE m.chat_id = chats.id ORDER BY m.id DESC LIMIT 1) AS last_sender`;
 
@@ -859,10 +859,10 @@ api.get('/stores/:id/chats', async (c) => {
     const have = new Set(results.map((x) => x.id));
     const { results: pin } = await db.prepare(
       `SELECT ${CHAT_COLS} FROM chats WHERE store_id = ? AND sim = 0 AND COALESCE(last_msg_at, created_at) > ?
-         AND (id IN (SELECT cl.chat_id FROM chat_labels cl JOIN labels l ON l.id = cl.label_id WHERE l.store_id = ? AND l.name IN ('LIMA PENDIENTE', 'YAPE PENDIENTE'))
+         AND ((listo_at > COALESCE(pin_visto, 0) AND listo_at > ?)
            OR id IN (SELECT chat_id FROM orders WHERE store_id = ? AND chat_id IS NOT NULL AND status IN ('nuevo', 'por_pagar')))
        ORDER BY COALESCE(last_msg_at, created_at) DESC LIMIT 60`
-    ).bind(st.id, t - 7 * 864e5, st.id, st.id).all();
+    ).bind(st.id, t - 7 * 864e5, t - 3 * 864e5, st.id).all();
     for (const x of pin) if (!have.has(x.id)) results.push(x);
   }
   return c.json({ t, chats: await attachLabels(db, results), more });
@@ -902,6 +902,11 @@ api.patch('/chats/:id', async (c) => {
 // Marca como leído y avisa a WhatsApp (doble check azul para la clienta)
 api.post('/chats/:id/read', async (c) => {
   const { chat, store } = await chatFor(c, c.req.param('id'));
+  // Abrir el chat lo baja de «📌 Por agendar» a su lugar normal (en todos los equipos)
+  if (chat.listo_at && chat.listo_at > (chat.pin_visto || 0)) {
+    await c.env.DB.prepare('UPDATE chats SET pin_visto = ?, updated_at = ? WHERE id = ?').bind(now(), now(), chat.id).run();
+    if (!(chat.unread > 0)) await bump(c.env, store.id);
+  }
   if (chat.unread > 0) {
     await c.env.DB.prepare('UPDATE chats SET unread = 0, updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
     await bump(c.env, store.id);

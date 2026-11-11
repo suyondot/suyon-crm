@@ -678,6 +678,11 @@ export const MIGRATIONS = [
       `ALTER TABLE stores ADD COLUMN pagos_last_at INTEGER`,
     ],
   },
+  {
+    id: 29,
+    name: 'chats listos para agendar (arriba hasta que se abren)',
+    sql: [`ALTER TABLE chats ADD COLUMN listo_at INTEGER`, `ALTER TABLE chats ADD COLUMN pin_visto INTEGER`],
+  },
 ];
 
 let ready = null;

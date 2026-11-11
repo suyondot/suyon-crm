@@ -849,19 +849,22 @@ const matchChat = (c) =>
   S.tagf.every((t) => c.labels.includes(t)) &&
   (!S.q || (chatName(c) + ' ' + (c.profile_name || '') + ' ' + c.wa_id).toLowerCase().includes(S.q.toLowerCase()) || (S.q.replace(/\D/g, '').length >= 4 && c.wa_id.includes(S.q.replace(/\D/g, ''))));
 const sortKey = (c) => c.last_msg_at || c.created_at;
-// 📌 Por agendar (pedido de Jordan): LIMA PENDIENTE o YAPE PENDIENTE, de los últimos 3 días, y el equipo todavía no le escribe
-// después de su último mensaje → va arriba de todo. Apenas la asesora contesta, vuelve a su lugar normal.
+// 📌 Por agendar (pedido de Jordan, 10 nov): solo las que ya están listas — Lima con nombre completo, dirección y colores;
+// provincia con nombre completo, DNI y la captura del pago (o el pedido que dejó la IA). Van arriba hasta que alguien
+// ABRE el chat (aunque no conteste): ahí vuelven a su lugar. Una captura nueva las vuelve a subir.
 const porAgendar = (c) => {
-  if (c.por_confirmar > 0) return false; // ya está en 🟡 Terminar de agendar
-  if (Date.now() - sortKey(c) > 3 * 864e5) return false;
-  if (['ase', 'cel'].includes(c.last_sender || 'cli')) return false;
-  if (c.labels.some((id) => /✅\s*(LIMA|PROVINCIA)/i.test(labelById(id)?.name || ''))) return false;
-  return c.labels.some((id) => /^(LIMA|YAPE) PENDIENTE$/i.test(labelById(id)?.name || ''));
+  if (!c || !c.listo_at || c.listo_at <= (c.pin_visto || 0)) return false;
+  if (Date.now() - c.listo_at > 3 * 864e5) return false;
+  return !c.labels.some((id) => /✅\s*(LIMA|PROVINCIA)/i.test(labelById(id)?.name || ''));
 };
-// 🟡 Terminar de agendar = la IA ya creó el pedido (Lima dijo SÍ o provincia mandó la captura) y falta que el equipo lo confirme
-const terminar = (c) => c.por_confirmar > 0 && !c.labels.some((id) => /✅\s*(LIMA|PROVINCIA)/i.test(labelById(id)?.name || ''));
-// Orden: 🟡 Terminar de agendar → 📌 Por agendar → el resto por fecha
-const prio = (c) => (terminar(c) ? 2 : porAgendar(c) ? 1 : 0);
+// Abrir el chat lo baja de arriba (aquí y en los demás equipos)
+function bajarPin(c) {
+  if (!porAgendar(c)) return;
+  c.pin_visto = Date.now();
+  api('POST', `/chats/${c.id}/read`).catch(() => {});
+}
+// Orden: 📌 Por agendar → el resto por fecha
+const prio = (c) => (porAgendar(c) ? 1 : 0);
 function visibleChats() {
   return [...S.chats.values()].filter(matchChat).sort((a, b) => (prio(b) - prio(a)) || (sortKey(b) - sortKey(a)));
 }
@@ -930,7 +933,7 @@ function renderItems() {
       <span class="av" style="background:${avColor(x.id)}">${esc(initials(chatName(x)))}</span>
       <span style="min-width:0"><span class="nm">${esc(chatName(x))}</span>
         <span class="lm">${x.last_dir === 'out' ? 'Tú: ' : ''}${esc(x.last_preview || '')}</span>
-        ${labs.length || pc || pin || (x.bot_paused && x.last_dir !== 'out') ? `<span class="row">${pin ? '<span class="pinb">📌 Por agendar</span>' : ''}${pc ? '<span class="pcb">🟡 Terminar de agendar</span>' : ''}${x.bot_paused && x.last_dir !== 'out' ? '<span class="bpz">⏸️ Bot en pausa</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
+        ${labs.length || pc || pin || (x.bot_paused && x.last_dir !== 'out') ? `<span class="row">${pin && !pc ? '<span class="pinb">📌 Por agendar</span>' : ''}${pc ? '<span class="pcb">🟡 Terminar de agendar</span>' : ''}${x.bot_paused && x.last_dir !== 'out' ? '<span class="bpz">⏸️ Bot en pausa</span>' : ''}${labs.map(tagHTML).join('')}</span>` : ''}</span>
       <span class="meta"><span>${listTime(x.last_msg_at)}</span>${x.unread ? `<span class="unread">${x.unread}</span>` : ''}</span>
     </button>`;
   }).map((html, i) => ({ key: 'c' + list[i].id, sig: html, html }));
@@ -996,6 +999,10 @@ async function openChat(id, { push = true } = {}) {
   if (!ms.loaded) await loadMessages(id);
   else if (ms.stale) fetchNewMessages(id);
   const c = S.chats.get(id);
+  if (porAgendar(c)) {
+    bajarPin(c);
+    renderItems();
+  }
   if (c?.unread) {
     c.unread = 0;
     S.unread[S.storeId] = Math.max(0, (S.unread[S.storeId] || 1) - 1);
@@ -1787,6 +1794,7 @@ async function refreshStore(newUnread) {
   if (labsChanged || Date.now() - (S.callsAt || 0) > 60000) loadCalls();
   const fresh = mergeChats(r.chats);
   const open = S.chats.get(S.openId);
+  if (open && !document.hidden && porAgendar(open)) bajarPin(open);
   // Si el chat abierto recibió algo, se marca leído al toque
   if (open && open.unread && !document.hidden) {
     open.unread = 0;

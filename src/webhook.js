@@ -1,7 +1,7 @@
 // Webhook de Meta: mensajes entrantes, estados de entrega y ecos de la app del celular
 import { now, hmacSha256hex, safeEqual, clip } from './util.js';
 import { downloadMedia, friendlyMetaError } from './whatsapp.js';
-import { onInbound, notify, loadSettings } from './bot.js';
+import { onInbound, notify, loadSettings, marcarListo } from './bot.js';
 import { transcribe } from './voz.js';
 import { handleOrderReply } from './automations.js';
 
@@ -169,6 +169,8 @@ async function handleInbound(env, ctx, store, msg, profileName) {
       const payload = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || msg.button?.payload || null;
       // Respuesta a «¿Confirmas tu pedido?»: la maneja Pedidos, no el bot
       if (await handleOrderReply(env, store, chat, { type: msg.type, body: said, payload })) return;
+      // Captura del pago con todos sus datos → 📌 arriba (aunque el bot esté en pausa)
+      if (msg.type === 'image' || msg.type === 'document') await marcarListo(env, chat.id).catch((e) => console.error('listo', e));
       await onInbound(env, ctx, store, chat.id, { id: msgId, type: msg.type, body: said, payload, fromAd: !!msg.referral });
     } catch (e) {
       console.error('bot', e);
