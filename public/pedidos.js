@@ -426,8 +426,9 @@ export async function fichaPedidos(chatId, el, cached = false) {
   };
   if (cached) return;
   try {
-    const r = await H.api('GET', `/chats/${chatId}/pedidos`);
-    el.innerHTML = `<button class="btn primary" data-cbot="form" data-chat="${chatId}" style="width:100%;margin-bottom:8px">📋 Copiar formulario</button>${r.pedidos.length ? `<ul class="fped">${r.pedidos.slice(0, 5).map((o) => `<li><button data-fpo="${o.id}"><b class="mono">#${o.number}</b> ${pill(o.status)} <span class="note">${e(resumen(o))} · ${money(o.total)}</span></button></li>`).join('')}</ul>` : '<p class="note" style="margin:0 0 8px">Todavía no tiene pedidos.</p>'}
+    const [r, f] = await Promise.all([H.api('GET', `/chats/${chatId}/pedidos`), H.api('GET', `/chats/${chatId}/formulario`).catch(() => null)]);
+    const form = f?.texto ? `<pre class="formbox">${e(f.texto)}</pre>${f.falta?.length ? `<p class="note" style="margin:4px 0 0;color:var(--warn)">Falta: ${e(f.falta.join(', '))}</p>` : ''}` : '';
+    el.innerHTML = `${form}<button class="btn primary" data-cbot="form" data-chat="${chatId}" style="width:100%;margin:8px 0">📋 Copiar formulario</button>${r.pedidos.length ? `<ul class="fped">${r.pedidos.slice(0, 5).map((o) => `<li><button data-fpo="${o.id}"><b class="mono">#${o.number}</b> ${pill(o.status)} <span class="note">${e(resumen(o))} · ${money(o.total)}</span>${o.captura && o.status === 'por_pagar' ? '<span class="capb">📸 Mandó la captura · valídala en Pagos</span>' : ''}</button></li>`).join('')}</ul>` : '<p class="note" style="margin:0 0 8px">Todavía no tiene pedidos.</p>'}
       <button class="iconbtn" data-fpnew>+ Crear pedido</button>`;
   } catch (er) {
     el.innerHTML = `<span class="note">${e(er.message)}</span>`;
@@ -513,12 +514,26 @@ function drawConfig(body) {
       ${cp.last ? `<div class="${cp.last.ok ? 'okbox' : 'warnbox'}" style="margin-top:10px">${cp.last.ok ? `✓ Última compra avisada: ${e(cp.last.msg)} · ${e(H.listTime(cp.last.at))}` : `<b>No funcionó:</b> ${e(cp.last.msg)}`}</div>` : ''}
       ${cp.last && !cp.last.ok ? `<ol class="steps"><li>En Meta → Configuración del negocio → Usuarios del sistema → <b>suyon-crm</b> → Generar token nuevo.</li><li>Marca también el permiso <b class="mono">whatsapp_business_manage_events</b> (además de los que ya tiene).</li><li>Pon ese token nuevo en Cloudflare en el mismo secreto del número y vuelve a encender aquí.</li></ol>` : ''}
       <p class="note" style="margin:8px 0 0">Solo se avisa una vez por pedido. Los pedidos de clientas que escribieron directo (sin anuncio) no se mandan.</p></div>`;
+  const cv = CFG.conv || { cfg: {} };
+  const conv = `<form class="card" id="convf"><h3>Compra confirmada a Meta y TikTok</h3>
+      <p class="sub">Cuando un pedido queda <b>100% confirmado</b> (Lima: la clienta dijo «Sí» · provincia: validaste su adelanto en Pagos), se avisa a tus píxeles de la web. Así los anuncios aprenden con ventas reales y no con pedidos que después se caen. Una sola vez por pedido.</p>
+      <div class="fields3">
+        <div class="field"><label>ID del píxel de Meta</label><input name="meta_pixel" inputmode="numeric" value="${e(cv.cfg.meta_pixel || '')}" placeholder="Ej: 1234567890123456"></div>
+        <div class="field"><label>Nombre del evento en Meta</label><input name="meta_event" value="${e(cv.cfg.meta_event || '')}"></div>
+        <div class="field"><label>Código del píxel de TikTok</label><input name="tiktok_pixel" value="${e(cv.cfg.tiktok_pixel || '')}" placeholder="Ej: C1A2B3C4D5E6F7G8H9I0"></div>
+        <div class="field"><label>Nombre del evento en TikTok</label><input name="tiktok_event" value="${e(cv.cfg.tiktok_event || '')}"></div>
+      </div>
+      <div class="${cv.meta_token ? 'okbox' : 'warnbox'}" style="margin-top:8px">${cv.meta_token ? '✓ Token de Meta listo (secreto «META_PIXEL_TOKEN»).' : '<b>Falta el token de Meta.</b> Administrador de eventos → tu píxel → Configuración → «Generar token de acceso» (API de conversiones) → ponlo en Cloudflare como secreto <span class="mono">META_PIXEL_TOKEN</span>.'}</div>
+      <div class="${cv.tiktok_token ? 'okbox' : 'warnbox'}" style="margin-top:8px">${cv.tiktok_token ? '✓ Token de TikTok listo (secreto «TIKTOK_EVENTS_TOKEN»).' : '<b>Falta el token de TikTok.</b> TikTok Ads → Eventos → tu píxel → Configuración → «Generar token de acceso» (Events API) → ponlo en Cloudflare como secreto <span class="mono">TIKTOK_EVENTS_TOKEN</span>.'}</div>
+      ${cv.last ? `<div class="${cv.last.ok ? 'okbox' : 'warnbox'}" style="margin-top:8px">${cv.last.ok ? '✓ Último aviso: ' : '<b>Último aviso con problema:</b> '}${e(cv.last.msg)} · ${e(H.listTime(cv.last.at))}</div>` : ''}
+      <p class="note" style="margin:8px 0">Ojo: si tu web ya manda «Purchase» al confirmar la compra en Shopify, deja aquí un nombre propio (por defecto «CompraConfirmada») para no contar doble, y en Meta crea una conversión personalizada con ese evento.</p>
+      <div class="err" hidden></div><button class="send" style="height:auto">Guardar</button></form>`;
   body.innerHTML = shop
     ? `<div class="ph"><div><h2>Shopify</h2><p>Esta tienda vende por su web. Aquí conectas Shopify y eliges los mensajes de WhatsApp que salen solos con cada pedido.</p></div></div>
-      <div class="grid" style="gap:14px">${shopify}${mensajes}${capi}${precios}
+      <div class="grid" style="gap:14px">${shopify}${mensajes}${conv}${capi}${precios}
         <p class="note">¿Esta tienda vende por chat? Cámbiala a «Por mensajes de WhatsApp» en <button class="linkbtn" data-cfg="general">General</button>.</p></div>`
     : `<div class="ph"><div><h2>Pedidos</h2><p>Precios, envíos y los mensajes que salen solos según el estado del pedido.</p></div></div>
-      <div class="grid" style="gap:14px">${precios}${mensajes}${capi}
+      <div class="grid" style="gap:14px">${precios}${mensajes}${conv}${capi}
         <p class="note">¿Esta tienda vende por su web? Cámbiala a «Por Shopify» en <button class="linkbtn" data-cfg="general">General</button>.</p></div>`;
   const f = body.querySelector('#pcf');
   f.onsubmit = async (ev) => {
@@ -532,6 +547,19 @@ function drawConfig(body) {
       H.toast('Precios guardados');
     } catch (er) {
       const x = f.querySelector('.err');
+      x.textContent = er.message;
+      x.hidden = false;
+    }
+  };
+  const cvf = body.querySelector('#convf');
+  if (cvf) cvf.onsubmit = async (ev) => {
+    ev.preventDefault();
+    try {
+      CFG.conv = (await H.api('PATCH', `/stores/${H.S.storeId}/conversiones`, Object.fromEntries(new FormData(cvf)))).conv;
+      H.toast('Guardado');
+      drawConfig(body);
+    } catch (er) {
+      const x = cvf.querySelector('.err');
       x.textContent = er.message;
       x.hidden = false;
     }

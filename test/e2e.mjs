@@ -104,6 +104,16 @@ const meta = http.createServer(async (req, res) => {
     }
     return json(404, { error: 'ruta no existe' });
   }
+  if (p === '111222333444555/events') {
+    // Meta: API de conversiones del píxel de la web
+    const b = JSON.parse(raw.toString() || '{}');
+    if (b.access_token !== 'px-token') return json(400, { error: { message: 'token' } });
+    return json(200, { events_received: b.data?.length || 0 });
+  }
+  if (p === 'tiktok/event/track/') {
+    if (req.headers['access-token'] !== 'tt-token') return json(200, { code: 40001, message: 'token' });
+    return json(200, { code: 0, message: 'OK' });
+  }
   if (p === 'v1/audio/transcriptions') {
     // OpenAI falso: pasa la nota de voz a texto
     if (auth !== 'Bearer oa-test-key') return json(401, { error: { message: 'bad key' } });
@@ -202,6 +212,7 @@ const VARS = {
   WA_TOKEN: 'test-token', WA_VERIFY_TOKEN: 'verifica123', META_APP_SECRET: SECRET, SETUP_CODE: 'inicio-prueba', ANTHROPIC_API_KEY: 'ia-test-key', SHOPIFY_SECRET: 'shp-secret',
   OPENAI_API: `http://127.0.0.1:${META_PORT}`, OPENAI_API_KEY: 'oa-test-key', META_APP_ID: 'APP123', META_ES_CONFIG: 'CFG1',
   SHALOM_API_BASE: `http://127.0.0.1:${META_PORT}/shalom`, SHALOM_API_KEY: 'sh-test-key',
+  META_PIXEL_TOKEN: 'px-token', TIKTOK_EVENTS_TOKEN: 'tt-token', TIKTOK_API: `http://127.0.0.1:${META_PORT}/tiktok`,
 };
 const wd = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--persist-to', persist, ...Object.entries(VARS).flatMap(([k, v]) => ['--var', `${k}:${v}`]), '--show-interactive-dev-session=false'], { stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
 let log = '';
@@ -1237,9 +1248,23 @@ try {
   await step('la clienta toca «Sí, confirmo» y el pedido queda Confirmado', async () => {
     const o = (await call('GET', `/api/stores/${store.id}/pedidos?q=Luz`)).pedidos[0];
     assert.equal(o.status, 'nuevo');
+    // compra confirmada a los píxeles de Meta y TikTok (solo al quedar 100% confirmado)
+    const bad = await call('PATCH', `/api/stores/${store.id}/conversiones`, { meta_pixel: 'abc' });
+    assert.equal(bad.status, 400);
+    const cv = await call('PATCH', `/api/stores/${store.id}/conversiones`, { meta_pixel: '111222333444555', tiktok_pixel: 'CABC123DEF456GHI789' });
+    assert.equal(cv.conv.meta_token, true);
+    assert.equal(calls.filter((x) => x.path === '111222333444555/events').length, 0, 'al crear el pedido todavía no');
     await hook(md({ contacts: [{ profile: { name: 'Luz' }, wa_id: '51912345678' }], messages: [{ from: '51912345678', id: 'wamid.BTN1', timestamp: ts(), type: 'button', button: { text: 'Sí, confirmo', payload: 'Sí, confirmo' } }] }));
     const ok = await until(async () => { const x = (await call('GET', `/api/stores/${store.id}/pedidos?q=Luz`)).pedidos[0]; return x.status === 'confirmado' ? x : null; });
     assert.equal(ok.status, 'confirmado');
+    const pe = await until(() => calls.find((x) => x.path === '111222333444555/events'));
+    assert.equal(pe.body.data[0].event_name, 'CompraConfirmada');
+    assert.equal(pe.body.data[0].custom_data.value, 89);
+    assert.ok(/^[0-9a-f]{64}$/.test(pe.body.data[0].user_data.ph[0]));
+    const te = await until(() => calls.find((x) => x.path === 'tiktok/event/track/'));
+    assert.equal(te.body.event_source_id, 'CABC123DEF456GHI789');
+    assert.equal(te.body.data[0].properties.currency, 'PEN');
+    assert.ok((await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos-config`)).conv.last)).ok);
     // y con el botón del mensaje gratis (ord:edit) pasa a asesora
     await hook(md({ contacts: [{ profile: { name: 'Luz' }, wa_id: '51912345678' }], messages: [{ from: '51912345678', id: 'wamid.BTN2', timestamp: ts(), type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: `ord:edit:${ok.id}`, title: 'Cambiar algo' } } }] }));
     const c = await until(async () => { const x = await chatOf('51912345678'); return x?.bot_paused === 1 ? x : null; });

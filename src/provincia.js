@@ -140,6 +140,7 @@ export async function handleProvinciaStep(env, store, chat0, msg) {
   if (st.paso === 'pago' || st.paso === 'listo') {
     if (media) {
       // Sin respuesta automática: la captura cae en Pagos y el equipo la confirma
+      if (st.paso === 'pago') await addEvent(env, order.id, 'nota', 'Mandó la captura del adelanto: valídala en Pagos');
       await setPaso(env, chat.id, { ...st, paso: 'listo' });
       return true;
     }

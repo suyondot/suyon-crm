@@ -5,6 +5,7 @@ import { storeFor, chatFor, requireUser } from './auth.js';
 import {
   MODOS, ESTADOS, FLUJO, VENDIDO, PERDIDO, cfgOf, DEFAULT_CFG, cleanOrder, insertOrder, getOrder, shape, draftFromChat, formText, varsFromForm, storeColors, defaultEntrega, addEvent, orderText, firstStatus, pedidoAbierto,
 } from './orders.js';
+import { convOf, CONV_DEFAULT } from './conversiones.js';
 import { loadAutos, saveAuto, submitTemplate, syncTemplates, setOrderStatus, onOrderCreated, AUTO_VARS, prevFrom } from './automations.js';
 import { ensureDataset } from './capi.js';
 import { trackOrder } from './rastreo.js';
@@ -173,7 +174,8 @@ r.get('/chats/:id/formulario', async (c) => {
 
 r.get('/chats/:id/pedidos', async (c) => {
   const { chat } = await chatFor(c, c.req.param('id'));
-  const { results } = await c.env.DB.prepare('SELECT * FROM orders WHERE chat_id = ? ORDER BY id DESC LIMIT 30').bind(chat.id).all();
+  const { results } = await c.env.DB.prepare(`SELECT o.*, EXISTS (SELECT 1 FROM order_events e WHERE e.order_id = o.id AND e.detail LIKE 'Mandó la captura%') AS captura
+    FROM orders o WHERE o.chat_id = ? ORDER BY o.id DESC LIMIT 30`).bind(chat.id).all();
   return c.json({ pedidos: results.map(shape) });
 });
 
@@ -254,7 +256,37 @@ r.get('/stores/:id/pedidos-config', async (c) => {
     shopify: shopifyInfo(c, st), autos: await loadAutos(c.env, st.id), vars: AUTO_VARS,
     plantillas_ok: !!st.waba_id && st.status === 'activo',
     capi: capiInfo(st),
+    conv: convInfo(c, st),
   });
+});
+
+/* ---------- Compra confirmada a los píxeles de la web (Meta y TikTok) ---------- */
+function convInfo(c, st) {
+  let last = null;
+  try {
+    last = st.conv_last ? JSON.parse(st.conv_last) : null;
+  } catch {}
+  return { cfg: convOf(st), meta_token: !!c.env.META_PIXEL_TOKEN, tiktok_token: !!c.env.TIKTOK_EVENTS_TOKEN, last };
+}
+
+r.patch('/stores/:id/conversiones', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const b = await body(c);
+  const cfg = convOf(st);
+  if ('meta_pixel' in b) {
+    const v = String(b.meta_pixel || '').replace(/\s/g, '');
+    if (v && !/^\d{10,20}$/.test(v)) fail(400, 'El ID del píxel de Meta son solo números (15 o 16).');
+    cfg.meta_pixel = v;
+  }
+  if ('tiktok_pixel' in b) {
+    const v = String(b.tiktok_pixel || '').replace(/\s/g, '');
+    if (v && !/^[A-Za-z0-9]{10,40}$/.test(v)) fail(400, 'El código del píxel de TikTok son letras y números (unos 20).');
+    cfg.tiktok_pixel = v;
+  }
+  for (const k of ['meta_event', 'tiktok_event']) if (k in b) cfg[k] = clip(String(b[k] || '').replace(/[^\w]/g, ''), 40) || CONV_DEFAULT[k];
+  await c.env.DB.prepare('UPDATE stores SET conv = ?, rev = rev + 1 WHERE id = ?').bind(JSON.stringify(cfg), st.id).run();
+  const fresh = await c.env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(st.id).first();
+  return c.json({ conv: convInfo(c, fresh) });
 });
 
 /* ---------- Compra a Meta (CAPI) ---------- */

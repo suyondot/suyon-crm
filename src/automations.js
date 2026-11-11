@@ -3,6 +3,7 @@ import { now, clip, windowOpen, localDay } from './util.js';
 import { sendText, sendButtons, sendTemplate, createTemplate, templateStatus } from './whatsapp.js';
 import { notify, loadSettings, addLabel, cancelJobs } from './bot.js';
 import { sendPurchase } from './capi.js';
+import { sendConversion, CONFIRMADOS } from './conversiones.js';
 import { provinciaSiguiente } from './provincia.js';
 import { shape, itemsText, cfgOf, normPhone, addEvent, getOrder, ESTADOS, VENDIDO } from './orders.js';
 
@@ -181,6 +182,8 @@ const STATUS_AUTO = { confirmado: 'agendado', validado: 'agendado', en_ruta: 'en
 // Al crear un pedido (de Shopify sale el aviso para confirmar o pedir el adelanto)
 export async function onOrderCreated(env, store, order) {
   await sendPurchase(env, store, order);
+  // Pedido que nace ya confirmado (✅ LIMA / ✅ PROVINCIA o pago validado sin pedido previo)
+  if (CONFIRMADOS.includes(order.status)) await sendConversion(env, store, order).catch((e) => console.error('conv', e));
   if (order.checkout_token) await env.DB.prepare('UPDATE carts SET order_id = ? WHERE store_id = ? AND token = ?').bind(order.id, store.id, order.checkout_token).run();
   if (order.source !== 'shopify') return;
   if (order.modo !== 'agencia') return sendAuto(env, store, 'confirmar', { order });
@@ -194,6 +197,8 @@ export async function onOrderStatus(env, store, order, prev) {
   if (order.status === prev) return;
   const key = STATUS_AUTO[order.status];
   if (key) await sendAuto(env, store, key, { order });
+  // 100% confirmado (Lima dijo «Sí» / provincia con el adelanto validado) → compra confirmada a los píxeles
+  if (CONFIRMADOS.includes(order.status)) await sendConversion(env, store, order).catch((e) => console.error('conv', e));
   if (VENDIDO.includes(order.status)) {
     const a = (await loadAutos(env, store.id)).find((x) => x.key === 'recompra');
     const min = Number(a.delay_min) || cfgOf(store).recompra_dias * 1440;

@@ -698,6 +698,11 @@ export const MIGRATIONS = [
     name: 'plantilla anterior de cada aviso (se sigue usando mientras Meta revisa la nueva)',
     sql: ['ALTER TABLE automations ADD COLUMN tpl_prev TEXT'],
   },
+  {
+    id: 33,
+    name: 'compra confirmada a los píxeles de Meta y TikTok (una vez por pedido)',
+    sql: ['ALTER TABLE stores ADD COLUMN conv TEXT', 'ALTER TABLE stores ADD COLUMN conv_last TEXT', 'ALTER TABLE orders ADD COLUMN conv_at INTEGER'],
+  },
 ];
 
 let ready = null;
