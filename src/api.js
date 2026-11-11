@@ -10,6 +10,7 @@ import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
 import { quitarPendientes, removeLabel } from './bot.js';
 import { pedidoAlAgendar } from './agendar.js';
+import { retryAutoTemplate } from './automations.js';
 import pagosApi from './api-pagos.js';
 import gastoApi from './api-gasto.js';
 import reportesApi from './api-reportes.js';
@@ -1380,6 +1381,16 @@ api.post('/messages/:id/retry', async (c) => {
   if (!m) fail(404, 'Ese mensaje no existe.');
   const { chat, store } = await chatFor(c, m.chat_id);
   if (m.direction !== 'out' || m.status !== 'failed') fail(400, 'Solo se reintentan mensajes que fallaron.');
+  // Aviso automático que salió como plantilla: se vuelve a mandar la plantilla (sirve con la ventana cerrada)
+  if (/"template"/.test(m.extra || '')) {
+    try {
+      await retryAutoTemplate(c.env, store, chat, m);
+    } catch (e) {
+      await c.env.DB.prepare("UPDATE messages SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").bind(clip(e.message, 300), now(), m.id).run();
+    }
+    const row = await c.env.DB.prepare(`SELECT ${MSG_COLS} FROM messages m LEFT JOIN users u ON u.id = m.user_id WHERE m.id = ?`).bind(m.id).first();
+    return c.json({ message: shapeMsg(row) });
+  }
   checkCanSend(store, chat);
   await c.env.DB.prepare("UPDATE messages SET status = 'sending', error = NULL, updated_at = ? WHERE id = ?").bind(now(), m.id).run();
   return c.json({ message: await deliver(c.env, store, chat, m) });

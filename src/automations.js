@@ -142,6 +142,25 @@ export async function sendAuto(env, store, key, ctx) {
   return { ok: true, type };
 }
 
+// «Reintentar» un aviso que salió como plantilla y Meta rechazó (p. ej. problema de pago 131042): se vuelve a mandar
+// la MISMA plantilla aprobada con los datos actuales del pedido (con la ventana cerrada no se puede mandar como texto)
+export async function retryAutoTemplate(env, store, chat, m) {
+  let x = {};
+  try {
+    x = JSON.parse(m.extra || '{}') || {};
+  } catch {}
+  if (!x.template || !x.auto) return null;
+  const a = (await loadAutos(env, store.id)).find((y) => y.key === x.auto);
+  if (!a || a.tpl_status !== 'APPROVED' || !a.tpl_name) throw new Error('La plantilla de este aviso ya no está aprobada por Meta.');
+  const order = x.order ? await getOrder(env, x.order) : null;
+  const v = await varsFor(env, store, { order });
+  const wamid = await sendTemplate(env, store, chat.wa_id, a.tpl_name, 'es', (a.tpl_vars || []).map((k) => v[k] ?? ''));
+  await env.DB.prepare("UPDATE messages SET wamid = ?, status = 'sent', error = NULL, body = ?, extra = ?, updated_at = ? WHERE id = ?")
+    .bind(wamid || null, fill(a.text, v), JSON.stringify({ ...x, template: a.tpl_name }), now(), m.id).run();
+  if (order) await addEvent(env, order.id, 'mensaje', `Se volvió a mandar «${a.title}» (plantilla)`);
+  return true;
+}
+
 const STATUS_AUTO = { confirmado: 'agendado', validado: 'agendado', en_ruta: 'en_ruta', enviado: 'enviado', en_agencia: 'en_agencia', entregado: 'entregado', recogido: 'entregado' };
 
 // Al crear un pedido (de Shopify sale el aviso para confirmar o pedir el adelanto)

@@ -1211,6 +1211,15 @@ try {
     assert.equal(sent.body.template.name, created.body.name);
     assert.ok(sent.body.template.components[0].parameters.some((p) => p.text === 'Luz'), JSON.stringify(sent.body.template.components[0].parameters));
     assert.ok(sent.body.template.components[0].parameters.every((p) => String(p.text).trim()), 'sin variables vacías');
+    // Meta la rechaza por el pago (131042) → «Reintentar» vuelve a mandar la MISMA plantilla aunque la ventana esté cerrada
+    const lc = await until(async () => (await call('GET', `/api/stores/${store.id}/chats?q=Luz`)).chats?.[0]);
+    const tmsg = await until(async () => (await call('GET', `/api/chats/${lc.id}/messages?limit=20`)).messages.find((m) => m.extra?.template && m.wamid));
+    await hook(md({ statuses: [{ id: tmsg.wamid, status: 'failed', timestamp: ts(), recipient_id: '51912345678', errors: [{ code: 131042, title: 'Business eligibility payment issue' }] }] }));
+    await until(async () => (await call('GET', `/api/chats/${lc.id}/messages?limit=20`)).messages.find((m) => m.id === tmsg.id && m.status === 'failed'));
+    const nTpl = calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.type === 'template').length;
+    const rr = await call('POST', `/api/messages/${tmsg.id}/retry`);
+    assert.equal(rr.message.status, 'sent', JSON.stringify(rr));
+    assert.equal(calls.filter((x) => x.path === `${PHONE_ID}/messages` && x.body?.type === 'template').length, nTpl + 1, 'se volvió a mandar la plantilla');
   });
   await step('la clienta toca «Sí, confirmo» y el pedido queda Confirmado', async () => {
     const o = (await call('GET', `/api/stores/${store.id}/pedidos?q=Luz`)).pedidos[0];
