@@ -1390,6 +1390,13 @@ try {
     await shopHook('orders/create', { id: 5556, name: '#1006', total_price: '169.00', shipping_address: { first_name: 'Jesus', last_name: 'Espinoza', phone: '912457351', address1: 'Nuevo horizonte', city: 'Oyón', province: 'Lima' }, line_items: [{ title: 'Leggings Cargo', variant_title: 'M / Beige', quantity: 2 }] }, 'shp-secret', shopUrl);
     const oy = await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Jesus`)).pedidos[0]);
     assert.equal(oy.modo, 'agencia', 'Oyón es provincia');
+    // La clienta escribe (ventana abierta) y la asesora toca «Seguir: sede y adelanto» → el sistema pide el DNI (no hay)
+    await hook(md({ contacts: [{ profile: { name: 'Jesus' }, wa_id: '51912457351' }], messages: [{ from: '51912457351', id: 'wamid.OY1', timestamp: ts(), type: 'text', text: { body: 'No, quiero otro color' } }] }));
+    const jc = await until(async () => (await call('GET', `/api/stores/${store.id}/chats?q=Jesus`)).chats?.[0]);
+    const sg = await call('POST', `/api/chats/${jc.id}/provincia-seguir`);
+    assert.equal(sg.ok, true, JSON.stringify(sg));
+    assert.equal(sg.paso, 'dni');
+    assert.ok(await until(() => calls.some((x) => x.path === `${PHONE_ID}/messages` && x.body?.to === '51912457351' && /DNI/.test(x.body?.text?.body || ''))));
     await shopHook('orders/cancelled', { id: 5556, cancelled_at: new Date().toISOString() }, 'shp-secret', shopUrl);
     await until(async () => (await call('GET', `/api/pedidos/${oy.id}`)).pedido.status === 'cancelado');
     await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos?q=Eva`)).pedidos[0]?.status === 'cancelado');

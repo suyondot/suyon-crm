@@ -425,12 +425,27 @@ export async function fichaPedidos(chatId, el, cached = false) {
     const b = ev.target.closest('[data-fpo]');
     if (b) return openPedido({ id: Number(b.dataset.fpo), onSaved: again });
     if (ev.target.closest('[data-fpnew]')) openPedido({ chatId, onSaved: again });
+    const sg = ev.target.closest('[data-fpseguir]');
+    if (sg) {
+      if (!confirm('¿El pedido ya está corregido (talla y colores)?\n\nSe le manda a la clienta la lista de agencias Shalom y luego el adelanto con tu Yape.')) return;
+      sg.disabled = true;
+      H.api('POST', `/chats/${chatId}/provincia-seguir`)
+        .then((r) => {
+          H.toast(r.paso === 'pago' ? `Listo: se le pidió el adelanto (pedido #${r.pedido})` : r.paso === 'dni' ? 'Listo: se le pidió su DNI' : `Listo: se le mandó la lista de agencias (pedido #${r.pedido})`, 3500);
+          again();
+        })
+        .catch((er) => {
+          sg.disabled = false;
+          H.toast(er.message, 5000);
+        });
+    }
   };
   if (cached) return;
   try {
     const [r, f] = await Promise.all([H.api('GET', `/chats/${chatId}/pedidos`), H.api('GET', `/chats/${chatId}/formulario`).catch(() => null)]);
     const form = f?.texto ? `<pre class="formbox">${e(f.texto)}</pre>${f.falta?.length ? `<p class="note" style="margin:4px 0 0;color:var(--warn)">Falta: ${e(f.falta.join(', '))}</p>` : ''}` : '';
     el.innerHTML = `${form}<button class="btn primary" data-cbot="form" data-chat="${chatId}" style="width:100%;margin:8px 0">📋 Copiar formulario</button>${r.pedidos.length ? `<ul class="fped">${r.pedidos.slice(0, 5).map((o) => `<li><button data-fpo="${o.id}"><b class="mono">#${o.number}</b> ${pill(o.status)} <span class="note">${e(resumen(o))} · ${money(o.total)}</span>${o.captura && o.status === 'por_pagar' ? '<span class="capb">📸 Mandó la captura · valídala en Pagos</span>' : ''}${o.dijo_si && o.status === 'nuevo' ? '<span class="capb" style="color:var(--ok)">👍 Dijo Sí · ponle ✅ LIMA para agendar</span>' : ''}${o.source === 'shopify' ? '<span class="capb" style="color:#5E8E3E">🛍️ Lead de Shopify</span>' : ''}</button></li>`).join('')}</ul>` : '<p class="note" style="margin:0 0 8px">Todavía no tiene pedidos.</p>'}
+      ${r.pedidos.some((o) => o.modo === 'agencia' && ['nuevo', 'por_pagar'].includes(o.status) && !o.captura) ? '<button class="btn" data-fpseguir style="width:100%;margin:0 0 8px">📍 Seguir: pedir sede y adelanto</button>' : ''}
       <button class="iconbtn" data-fpnew>+ Crear pedido</button>`;
   } catch (er) {
     el.innerHTML = `<span class="note">${e(er.message)}</span>`;

@@ -1,6 +1,7 @@
 // API de Pedidos y de Configuración → Pedidos y Shopify
 import { Hono } from 'hono';
-import { now, fail, clip, localDay, tzOffset, randomToken } from './util.js';
+import { now, fail, clip, localDay, tzOffset, randomToken, windowOpen } from './util.js';
+import { provinciaSiguiente } from './provincia.js';
 import { storeFor, chatFor, requireUser } from './auth.js';
 import {
   MODOS, ESTADOS, FLUJO, VENDIDO, PERDIDO, cfgOf, DEFAULT_CFG, cleanOrder, insertOrder, getOrder, shape, draftFromChat, formText, varsFromForm, storeColors, defaultEntrega, addEvent, orderText, firstStatus, pedidoAbierto,
@@ -178,6 +179,31 @@ r.get('/chats/:id/pedidos', async (c) => {
     EXISTS (SELECT 1 FROM order_events e WHERE e.order_id = o.id AND e.detail LIKE 'La clienta confirmó por WhatsApp%') AS dijo_si
     FROM orders o WHERE o.chat_id = ? ORDER BY o.id DESC LIMIT 30`).bind(chat.id).all();
   return c.json({ pedidos: results.map(shape) });
+});
+
+// Provincia (Shopify): después de que la asesora corrigió el pedido, el sistema sigue solo:
+// pide DNI (si falta) → lista de agencias Shalom → adelanto con Yape. Pedido de agencia en curso de 7 días.
+r.post('/chats/:id/provincia-seguir', async (c) => {
+  const { chat, store } = await chatFor(c, c.req.param('id'));
+  const u = await requireUser(c);
+  if (!windowOpen(chat)) fail(409, 'Pasaron más de 24 h desde el último mensaje de la clienta: ya no se le puede escribir gratis. Escríbele con una plantilla.');
+  const o = await c.env.DB.prepare(
+    `SELECT * FROM orders WHERE chat_id = ? AND modo = 'agencia' AND status IN ('nuevo', 'por_pagar') AND created_at > ? ORDER BY id DESC LIMIT 1`
+  ).bind(chat.id, now() - 7 * 864e5).first();
+  if (!o) fail(404, 'Este chat no tiene un pedido de agencia (Shalom) pendiente.');
+  if (o.status !== 'por_pagar') await setOrderStatus(c.env, store, o, 'por_pagar', u.id, 'La asesora siguió con la sede y el adelanto');
+  // ya no está «por atender»: la asesora lo revisó
+  await c.env.DB.prepare(
+    `DELETE FROM chat_labels WHERE chat_id = ? AND label_id IN (SELECT id FROM labels WHERE store_id = ? AND name IN ('ATENDER PENDIENTE', 'ASESOR'))`
+  ).bind(chat.id, store.id).run();
+  await addEvent(c.env, o.id, 'nota', 'La asesora tocó «Seguir: sede y adelanto»', u.id);
+  await provinciaSiguiente(c.env, store, chat, o);
+  const v = await c.env.DB.prepare('SELECT bot_vars FROM chats WHERE id = ?').bind(chat.id).first();
+  let paso = null;
+  try {
+    paso = JSON.parse(v?.bot_vars || '{}').__shp?.paso || null;
+  } catch {}
+  return c.json({ ok: true, pedido: o.number, paso });
 });
 
 r.patch('/pedidos/:id', async (c) => {
