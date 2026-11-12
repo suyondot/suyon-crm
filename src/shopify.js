@@ -34,6 +34,11 @@ export function orderFromShopify(o, cfg) {
   const distrito = a.city || '';
   const provincia = a.province || '';
   const modo = modoFor({ ciudad: provincia, provincia, distrito }, cfg);
+  // DNI: en EasySell va en «Empresa» (company) o en el campo «Nota» renombrado «DNI / C.E» (llega como nota del pedido)
+  const notas = [o.note, ...(o.note_attributes || []).map((x) => `${x.name}: ${x.value}`)].filter(Boolean).join(' ');
+  const dniDe = (t) => (String(t || '').replace(/(\d)[\s.-]+(?=\d)/g, '$1').match(/(?<!\d)(\d{12}|\d{8})(?!\d)/) || [])[1] || '';
+  const dni = dniDe(a.company) || dniDe(notas);
+  const soloDni = dni && String(o.note || '').replace(/\D/g, '') === dni;
   const total = Number(o.current_total_price ?? o.total_price) || priceFor(items.reduce((s, i) => s + i.cantidad, 0), cfg);
   return {
     ext_id: String(o.id),
@@ -42,11 +47,11 @@ export function orderFromShopify(o, cfg) {
     modo,
     nombre,
     celular: normPhone(a.phone || o.phone || c.phone || o.billing_address?.phone) || clip(a.phone || o.phone || '', 20),
-    dni: clip(a.company || '', 12),
+    dni: dni || clip(a.company || '', 12),
     distrito: modo === 'lima' ? distrito : '',
     ciudad: modo === 'lima' ? '' : [distrito, provincia].filter(Boolean).join(', '),
     direccion: clip([a.address1, a.address2].filter(Boolean).join(' '), 200),
-    referencia: clip(o.note || '', 200),
+    referencia: soloDni ? '' : clip(o.note || '', 200),
     items,
     total,
     notas: o.note ? clip(`Nota de Shopify: ${o.note}`, 500) : null,
