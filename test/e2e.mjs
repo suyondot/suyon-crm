@@ -1251,7 +1251,8 @@ try {
     // compra confirmada a los píxeles de Meta y TikTok (solo al quedar 100% confirmado)
     const bad = await call('PATCH', `/api/stores/${store.id}/conversiones`, { meta_pixel: 'abc' });
     assert.equal(bad.status, 400);
-    const cv = await call('PATCH', `/api/stores/${store.id}/conversiones`, { meta_pixel: '111222333444555', tiktok_pixel: 'CABC123DEF456GHI789' });
+    const cv = await call('PATCH', `/api/stores/${store.id}/conversiones`, { meta_pixel: '111222333444555', tiktok_pixel: 'CABC123DEF456GHI789', tiktok_event: 'PlaceAnOrder', tiktok_map: 'cargo = CCARGO1234567890XYZ\nformal = CFORMAL123456789XYZ' });
+    assert.deepEqual(cv.conv.cfg.tiktok_map.map((m) => m.p), ['cargo', 'formal']);
     assert.equal(cv.conv.meta_token, true);
     assert.equal(calls.filter((x) => x.path === '111222333444555/events').length, 0, 'al crear el pedido todavía no');
     await hook(md({ contacts: [{ profile: { name: 'Luz' }, wa_id: '51912345678' }], messages: [{ from: '51912345678', id: 'wamid.BTN1', timestamp: ts(), type: 'button', button: { text: 'Sí, confirmo', payload: 'Sí, confirmo' } }] }));
@@ -1273,7 +1274,8 @@ try {
     assert.equal(pe.body.data[0].custom_data.value, 89);
     assert.ok(/^[0-9a-f]{64}$/.test(pe.body.data[0].user_data.ph[0]));
     const te = await until(() => calls.find((x) => x.path === 'tiktok/event/track/'));
-    assert.equal(te.body.event_source_id, 'CABC123DEF456GHI789');
+    assert.equal(te.body.event_source_id, 'CFORMAL123456789XYZ', 'el pantalón formal va a su píxel');
+    assert.equal(te.body.data[0].event, 'PlaceAnOrder');
     assert.equal(te.body.data[0].properties.currency, 'PEN');
     assert.ok((await until(async () => (await call('GET', `/api/stores/${store.id}/pedidos-config`)).conv.last)).ok);
     // y con el botón del mensaje gratis (ord:edit) pasa a asesora

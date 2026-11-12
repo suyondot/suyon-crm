@@ -518,17 +518,20 @@ function drawConfig(body) {
       <p class="note" style="margin:8px 0 0">Solo se avisa una vez por pedido. Los pedidos de clientas que escribieron directo (sin anuncio) no se mandan.</p></div>`;
   const cv = CFG.conv || { cfg: {} };
   const conv = `<form class="card" id="convf"><h3>Compra confirmada a Meta y TikTok</h3>
-      <p class="sub">Cuando un pedido queda <b>100% confirmado</b> (Lima: la clienta dijo «Sí» · provincia: validaste su adelanto en Pagos), se avisa a tus píxeles de la web. Así los anuncios aprenden con ventas reales y no con pedidos que después se caen. Una sola vez por pedido.</p>
+      <p class="sub">Cuando un pedido queda <b>agendado</b> (tu equipo le puso ✅ LIMA o ✅ PROVINCIA, o validaste su adelanto en Pagos), se avisa a tus píxeles de la web. Así los anuncios aprenden con ventas reales y no con pedidos que después se caen. Una sola vez por pedido.</p>
       <div class="fields3">
         <div class="field"><label>ID del píxel de Meta</label><input name="meta_pixel" inputmode="numeric" value="${e(cv.cfg.meta_pixel || '')}" placeholder="Ej: 1234567890123456"></div>
         <div class="field"><label>Nombre del evento en Meta</label><input name="meta_event" value="${e(cv.cfg.meta_event || '')}"></div>
         <div class="field"><label>Código del píxel de TikTok</label><input name="tiktok_pixel" value="${e(cv.cfg.tiktok_pixel || '')}" placeholder="Ej: C1A2B3C4D5E6F7G8H9I0"></div>
         <div class="field"><label>Nombre del evento en TikTok</label><input name="tiktok_event" value="${e(cv.cfg.tiktok_event || '')}"></div>
       </div>
+      <div class="field" style="margin-top:8px"><label>Píxel de TikTok por producto (opcional)</label>
+        <textarea name="tiktok_map" rows="3" placeholder="cargo = DBPBUC3C77U4J2JR6IMG&#10;formal = DBQAE5JC77UASCMHFGO0">${e((cv.cfg.tiktok_map || []).map((m) => `${m.p} = ${m.id}`).join('\n'))}</textarea>
+        <p class="note" style="margin:4px 0 0">Una línea por producto: una palabra del nombre del producto = código del píxel. Cada producto del pedido se avisa a su píxel con su parte del monto. Lo que no coincida va al píxel de arriba.</p></div>
       <div class="${cv.meta_token ? 'okbox' : 'warnbox'}" style="margin-top:8px">${cv.meta_token ? '✓ Token de Meta listo (secreto «META_PIXEL_TOKEN»).' : '<b>Falta el token de Meta.</b> Administrador de eventos → tu píxel → Configuración → «Generar token de acceso» (API de conversiones) → ponlo en Cloudflare como secreto <span class="mono">META_PIXEL_TOKEN</span>.'}</div>
       <div class="${cv.tiktok_token ? 'okbox' : 'warnbox'}" style="margin-top:8px">${cv.tiktok_token ? '✓ Token de TikTok listo (secreto «TIKTOK_EVENTS_TOKEN»).' : '<b>Falta el token de TikTok.</b> TikTok Ads → Eventos → tu píxel → Configuración → «Generar token de acceso» (Events API) → ponlo en Cloudflare como secreto <span class="mono">TIKTOK_EVENTS_TOKEN</span>.'}</div>
       ${cv.last ? `<div class="${cv.last.ok ? 'okbox' : 'warnbox'}" style="margin-top:8px">${cv.last.ok ? '✓ Último aviso: ' : '<b>Último aviso con problema:</b> '}${e(cv.last.msg)} · ${e(H.listTime(cv.last.at))}</div>` : ''}
-      <p class="note" style="margin:8px 0">Ojo: si tu web ya manda «Purchase» al confirmar la compra en Shopify, deja aquí un nombre propio (por defecto «CompraConfirmada») para no contar doble, y en Meta crea una conversión personalizada con ese evento.</p>
+      <p class="note" style="margin:8px 0">Ojo: tu web (EasySell) ya manda «Purchase» al hacer el pedido. Para TikTok usa un evento estándar que tu web no use, como <b>PlaceAnOrder</b> («Pedido realizado»): así TikTok te muestra costo por pedido, valor y ROAS de las ventas agendadas. Un nombre propio (ej. «CompraConfirmada») sale en reportes pero sin costo ni ROAS.</p>
       <div class="err" hidden></div><button class="send" style="height:auto">Guardar</button></form>`;
   body.innerHTML = shop
     ? `<div class="ph"><div><h2>Shopify</h2><p>Esta tienda vende por su web. Aquí conectas Shopify y eliges los mensajes de WhatsApp que salen solos con cada pedido.</p></div></div>

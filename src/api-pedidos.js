@@ -267,7 +267,7 @@ function convInfo(c, st) {
   try {
     last = st.conv_last ? JSON.parse(st.conv_last) : null;
   } catch {}
-  return { cfg: convOf(st), meta_token: !!c.env.META_PIXEL_TOKEN, tiktok_token: !!c.env.TIKTOK_EVENTS_TOKEN, last };
+  return { cfg: convOf(st), meta_token: !!c.env.META_PIXEL_TOKEN, tiktok_token: !!(c.env.TIKTOK_EVENTS_TOKEN || c.env.TIKTOK_EVENTS_TOKEN_2), last };
 }
 
 r.patch('/stores/:id/conversiones', async (c) => {
@@ -283,6 +283,12 @@ r.patch('/stores/:id/conversiones', async (c) => {
     const v = String(b.tiktok_pixel || '').replace(/\s/g, '');
     if (v && !/^[A-Za-z0-9]{10,40}$/.test(v)) fail(400, 'El código del píxel de TikTok son letras y números (unos 20).');
     cfg.tiktok_pixel = v;
+  }
+  if ('tiktok_map' in b) {
+    // «cargo = DBPBUC3C77U4J2JR6IMG» una línea por producto
+    const lines = Array.isArray(b.tiktok_map) ? b.tiktok_map : String(b.tiktok_map || '').split(/\n/);
+    cfg.tiktok_map = lines.map((l) => (typeof l === 'string' ? l.split(/[=:]/) : [l.p, l.id])).map(([p, id]) => ({ p: clip(String(p || '').trim(), 40), id: String(id || '').replace(/\s/g, '') })).filter((m) => m.p && m.id);
+    for (const m of cfg.tiktok_map) if (!/^[A-Za-z0-9]{10,40}$/.test(m.id)) fail(400, `El código del píxel para «${m.p}» no parece de TikTok (letras y números, unos 20).`);
   }
   for (const k of ['meta_event', 'tiktok_event']) if (k in b) cfg[k] = clip(String(b[k] || '').replace(/[^\w]/g, ''), 40) || CONV_DEFAULT[k];
   await c.env.DB.prepare('UPDATE stores SET conv = ?, rev = rev + 1 WHERE id = ?').bind(JSON.stringify(cfg), st.id).run();
