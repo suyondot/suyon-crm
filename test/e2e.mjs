@@ -52,6 +52,7 @@ const meta = http.createServer(async (req, res) => {
     if (/siempre raro/i.test(all)) return json(200, { content: [{ type: 'text', text: 'Claro amiga, te paso: {"mensajes": [roto' }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/rarito/i.test(txt)) return json(200, { content: [{ type: 'text', text: '¡Hola! Te cuento los precios 😊' }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/formshalom/i.test(txt)) return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: 'Revisa tus datos 👇\nShalom: 🚚📦\nMonto total: S/109\nAdelanto: S/30\nMonto restante: S/79' }], caso: null, datos: {} }) }], usage: { input_tokens: 10, output_tokens: 10 } });
+    if (/pidedatos/i.test(txt)) return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: 'Te lo enviamos GRATIS por Shalom 🚚' }, { texto: 'Separas con S/30 👇\nNombre y apellido:\nDNI:\nCelular:' }], caso: null, datos: {} }) }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/cuenta bcp/i.test(txt)) return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: 'Cuenta BCP: [FALTA BCP]' }], caso: null, datos: {} }) }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/juliaca|miraflores|ancón|ancon|terminal|libertad|trujillo/i.test(txt)) {
       const sede = /terminal/i.test(txt) ? { sede_shalom: 'Juliaca Terminal' } : {};
@@ -938,6 +939,20 @@ try {
     const pago = (await msgsOf(c.id)).filter((m) => /999 111 222/.test(m.body || ''));
     assert.equal(pago.length, 1);
     assert.match(pago[0].body, /Prueba Titular/);
+    // La IA pide los datos de Shalom sin el video de envíos: el sistema lo manda antes (una sola vez)
+    const fdv2 = new FormData();
+    fdv2.append('key', 'video-envios');
+    fdv2.append('file', new Blob([new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70])], { type: 'video/mp4' }), 'envios.mp4');
+    assert.equal((await call('POST', `/api/stores/${store.id}/bot/assets`, undefined, { form: fdv2 })).ok, true);
+    await inbound('51911111117', 'wamid.V6', 'pidedatos');
+    await until(async () => (await msgsOf(c.id)).some((m) => /DNI:/.test(m.body || '') && /Separas/.test(m.body || '')));
+    let ms = await msgsOf(c.id);
+    const iv = ms.findIndex((m) => m.direction === 'out' && m.type === 'video');
+    assert.ok(iv >= 0 && iv < ms.findIndex((m) => /Separas/.test(m.body || '')), 'el video va antes del pedido de datos');
+    await inbound('51911111117', 'wamid.V7', 'pidedatos otra vez');
+    await until(async () => (await msgsOf(c.id)).filter((m) => /Separas/.test(m.body || '')).length === 2);
+    ms = await msgsOf(c.id);
+    assert.equal(ms.filter((m) => m.direction === 'out' && m.type === 'video').length, 1, 'el video no se repite');
     // El primer mensaje ya trae la talla: no se le pregunta, pasa directo a sus colores
     await inbound('51911111118', 'wamid.W1', 'precio y colores en talla L', ad);
     const w = await until(async () => { const x = await chatOf('51911111118'); return x?.bot_node === 'colores' ? x : null; });

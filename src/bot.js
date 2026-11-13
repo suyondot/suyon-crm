@@ -1287,6 +1287,12 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   const sendIt = !cs || cs.send_reply !== false;
   if (sendIt) {
     const sentMedia = new Set(results.filter((m) => m.direction === 'out' && m.media_key).map((m) => m.media_key));
+    // Video de envíos garantizado: si la IA pide los datos de Shalom (DNI) y se olvidó del video, va antes de ese mensaje
+    const iDni = reply.mensajes.findIndex((m) => /\bDNI\s*:[ \t]*(\n|$)/im.test(String(m.texto || '')));
+    if (iDni >= 0 && !reply.mensajes.some((m) => m.archivo === 'video-envios')) {
+      const v = await assetFor(env, store.id, 'video-envios');
+      if (v && !sentMedia.has(v.r2_key)) reply.mensajes.splice(iDni, 0, { archivo: 'video-envios' });
+    }
     let first = true;
     for (const m of reply.mensajes) {
       if (!first) await sleep(900);

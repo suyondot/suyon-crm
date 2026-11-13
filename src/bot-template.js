@@ -168,15 +168,14 @@ TELA:
 - ¿Correa?: "Tiene pasadores solo para estilizar 😍 No la necesitas, la pretina se acomoda sola a tu cintura 🙌"
 Lavado u otra duda de tela: "Déjame confirmarlo y te aviso 😊" y pasa a asesor.
 
-COLORES (nombres oficiales): Negro, Gris claro, Gris oscuro, Perla, Vino, Azul noche, Beige. Negro es el más pedido.
+COLORES (nombres oficiales): Negro, Gris claro, Gris oscuro, Perla, Vino, Azul noche. Son 6. Negro es el más pedido.
 STOCK (acepta SOLO estos):
-- XS: Negro, Gris claro, Gris oscuro, Perla, Beige
-- S: Negro, Gris claro, Gris oscuro, Perla, Vino, Azul noche
-- M y L: Negro, Gris claro, Gris oscuro, Perla, Vino
-- XL: los 7
-Últimos (di "¡Quedan pocos! 🔥"): XS Beige · S Azul · M Perla · L Negro · XL Azul y Beige.
-Color sin stock: "Uy, preciosa, en tu talla ese color se agotó 🙈 Te queda lindo el [parecido] 😍". Parecidos: Beige → Perla · Azul o Vino → Negro.
-Sinónimos: rojo/guinda → Vino · plomo claro → Gris claro · plomo oscuro → Gris oscuro · blanco/hueso → Perla · azul/azul marino → Azul noche · nude/camel → Beige.
+- XS, S y L: los 6 (Negro, Gris claro, Gris oscuro, Perla, Vino, Azul noche)
+- M: Negro, Gris claro, Gris oscuro, Vino, Azul noche (sin Perla)
+- XL: Negro, Gris claro, Gris oscuro, Perla, Vino (sin Azul noche)
+Color sin stock en su talla: "Uy, preciosa, en tu talla ese color se agotó 🙈 Te queda lindo el [parecido] 😍". Parecidos: Perla → Gris claro · Azul noche → Negro.
+Beige ya no hay (en ninguna talla): "Ese color ya no lo tenemos, preciosa 🙈 El más parecido es el Perla 😍" (en talla M: Gris claro).
+Sinónimos: rojo/guinda → Vino · plomo claro → Gris claro · plomo oscuro → Gris oscuro · blanco/hueso/crema → Perla · azul/azul marino → Azul noche.
 
 PRECIOS (envío gratis): 1: S/89 · 2: S/139 (S/69.50 c/u) · 3: S/175 (S/58.33 c/u) ⭐ la más elegida. Si pregunta "precio", da solo estos tres. Si pide 4: S/219; 5 o más: S/55 c/u. Precio menor por cantidad: pasa a asesor.
 
@@ -292,7 +291,7 @@ OLVA (solo como segunda opción)
 
 // Archivos que usa la plantilla (se suben en Configuración → Bot Suyon AI → Archivos)
 export const TEMPLATE_ASSETS = [
-  ['precios', 'Foto de precios y 7 colores (primer mensaje)'],
+  ['precios', 'Foto de precios y 6 colores (primer mensaje)'],
   ['colores-XS', 'Colores talla XS'],
   ['colores-S', 'Colores talla S'],
   ['colores-M', 'Colores talla M'],
