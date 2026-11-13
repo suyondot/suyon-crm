@@ -621,7 +621,7 @@ r.post('/admin/copiar-bot', async (c) => {
   await db.prepare("UPDATE stores SET rubro = 'ropa', canal = 'mensajes', setup = 0, asistente = NULL, order_cfg = ?, rev = rev + 1 WHERE id = ?").bind(JSON.stringify(cfg), to).run();
   // 6) Etiquetas de talla que pone el bot
   const tallas = ['Talla XS', 'Talla S', 'Talla M', 'Talla L', 'Talla XL'];
-  await db.batch(tallas.map((n, i) => db.prepare("INSERT INTO labels (store_id, name, color, auto, sort, created_at) VALUES (?, ?, '#64748b', 1, ?, ?) ON CONFLICT (store_id, name) DO NOTHING").bind(to, n, 100 + i, t)));
+  await db.batch(tallas.map((n, i) => db.prepare("INSERT INTO labels (store_id, name, color, auto, sort, created_at) VALUES (?, ?, '--t-grey', 1, ?, ?) ON CONFLICT (store_id, name) DO NOTHING").bind(to, n, 100 + i, t)));
   return c.json({ ok: true, flujos: nuevos, archivos: copiados, rapidas, despues: await botResumen(c.env, to) });
 });
 
