@@ -2397,6 +2397,19 @@ try {
     assert.equal(nst.rubro, 'ropa');
     assert.equal(nst.setup, 1);
     assert.equal((await call('POST', `/api/companies/${st.company_id}/stores`, { name: 'Mal', rubro: 'zapatos' })).status, 400);
+    // Admin: pasar el bot de una tienda a otra (vestidos → pantalón formal)
+    const ver = await call('POST', '/api/admin/copiar-bot', { from: st.id, to: ns.store_id });
+    assert.ok(ver.from.flows.length >= 1 && ver.to.flows.length === 0, JSON.stringify(ver.to.flows));
+    const cpb = await call('POST', '/api/admin/copiar-bot', { from: st.id, to: ns.store_id, run: true, order_cfg: { producto: 'Pantalón formal', precios: { 1: 89 } } });
+    assert.equal(cpb.ok, true);
+    assert.equal(cpb.despues.flows.length, ver.from.flows.length);
+    assert.ok(cpb.despues.flows.every((f) => !f.active), 'los flujos quedan apagados');
+    assert.equal(cpb.despues.setup, 0);
+    assert.equal(cpb.despues.order_cfg.producto, 'Pantalón formal');
+    assert.equal(cpb.despues.ajustes.prompt_len, ver.from.ajustes.prompt_len, 'mismo prompt');
+    assert.deepEqual(cpb.archivos, ver.from.assets.map((a) => a.key));
+    assert.ok(cpb.despues.labels.some((l) => l.name === 'Talla M'));
+    assert.equal((await call('POST', '/api/admin/copiar-bot', { from: st.id, to: st.id })).status, 400);
     await call('DELETE', `/api/stores/${ns.store_id}`).catch(() => {});
   });
   await step('páginas para Meta', async () => {

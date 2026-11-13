@@ -527,4 +527,102 @@ r.post('/stores/:id/sim/next', async (c) => {
   return c.json(await simState(c.env, chat.id));
 });
 
+/* ---------- Admin: pasar el bot de una tienda a otra (reemplaza todo lo del destino) ---------- */
+// Pedido de Jordan (13 nov): el 912 deja los vestidos y toma el abordaje de pantalón formal del 941.
+// Sin «run»: solo muestra qué hay en cada tienda. Con «run»: borra flujos, archivos, asistente y respuestas
+// rápidas del destino y copia los de la fuente (flujos apagados). Chats y pedidos de las clientas no se tocan.
+async function botResumen(env, id) {
+  const db = env.DB;
+  const st = await db.prepare('SELECT id, name, canal, rubro, setup, order_cfg, asistente FROM stores WHERE id = ?').bind(id).first();
+  if (!st) fail(404, `La tienda ${id} no existe.`);
+  const [fl, as, lb, qr, bs] = await Promise.all([
+    db.prepare('SELECT id, name, active FROM bot_flows WHERE store_id = ? ORDER BY id').bind(id).all(),
+    db.prepare('SELECT key, mime, size FROM bot_assets WHERE store_id = ? ORDER BY key').bind(id).all(),
+    db.prepare('SELECT name, auto FROM labels WHERE store_id = ? ORDER BY sort, id').bind(id).all(),
+    db.prepare('SELECT atajo, substr(texto, 1, 80) AS texto FROM quick_replies WHERE store_id = ? ORDER BY sort, id').bind(id).all(),
+    db.prepare('SELECT bot_on, audience, ia_model, substr(ia_prompt, 1, 300) AS prompt, length(ia_prompt) AS prompt_len, length(ia_knowledge) AS know_len, pay_yape IS NOT NULL AND pay_yape <> \'\' AS tiene_yape FROM bot_settings WHERE store_id = ?').bind(id).first(),
+  ]);
+  let asis = null;
+  try {
+    const a = JSON.parse(st.asistente || 'null');
+    asis = a ? { producto: a.respuestas?.producto, marca: a.respuestas?.marca, flow_id: a.flow_id } : null;
+  } catch {}
+  return { id: st.id, name: st.name, canal: st.canal, rubro: st.rubro, setup: st.setup, order_cfg: JSON.parse(st.order_cfg || '{}'), asistente: asis, flows: fl.results, assets: as.results, labels: lb.results, rapidas: qr.results, ajustes: bs };
+}
+
+r.post('/admin/copiar-bot', async (c) => {
+  const u = await requireUser(c);
+  if (!u.is_admin) fail(403, 'Solo el administrador de Control Total puede hacer esto.');
+  const b = await body(c);
+  const from = Number(b.from);
+  const to = Number(b.to);
+  if (!from || !to || from === to) fail(400, 'Elige dos tiendas distintas.');
+  const antes = { from: await botResumen(c.env, from), to: await botResumen(c.env, to) };
+  if (!b.run) return c.json(antes);
+  const db = c.env.DB;
+  const t = now();
+  // 1) Borrar lo del destino (los archivos en R2 se quedan: los mensajes ya enviados los siguen mostrando)
+  const oldFlows = antes.to.flows.map((f) => f.id);
+  const del = [
+    db.prepare('UPDATE bot_jobs SET canceled_at = ? WHERE store_id = ? AND done_at IS NULL AND canceled_at IS NULL').bind(t, to),
+    db.prepare('UPDATE chats SET bot_flow_id = NULL, bot_node = NULL, bot_wait = 0, bot_ag = NULL WHERE store_id = ?').bind(to),
+    db.prepare('DELETE FROM bot_assets WHERE store_id = ?').bind(to),
+    db.prepare('DELETE FROM bot_flows WHERE store_id = ?').bind(to),
+  ];
+  if (oldFlows.length) del.push(db.prepare(`DELETE FROM bot_counts WHERE flow_id IN (${inList(oldFlows.length)})`).bind(...oldFlows));
+  if (b.rapidas) del.push(db.prepare('DELETE FROM quick_replies WHERE store_id = ?').bind(to));
+  await db.batch(del);
+  // 2) Ajustes de la IA (prompt, conocimiento, pagos, entregas); se respeta si el bot del destino estaba prendido
+  const src = await db.prepare('SELECT * FROM bot_settings WHERE store_id = ?').bind(from).first();
+  if (src) {
+    const cols = Object.keys(src).filter((k) => !['store_id', 'bot_on', 'audience', 'test_numbers'].includes(k));
+    const has = await db.prepare('SELECT store_id FROM bot_settings WHERE store_id = ?').bind(to).first();
+    if (has) await db.prepare(`UPDATE bot_settings SET ${cols.map((k) => `${k} = ?`).join(', ')} WHERE store_id = ?`).bind(...cols.map((k) => (k === 'updated_at' ? t : src[k])), to).run();
+    else await db.prepare(`INSERT INTO bot_settings (store_id, ${cols.join(', ')}) VALUES (?, ${inList(cols.length)})`).bind(to, ...cols.map((k) => (k === 'updated_at' ? t : src[k]))).run();
+  }
+  // 3) Flujos (apagados) y archivos (copia propia en R2)
+  const { results: flows } = await db.prepare('SELECT name, graph FROM bot_flows WHERE store_id = ? ORDER BY id').bind(from).all();
+  const nuevos = [];
+  for (const f of flows) {
+    const res = await db.prepare('INSERT INTO bot_flows (store_id, name, active, graph, created_at, updated_at) VALUES (?, ?, 0, ?, ?, ?)').bind(to, f.name, f.graph, t, t).run();
+    nuevos.push({ id: res.meta.last_row_id, name: f.name });
+  }
+  const { results: assets } = await db.prepare('SELECT * FROM bot_assets WHERE store_id = ? ORDER BY key').bind(from).all();
+  const copiados = [];
+  for (const a of assets) {
+    const obj = await c.env.MEDIA.get(a.r2_key);
+    if (!obj) continue;
+    const r2 = `s${to}/bot/${a.key}-${t}`;
+    await c.env.MEDIA.put(r2, await obj.arrayBuffer(), { httpMetadata: { contentType: a.mime } });
+    await db.prepare('INSERT INTO bot_assets (store_id, key, name, mime, size, r2_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(to, a.key, a.name, a.mime, a.size, r2, t).run();
+    copiados.push(a.key);
+  }
+  // 4) Respuestas rápidas de la fuente (si se pidió)
+  let rapidas = 0;
+  if (b.rapidas) {
+    const { results } = await db.prepare('SELECT * FROM quick_replies WHERE store_id = ? ORDER BY sort, id').bind(from).all();
+    for (const x of results) {
+      const ins = await db.prepare('INSERT INTO quick_replies (store_id, atajo, texto, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').bind(to, x.atajo, x.texto, x.sort, t, t).run();
+      const id = ins.meta.last_row_id;
+      const media = [];
+      for (const m of JSON.parse(x.media || '[]')) {
+        const obj = await c.env.MEDIA.get(m.key);
+        if (!obj) continue;
+        const key = `qr/s${to}/q${id}/${m.id}`;
+        await c.env.MEDIA.put(key, await obj.arrayBuffer(), { httpMetadata: { contentType: m.mime } });
+        media.push({ ...m, key });
+      }
+      await db.prepare('UPDATE quick_replies SET media = ? WHERE id = ?').bind(JSON.stringify(media), id).run();
+      rapidas++;
+    }
+  }
+  // 5) La tienda: ropa, por mensajes, sin asistente; pedidos con los precios que se manden (o los de la fuente)
+  const cfg = b.order_cfg && typeof b.order_cfg === 'object' ? b.order_cfg : antes.from.order_cfg;
+  await db.prepare("UPDATE stores SET rubro = 'ropa', canal = 'mensajes', setup = 0, asistente = NULL, order_cfg = ?, rev = rev + 1 WHERE id = ?").bind(JSON.stringify(cfg), to).run();
+  // 6) Etiquetas de talla que pone el bot
+  const tallas = ['Talla XS', 'Talla S', 'Talla M', 'Talla L', 'Talla XL'];
+  await db.batch(tallas.map((n, i) => db.prepare("INSERT INTO labels (store_id, name, color, auto, sort, created_at) VALUES (?, ?, '#64748b', 1, ?, ?) ON CONFLICT (store_id, name) DO NOTHING").bind(to, n, 100 + i, t)));
+  return c.json({ ok: true, flujos: nuevos, archivos: copiados, rapidas, despues: await botResumen(c.env, to) });
+});
+
 export default r;
