@@ -1116,6 +1116,12 @@ try {
     assert.match(fm.texto, /➡️ Nombre:/);
     assert.match(fm.texto, /Monto total:/);
     const { varsFromForm, colorQty, itemsFromVars, formText } = await import('../src/orders.js');
+    // El formulario dice el producto de cada prenda, no el producto fijo de la tienda (941: cargo + pantalón formal)
+    const ft = formText({ modo: 'lima', nombre: 'Ana', total: 278, items: [{ producto: 'Pantalón Formal Stretch', talla: 'M', color: 'Negro', cantidad: 2 }, { producto: 'Leggings Cargo', talla: 'S', color: 'Beige', cantidad: 1 }] }, { producto: 'Leggings Cargo' });
+    assert.match(ft, /Pedido: Pantalón Formal Stretch ✨\n\n✅ Cantidad: 2\n✅ Talla: M\n✅ Color: 2 Negro/);
+    assert.match(ft, /Pedido: Leggings Cargo ✨\n\n✅ Cantidad: 1/);
+    assert.match(formText({ modo: 'lima', total: 89, items: [{ producto: 'Pantalón formal', talla: 'S', color: 'Vino', cantidad: 1 }] }, { producto: 'Leggings Cargo' }), /Pedido: Pantalón formal ✨/);
+    assert.equal(itemsFromVars(varsFromForm('Pedido: Pantalón formal ✨\n✅ Cantidad: 1\n✅ Talla: M\n✅ Color: Vino'), { producto: 'Leggings Cargo' })[0].producto, 'Pantalón formal');
     const vf = varsFromForm('Shalom: 🚚📦\n\n➡️ Nombre: Ana Ruiz\n➡️ DNI: 45678912\n➡️ CEL: 912345678\n➡️ Sede: [sede elegida]\n\nPedido: Vestido ✨\n✅ Cantidad: 3\n✅ Talla: M\n✅ Color: 2 Vino, Celeste bebé');
     assert.equal(vf.dni, '45678912');
     assert.equal(vf.colores, '2 Vino, Celeste bebé');

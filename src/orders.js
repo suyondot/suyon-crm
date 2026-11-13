@@ -184,6 +184,8 @@ export function colorQty(text, own = []) {
 export function itemsFromVars(v, cfg, own = []) {
   const talla = tallaOf(v.talla) || clip(v.talla || '', 20);
   const cols = colorQty(v.colores, own);
+  // El producto que dice el formulario («Pedido: Pantalón formal») manda sobre el producto fijo de la tienda
+  cfg = { ...cfg, producto: clip(String(v.producto || '').trim(), 80) || cfg.producto };
   let qty = parseInt(String(v.cantidad || '').replace(/\D/g, ''), 10);
   const sum = cols.reduce((a, c) => a + c.n, 0);
   if (!qty || qty > 100) qty = sum || 1;
@@ -327,6 +329,7 @@ export function varsFromForm(text) {
     return m ? m[1].replace(/\*/g, '').trim() : '';
   };
   const map = {
+    producto: /pedido\s*:\s*([^\n]+)/i,
     colores: /colou?r(?:es)?\s*:\s*([^\n]+)/i,
     talla: /talla\s*:\s*([^\n]+)/i,
     cantidad: /cantidad\s*:\s*([^\n]+)/i,
@@ -340,16 +343,31 @@ export function varsFromForm(text) {
     const v = get(re);
     if (v && !/^\[.*\]$/.test(v)) out[k] = v.slice(0, 200);
   }
+  // «Pedido: Leggins Cargo ✨» → solo el nombre (sin emojis); si no queda texto, no cuenta
+  if (out.producto) out.producto = out.producto.replace(/[^\p{L}\p{N} .\-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!out.producto) delete out.producto;
   return out;
 }
 
 // Formulario de la clienta para copiar y pegar (mismo formato que manda la IA)
+// El producto sale de cada prenda del pedido (una tienda puede vender varios: cargo + pantalón formal);
+// si el pedido trae dos productos, va un bloque «Pedido:» por producto
 export function formText(d, cfg) {
-  const prod = cfg.producto || 'Producto';
-  const cant = units(d.items);
-  const tallas = [...new Set(d.items.map((i) => i.talla).filter(Boolean))].join(', ');
-  const cols = d.items.map((i) => (i.cantidad > 1 ? `${i.cantidad} ${i.color}` : i.color)).filter((x) => String(x).trim()).join(', ');
-  const pedido = [`Pedido: ${prod} ✨`, '', `✅ Cantidad: ${cant}`, tallas ? `✅ Talla: ${tallas}` : null, cols ? `✅ Color: ${cols}` : null].filter((x) => x !== null).join('\n');
+  const def = cfg.producto || 'Producto';
+  const grupos = new Map();
+  for (const it of d.items || []) {
+    const p = String(it.producto || '').trim() || def;
+    const k = sinTilde(p);
+    if (!grupos.has(k)) grupos.set(k, { prod: p, items: [] });
+    grupos.get(k).items.push(it);
+  }
+  if (!grupos.size) grupos.set('', { prod: def, items: [] });
+  const bloque = ({ prod, items }) => {
+    const tallas = [...new Set(items.map((i) => i.talla).filter(Boolean))].join(', ');
+    const cols = items.map((i) => (i.cantidad > 1 ? `${i.cantidad} ${i.color}` : i.color)).filter((x) => String(x).trim()).join(', ');
+    return [`Pedido: ${prod} ✨`, '', `✅ Cantidad: ${units(items)}`, tallas ? `✅ Talla: ${tallas}` : null, cols ? `✅ Color: ${cols}` : null].filter((x) => x !== null).join('\n');
+  };
+  const pedido = [...grupos.values()].map(bloque).join('\n\n');
   if (d.modo === 'agencia') {
     const adel = Number(d.adelanto) || 0;
     return ['Shalom: 🚚📦', '', `➡️ Nombre: ${d.nombre || ''}`, `➡️ DNI: ${d.dni || ''}`, `➡️ CEL: ${String(d.celular || '').replace(/^51(?=9\d{8}$)/, '')}`, `➡️ Sede: ${d.sede || ''}`, '', pedido, '',
