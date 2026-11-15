@@ -866,8 +866,21 @@ function bajarPin(c) {
   c.pin_visto = Date.now();
   api('POST', `/chats/${c.id}/read`).catch(() => {});
 }
-// Orden: 📌 Por agendar → el resto por fecha
-const prio = (c) => (porAgendar(c) ? 1 : 0);
+// 🙋 Te necesita (15 nov): el bot pasó el chat a la asesora (o está en pausa) y nadie del equipo respondió todavía.
+// Va arriba de todo hasta que alguien del equipo escriba. Antes estos chats se perdían en la lista (3 sin respuesta el 13 nov).
+const teNecesita = (c) => {
+  if (!c || !c.bot_paused || store()?.canal === 'shopify') return false;
+  if (['ase', 'cel'].includes(c.last_sender)) return false;
+  if (Date.now() - (c.last_msg_at || c.created_at) > 3 * 864e5) return false;
+  if (porAgendar(c) || c.por_confirmar > 0) return false; // esas ya tienen su marca (📌 / 🟡)
+  return !c.labels.some((id) => /✅\s*(LIMA|PROVINCIA)/i.test(labelById(id)?.name || ''));
+};
+const hace = (t) => {
+  const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+  return m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`;
+};
+// Orden: 🙋 Te necesita → 📌 Por agendar → el resto por fecha
+const prio = (c) => (teNecesita(c) ? 2 : porAgendar(c) ? 1 : 0);
 function visibleChats() {
   return [...S.chats.values()].filter(matchChat).sort((a, b) => (prio(b) - prio(a)) || (sortKey(b) - sortKey(a)));
 }
@@ -934,18 +947,20 @@ function renderItems() {
     const done = all.some((l) => /✅\s*(LIMA|PROVINCIA)/i.test(l.name));
     const pc = x.por_confirmar > 0 && !done;
     const pin = porAgendar(x);
+    const need = teNecesita(x);
     // Lead de Shopify (pedido de la web): etiqueta amarilla fija + bolsita a la derecha. Agendado = solo con ✅ LIMA / ✅ PROVINCIA
     const shop = !!x.shop_lead;
     const si = !!x.dijo_si && !done;
     const chips = [
+      need ? `<span class="needb">🙋 Te necesita · ${hace(x.last_inbound_at || x.last_msg_at || x.created_at)}</span>` : '',
       shop ? `<span class="shopb">${SHOP_ICON} LEAD SHOPIFY</span>` : '',
       pin && !pc ? '<span class="pinb">📌 Por agendar</span>' : '',
       pc && !shop ? '<span class="pcb">🟡 Terminar de agendar</span>' : '',
       si ? '<span class="sib">👍 Dijo Sí · falta agendar</span>' : '',
-      x.bot_paused && x.last_dir !== 'out' && store()?.canal !== 'shopify' ? '<span class="bpz">⏸️ Bot en pausa</span>' : '',
+      !need && x.bot_paused && x.last_dir !== 'out' && store()?.canal !== 'shopify' ? '<span class="bpz">⏸️ Bot en pausa</span>' : '',
       ...labs.map(tagHTML),
     ].filter(Boolean).join('');
-    return `<button class="item${pc ? ' pc' : ''}${done ? ' done' : ''}${pin ? ' pin' : ''}" data-open="${x.id}" aria-current="${x.id === S.openId}">${pc ? '<i class="pcdot" aria-hidden="true"></i>' : ''}
+    return `<button class="item${pc ? ' pc' : ''}${done ? ' done' : ''}${pin ? ' pin' : ''}${need ? ' need' : ''}" data-open="${x.id}" aria-current="${x.id === S.openId}">${pc ? '<i class="pcdot" aria-hidden="true"></i>' : ''}
       <span class="av" style="background:${avColor(x.id)}">${esc(initials(chatName(x)))}</span>
       <span style="min-width:0"><span class="nm">${esc(chatName(x))}</span>
         <span class="lm">${x.last_dir === 'out' ? 'Tú: ' : ''}${esc(x.last_preview || '')}</span>

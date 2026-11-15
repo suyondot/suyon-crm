@@ -864,9 +864,10 @@ api.get('/stores/:id/chats', async (c) => {
     const { results: pin } = await db.prepare(
       `SELECT ${CHAT_COLS} FROM chats WHERE store_id = ? AND sim = 0 AND COALESCE(last_msg_at, created_at) > ?
          AND ((listo_at > COALESCE(pin_visto, 0) AND listo_at > ?)
+           OR (bot_paused = 1 AND COALESCE(last_msg_at, created_at) > ?)
            OR id IN (SELECT chat_id FROM orders WHERE store_id = ? AND chat_id IS NOT NULL AND status IN ('nuevo', 'por_pagar')))
        ORDER BY COALESCE(last_msg_at, created_at) DESC LIMIT 60`
-    ).bind(st.id, t - 7 * 864e5, t - 3 * 864e5, st.id).all();
+    ).bind(st.id, t - 7 * 864e5, t - 3 * 864e5, t - 3 * 864e5, st.id).all();
     for (const x of pin) if (!have.has(x.id)) results.push(x);
   }
   return c.json({ t, chats: await attachLabels(db, results), more });
@@ -966,8 +967,12 @@ api.put('/chats/:id/datos', async (c) => {
     const key = String(k).trim().toLowerCase().replace(/\s+/g, '_');
     if (!/^[\wáéíóúñ]{1,30}$/.test(key)) fail(400, `El nombre «${k}» no vale: usa letras, números y _.`);
     const val = clip(String(v ?? '').trim(), 200);
-    if (val) out[key] = val;
+    if (val && !key.startsWith('__')) out[key] = val;
   }
+  // Las llaves internas del bot («__…») no se ven en la ficha: se conservan al guardar
+  try {
+    for (const [k, v] of Object.entries(JSON.parse(chat.bot_vars || '{}') || {})) if (k.startsWith('__')) out[k] = v;
+  } catch {}
   await c.env.DB.prepare('UPDATE chats SET bot_vars = ?, updated_at = ? WHERE id = ?').bind(JSON.stringify(out), now(), chat.id).run();
   await bump(c.env, store.id);
   return c.json({ ok: true, datos: out });

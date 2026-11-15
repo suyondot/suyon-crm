@@ -64,6 +64,24 @@ export function fitWindow(t, fromH, toH, tz = DEFAULT_TZ) {
 }
 
 // Seguimiento de la IA según el paso en que se quedó la clienta (antes era siempre «¿Te quedó alguna duda?»)
+// «No gracias», «no deseo», «fuera de mi presupuesto»…: la clienta dijo que no.
+// Se usa para no seguir mandándole seguimientos (en el 912 una clienta recibió «¿Qué talla usas?» 3 veces después de decir que no).
+const RECHAZO = [
+  /\bno,? (gracias|grax|grs|muchas gracias)\b/,
+  /\bno (deseo|quiero|me interesa|estoy interesad|necesito|voy a comprar|lo voy a comprar|lo quiero)\b/,
+  /\b(ya )?no (gracias|deseo|me interesa)\b/,
+  /\b(fuera de|no me alcanza|no entra en) (mi |el )?presupuesto\b/,
+  /\bno tengo (presupuesto|dinero|plata)\b/,
+  /\b(por ahora|x ahora|de momento) no\b|\bno,? por ahora\b|\ben otra (ocasion|oportunidad)\b/,
+  /\b(deje|dejen|deja) de (escribir|mandar|enviar)\b|\bno me (escriban|escribas|manden|envien)\b/,
+];
+export function esRechazo(text) {
+  const t = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!t || t.length > 90) return false; // mensajes largos casi siempre traen otra cosa (dudas, pedido)
+  if (/\b(talla|color|colores|quiero (llevar|comprar|pedir)|separa|cuanto|precio|envio|delivery)\b/.test(t) && !/presupuesto/.test(t)) return false;
+  return RECHAZO.some((re) => re.test(t));
+}
+
 export function followText(settings, vars, { ropa = true, captura = false } = {}) {
   const fixed = String(settings.ia_follow_text || '').trim();
   if (Number(settings.ia_follow_auto) === 0) return fixed;
@@ -672,6 +690,23 @@ export async function onInbound(env, ctx, store, chatId, msg, { sim = false } = 
   let chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
   if (!chat || (!sim && !audienceOk(settings, chat.wa_id))) return;
   const text = msg.body || (msg.type === 'audio' ? '[nota de voz]' : msg.type === 'image' ? '[foto]' : '');
+  // Dijo que no: se cancelan TODOS sus seguimientos y no se programan más (la IA igual le responde una vez, amable).
+  // Si después vuelve a escribir otra cosa, se le atiende normal.
+  {
+    let bv = {};
+    try {
+      bv = JSON.parse(chat.bot_vars || '{}') || {};
+    } catch {}
+    const no = esRechazo(String(msg.transcript || text));
+    if (no || (bv.__no && msg.type !== 'reaction')) {
+      if (no) {
+        bv.__no = now();
+        await cancelJobs(env, chat.id);
+      } else delete bv.__no;
+      chat = { ...chat, bot_vars: JSON.stringify(bv) };
+      await env.DB.prepare('UPDATE chats SET bot_vars = ? WHERE id = ?').bind(chat.bot_vars, chat.id).run();
+    }
+  }
   // Volvió por un anuncio nuevo: el bot la atiende otra vez, aunque estuviera en pausa o el flujo hubiera terminado
   // (en Botcake solo se atendía a «nuevos suscriptores» y estas clientas se quedaban sin respuesta)
   if (msg.fromAd && !sim && (await volvioPorAnuncio(env, ctx, store, chat, msg, text))) return;
@@ -845,6 +880,7 @@ async function imageB64(env, img) {
 }
 
 // Si la IA está saturada o falla la red, se reintenta 2 veces antes de rendirse (antes salía «Estamos validando» al toque)
+const TRANSITORIO = [0, 429, 500, 502, 503, 504, 529];
 async function fetchRetry(url, opts) {
   let last;
   for (let i = 0; i < 3; i++) {
@@ -883,7 +919,7 @@ async function callModel(env, settings, system, hist) {
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({ model, max_tokens: 2500, system, messages }),
     }));
-    if (!res.ok) throw new Error(`La IA respondió con error: ${data?.error?.message || res.status}`);
+    if (!res.ok) throw Object.assign(new Error(`La IA respondió con error: ${data?.error?.message || res.status}`), { transient: TRANSITORIO.includes(res.status) });
     return { text: (data.content || []).filter((c) => c.type === 'text').map((c) => c.text).join(''), inTok: data.usage?.input_tokens || 0, outTok: data.usage?.output_tokens || 0, model };
   }
   const messages = [{ role: 'system', content: system }, ...hist.map((h) => ({
@@ -897,7 +933,7 @@ async function callModel(env, settings, system, hist) {
     headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
     body: JSON.stringify({ model, messages, response_format: { type: 'json_object' }, max_completion_tokens: 4000 }),
   }));
-  if (!res.ok) throw new Error(`La IA respondió con error: ${data?.error?.message || res.status}`);
+  if (!res.ok) throw Object.assign(new Error(`La IA respondió con error: ${data?.error?.message || res.status}`), { transient: TRANSITORIO.includes(res.status) });
   return { text: data.choices?.[0]?.message?.content || '', inTok: data.usage?.prompt_tokens || 0, outTok: data.usage?.completion_tokens || 0, model };
 }
 
@@ -1164,6 +1200,7 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
 - Si pregunta qué talla le queda, pídele su talla de jean (o su peso y estatura) y recomiéndale una. No le muestres colores hasta saber su talla.
 - Nunca digas «déjame confirmar», «te aviso en un momento» ni algo parecido: responde con lo que sabes. Si no tienes una sede en la lista, pregúntale su distrito o la ciudad más cercana.
 - No digas «de nada» si no te agradeció.
+- Si dice que no le interesa, «no gracias» o que no le alcanza: no insistas ni le vuelvas a preguntar la talla. Si fue por el precio, ofrécele en 1 línea llevar solo 1 unidad (y, si es de Lima, que paga al recibir); si no, despídete amable en 1 mensaje corto y deja la puerta abierta.${vars.__no ? '\n- ESTA CLIENTA ACABA DE DECIR QUE NO: responde solo con lo de arriba (un mensaje corto), sin preguntas de venta.' : ''}
 - Si pregunta cómo pagar o a qué número yapear: en Lima con cobertura paga al recibir; para Shalom/provincia dale el adelanto con los datos de pago${settings.pay_yape ? ` (Yape / Plin: ${settings.pay_yape}${settings.pay_titular ? `, a nombre de ${settings.pay_titular}` : ''})` : ''}, aunque todavía no le hayas mandado el formulario. NUNCA digas que no tienes la información de pago ni que contacte a otra persona.`;
   if (vars.__volvio) {
     system += `\n\n## VOLVIÓ DESDE UN ANUNCIO NUEVO\nEsta clienta ya había conversado antes y volvió a escribir desde un anuncio. Salúdala con cariño como alguien que regresa (sin presentarte de nuevo), recuérdale en 1 línea lo que ya había elegido y retoma el paso pendiente con UNA pregunta. No le repitas precios ni fotos que ya vio.`;
@@ -1223,9 +1260,19 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
     try {
       out = await callModel(env, settings, system, h);
     } catch (e) {
+      // IA saturada (503/529…) o sin red: la clienta no recibe «Estamos validando» todavía; se vuelve a intentar en 2 min (hasta 2 veces).
+      // Así le pasó a una clienta del 912 el 13 nov: preguntó su talla por peso/estatura, la IA dio 503 y quedó en pausa sin respuesta.
+      if (e.transient && !chat.sim && (Number(vars.__iaRetry) || 0) < 2) {
+        vars.__iaRetry = (Number(vars.__iaRetry) || 0) + 1;
+        await saveState(env, chat.id, { bot_flow_id: flow.id, bot_node: node.id, bot_wait: 2, bot_vars: vars, handler: 'bot' });
+        await env.DB.prepare(`INSERT INTO bot_jobs (store_id, chat_id, flow_id, kind, node_id, cancel_on, run_at, created_at) VALUES (?, ?, ?, 'ia_again', ?, 'none', ?, ?)`)
+          .bind(store.id, chat.id, flow.id, node.id, now() + 2 * MIN, now()).run();
+        return { aborted: true };
+      }
       await alertFor(env, store, chat, { kind: 'ia', title: e.noKey ? 'Falta la clave de la IA' : 'La IA no pudo responder', body: e.message, dedupe: !!e.noKey });
       return { ok: false };
     }
+    delete vars.__iaRetry; // respondió: se reinician los reintentos
     const price = IA_MODELS[out.model];
     const cost = (out.inTok * price.in + out.outTok * price.out) / 1e6;
     await env.DB.prepare(
@@ -1340,7 +1387,7 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   if (sendIt) await ponerPendiente(env, store, chat, vars, reply.mensajes.map((m) => m.texto || '').join('\n')).catch((e) => console.error('pendiente', e));
   if (sendIt) await marcarListo(env, chat.id).catch((e) => console.error('listo', e));
   // Si no responde, la IA sigue sola una vez
-  if (!cs && Number(settings.ia_follow_min) > 0 && (Number(settings.ia_follow_auto) !== 0 || String(settings.ia_follow_text || '').trim())) {
+  if (!cs && !vars.__no && Number(settings.ia_follow_min) > 0 && (Number(settings.ia_follow_auto) !== 0 || String(settings.ia_follow_text || '').trim())) {
     await env.DB.prepare(
       `INSERT INTO bot_jobs (store_id, chat_id, flow_id, kind, node_id, cancel_on, run_at, created_at) VALUES (?, ?, ?, 'ia_follow', ?, 'reply', ?, ?)`
     ).bind(store.id, chat.id, flow.id, node.id, fitWindow(now() + Number(settings.ia_follow_min) * MIN, 8, 22, store.timezone), now()).run(); // nunca de madrugada
@@ -1404,6 +1451,7 @@ export async function runJob(env, j) {
   const flow = await loadFlow(env, j.flow_id);
   if (!flow || (!flow.active && !sim)) return;
   const vars = JSON.parse(chat.bot_vars || '{}');
+  if (vars.__no && (j.kind === 'seq' || j.kind === 'ia_follow')) return; // dijo que no: no se le insiste
   if (j.kind === 'seq') {
     const seq = (flow.graph.sequences || []).find((s) => s.id === j.seq_id);
     const st = seq?.steps?.[j.step];

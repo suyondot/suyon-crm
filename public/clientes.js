@@ -26,7 +26,8 @@ const MAIN_KEYS = ['talla', 'colores', 'cantidad', 'destino', 'distrito', 'nombr
 const KEY_NAMES = { talla: 'Talla', colores: 'Colores', cantidad: 'Cantidad', destino: 'Destino', distrito: 'Distrito', nombre: 'Nombre (pedido)', celular: 'Celular (pedido)', dni: 'DNI', direccion: 'Dirección', sede_shalom: 'Sede Shalom' };
 const vars = (c) => {
   try {
-    return JSON.parse(c.bot_vars || '{}') || {};
+    // Las llaves que empiezan con «__» son internas del bot (pasos, «dijo que no»…): no se muestran
+    return Object.fromEntries(Object.entries(JSON.parse(c.bot_vars || '{}') || {}).filter(([k]) => !k.startsWith('__')));
   } catch {
     return {};
   }

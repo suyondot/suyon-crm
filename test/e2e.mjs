@@ -658,6 +658,10 @@ try {
     assert.match(followText(fx, { destino: 'Piura', nombre: 'Ana', dni: '12345678', sede_shalom: 'X' }), /adelanto/);
     assert.equal(followText({ ...fx, ia_follow_auto: 0 }, {}), fx.ia_follow_text);
     assert.equal(followText(fx, {}, { ropa: false }), fx.ia_follow_text);
+    // «Dijo que no»: se deja de insistir (casos reales del 912)
+    const { esRechazo } = await import('../src/bot.js');
+    for (const t of ['No gracias', 'No deseo', 'Está fuera de mi presupuesto Gracias.', 'no me interesa', 'Por ahora no', 'ya no gracias', 'No, gracias 🙏']) assert.ok(esRechazo(t), t);
+    for (const t of ['no sé mi talla', 'No es strech?', 'no tengo wsp en el otro cel, quiero 2 en talla M', 'No', '32', 'Precio', 'no me queda claro el precio', 'No gracias, quiero solo 1 en talla M']) assert.ok(!esRechazo(t), t);
     const t = Date.UTC(2026, 10, 3, 4, 0); // 11 p. m. en Lima
     assert.equal(new Date(fitWindow(t, 8, 22) - 5 * 3600e3).getUTCHours(), 8);
     assert.equal(fitWindow(t, 8, 22), Date.UTC(2026, 10, 3, 13, 0), 'Lima: 8 a. m. = 13:00 UTC');
@@ -811,12 +815,36 @@ try {
     await inbound('51911111113', 'wamid.D1', 'hola', { referral: { source_id: '1', source_type: 'ad', ctwa_clid: 'z' } });
     await until(async () => (await chatOf('51911111113'))?.bot_node === 'talla');
     await inbound('51911111113', 'wamid.D2', 'no sé, falla');
+    // IA saturada (500): primero NO pasa a asesora, reintenta en 2 min (hasta 2 veces)
+    await until(async () => { const c = await chatOf('51911111113'); return JSON.parse(c?.bot_vars || '{}').__iaRetry === 1 ? c : null; });
+    assert.equal((await chatOf('51911111113')).bot_paused, 0, 'todavía no pasa a asesora');
+    assert.ok(!(await msgsOf((await chatOf('51911111113')).id)).some((m) => /Estamos validando/.test(m.body || '')));
+    await call('POST', '/__test/jobs?shift=' + 3 * 60e3);
+    await until(async () => JSON.parse((await chatOf('51911111113'))?.bot_vars || '{}').__iaRetry === 2);
+    await call('POST', '/__test/jobs?shift=' + 3 * 60e3);
     const c = await until(async () => { const c = await chatOf('51911111113'); return c?.bot_paused === 1 ? c : null; });
     assert.ok((await msgsOf(c.id)).some((m) => /Estamos validando/.test(m.body || '')));
     const av = await call('GET', `/api/stores/${store.id}/avisos`);
     assert.ok(av.events.some((e) => e.kind === 'ia'));
     await call('POST', `/api/stores/${store.id}/avisos/read`, {});
     assert.ok((await call('GET', `/api/stores/${store.id}/avisos`)).events.every((e) => e.read_at));
+  });
+  await step('dijo que no: la IA responde una vez y no se le mandan más seguimientos', async () => {
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { test_numbers: '911111111, 911111112, 911111113, 911111129' });
+    await inbound('51911111129', 'wamid.NO1', 'hola', { referral: { source_id: '1', source_type: 'ad', ctwa_clid: 'no' } });
+    await until(async () => (await chatOf('51911111129'))?.bot_node === 'talla');
+    await inbound('51911111129', 'wamid.NO2', 'No gracias');
+    const c = await until(async () => { const c = await chatOf('51911111129'); return JSON.parse(c?.bot_vars || '{}').__no ? c : null; });
+    await until(async () => (await msgsOf(c.id)).filter((m) => m.direction === 'out').length >= 1);
+    await wait(1500);
+    const antes = (await msgsOf(c.id)).filter((m) => m.direction === 'out').length;
+    await call('POST', '/__test/jobs?shift=' + 20 * 3600e3);
+    await wait(800);
+    const despues = (await msgsOf(c.id)).filter((m) => m.direction === 'out').length;
+    assert.equal(despues, antes, 'no se mandan seguimientos a quien dijo que no');
+    // Si vuelve a escribir otra cosa, se le atiende normal
+    await inbound('51911111129', 'wamid.NO3', 'bueno, qué colores hay en M?');
+    await until(async () => !JSON.parse((await chatOf('51911111129'))?.bot_vars || '{}').__no);
   });
   await step('IA responde raro: reintenta y nunca manda texto suelto', async () => {
     await call('PATCH', `/api/stores/${store.id}/bot/settings`, { test_numbers: '911111111, 911111112, 911111113, 911111114, 911111115' });
@@ -1051,7 +1079,7 @@ try {
     const av = await call('GET', `/api/stores/${store.id}/avisos`);
     assert.ok(!av.events.some((e) => !e.read_at && /colores-M|datos de pago/.test(e.title)), 'los avisos del simulador no van a Avisos');
     const f = await call('GET', `/api/bot/flows/${flowId}`);
-    assert.equal(f.stats.precios.sent, 10, 'los números por bloque no cuentan el simulador');
+    assert.equal(f.stats.precios.sent, 11, 'los números por bloque no cuentan el simulador');
     assert.equal((await call('POST', `/api/stores/${store.id}/sim/send`, { text: '' })).status, 400);
     await call('PATCH', `/api/stores/${store.id}/bot/settings`, { bot_on: true });
   });

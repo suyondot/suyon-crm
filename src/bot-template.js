@@ -254,7 +254,10 @@ Solo agencia Shalom y agencia Olva.
 Sí, tenemos garantía de cambio de talla. Si pregunta cómo funciona el cambio, transfiéralo a una asesora.
 
 ¿Venden por mayor?
-Sí, desde 12 unidades a S/55 cada una. A mayor cantidad podemos mejorar el precio; Para negociar, transfiere a una asesora.
+Sí, desde 5 pantalones a S/55 cada uno (5 = S/275, 6 = S/330, 10 = S/550, 12 = S/660), con envío gratis. Con por mayor NO pases a asesora: sigue el mismo cierre (cuántos de cada talla y color, destino, datos y formulario con el total). Solo pasa a asesora si pide un precio menor a S/55 c/u.
+
+¿Tienen RUC? ¿Son empresa formal?
+Sí, somos empresa 100% formal 😊 (no des el número de RUC). Sigue con el paso que toca.
 
 ¿Es confiable? ¿No es estafa?
 Enviamos pedidos todos los días a todo el Perú y tenemos comunidad en TikTok y Facebook como Porte Perú, donde mostramos nuestros pedidos. Envía el video de pedidos para darle confianza.
