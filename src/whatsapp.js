@@ -18,6 +18,9 @@ const META_ERRORS = {
   131045: 'El número no está registrado en la API.',
   131021: 'No puedes enviarte mensajes a ti mismo.',
   133010: 'El número no está registrado en la API de WhatsApp.',
+  133005: 'El PIN no coincide con el de verificación en dos pasos de este número.',
+  133015: 'Meta pide esperar unos minutos antes de volver a activar este número.',
+  133016: 'Se intentó activar este número demasiadas veces. Meta deja 10 intentos cada 72 horas: espera y vuelve a probar.',
   368: 'Meta bloqueó temporalmente este número por sus políticas.',
   190: 'El token de WhatsApp venció o no es válido. Hay que poner uno nuevo en Cloudflare (WA_TOKEN).',
   10: 'El token no tiene permiso sobre este número.',
@@ -161,6 +164,19 @@ export async function findWaba(env, store) {
 
 // Activa el número en la API oficial (paso final después de verificarlo por SMS en Meta).
 // El PIN de 6 dígitos queda como "verificación en dos pasos" del número.
+// Nombre visible del número: el actual, el nuevo que Meta revisó y la calidad.
+// Cada campo por separado (si Meta no reconoce uno, no rompe los demás).
+export async function nameInfo(env, store) {
+  const out = {};
+  for (const f of ['verified_name', 'name_status', 'new_name_status', 'new_display_name', 'quality_rating', 'display_phone_number']) {
+    try {
+      const r = await graph(env, store, `${store.phone_number_id}?fields=${f}`);
+      if (r[f] !== undefined) out[f] = r[f];
+    } catch {}
+  }
+  return out;
+}
+
 export async function registerNumber(env, store, pin) {
   return graph(env, store, `${store.phone_number_id}/register`, { method: 'POST', json: { messaging_product: 'whatsapp', pin } });
 }

@@ -5,7 +5,7 @@ import {
   ROLES, DEFAULT_LABELS, LABEL_COLORS, RUBROS, insertStore, HttpError, windowOpen, GENERAL, localDay,
 } from './util.js';
 import { createSession, destroySession, currentUser, requireUser, checkPassword, loadAccess, storeFor, companyFor, chatFor } from './auth.js';
-import { sendText, uploadMedia, sendMediaById, listTemplates, sendTemplateFull, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, kindForMime, SEND_RULES, getProfile, setProfile, setProfilePhoto, VERTICALS } from './whatsapp.js';
+import { sendText, uploadMedia, sendMediaById, listTemplates, sendTemplateFull, markRead, getPhoneInfo, subscribeApp, findWaba, tokenInfo, probeFields, registerNumber, nameInfo, kindForMime, SEND_RULES, getProfile, setProfile, setProfilePhoto, VERTICALS } from './whatsapp.js';
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
 import { quitarPendientes, removeLabel } from './bot.js';
@@ -624,6 +624,52 @@ api.post('/stores/:id/register', async (c) => {
   await registerNumber(c.env, st, pin);
   await bump(c.env, st.id);
   return c.json({ ok: true });
+});
+
+/* ---------------- Nombre visible ---------------- */
+// Meta aprueba el nombre nuevo pero no lo activa solo: hay que volver a registrar el número con su PIN de 6 números.
+const NOMBRE_ESTADO = {
+  APPROVED: 'Aprobado', AVAILABLE_WITHOUT_REVIEW: 'Aprobado', DECLINED: 'Rechazado', EXPIRED: 'Vencido', PENDING_REVIEW: 'En revisión',
+  NON_EXISTS: 'Sin nombre nuevo', NONE: 'Sin nombre nuevo',
+};
+const CALIDAD = { GREEN: 'Alta', YELLOW: 'Media', RED: 'Baja', UNKNOWN: 'Sin datos' };
+
+api.get('/stores/:id/nombre', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  if (!st.phone_number_id || st.status !== 'activo') return c.json({ ok: false, motivo: 'Primero conecta el número.' });
+  const n = await nameInfo(c.env, st);
+  const nuevoOk = ['APPROVED', 'AVAILABLE_WITHOUT_REVIEW'].includes(n.new_name_status);
+  // Activar solo tiene sentido si hay un nombre nuevo aprobado distinto al que ya se ve
+  const activar = nuevoOk && !!n.new_display_name && n.new_display_name !== n.verified_name;
+  return c.json({
+    ok: true,
+    actual: n.verified_name || st.verified_name || null,
+    estado: NOMBRE_ESTADO[n.name_status] || n.name_status || null,
+    estado_raw: n.name_status || null,
+    nuevo: n.new_display_name || null,
+    nuevo_estado: NOMBRE_ESTADO[n.new_name_status] || n.new_name_status || null,
+    activar,
+    rechazado: n.name_status === 'DECLINED' || n.new_name_status === 'DECLINED',
+    calidad: CALIDAD[n.quality_rating] || n.quality_rating || null,
+    calidad_raw: n.quality_rating || null,
+    waba_id: st.waba_id || null,
+  });
+});
+
+api.post('/stores/:id/nombre/activar', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  if (!st.phone_number_id || st.status !== 'activo') fail(409, 'Primero conecta el número.');
+  const pin = String((await body(c)).pin || '').replace(/\D/g, '');
+  if (!/^\d{6}$/.test(pin)) fail(400, 'El PIN debe tener 6 números (el de verificación en dos pasos de este número).');
+  // El PIN no se guarda: solo se usa para esta activación
+  await registerNumber(c.env, st, pin);
+  let nombre = st.verified_name;
+  try {
+    const info = await getPhoneInfo(c.env, st);
+    nombre = info.verified_name || nombre;
+    await c.env.DB.prepare('UPDATE stores SET verified_name = ?, rev = rev + 1 WHERE id = ?').bind(nombre || null, st.id).run();
+  } catch {}
+  return c.json({ ok: true, nombre });
 });
 
 /* ---------------- Perfil de WhatsApp ---------------- */

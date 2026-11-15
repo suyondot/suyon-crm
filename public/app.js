@@ -2188,6 +2188,56 @@ function helpWA(text, label = '¿Necesitas ayuda? Escríbenos y lo hacemos junto
 }
 
 /* ---- Conectar WhatsApp con un clic (Registro insertado de Meta) ---- */
+// Nombre visible (15 nov): Meta aprueba el nombre nuevo pero no lo activa solo; se activa con el PIN del número.
+// También muestra la calidad del número (Alta / Media / Baja) porque si baja, Meta limita los envíos.
+async function drawNombre(st) {
+  const box = $('#nomcard');
+  if (!box) return;
+  let r;
+  try {
+    r = await api('GET', `/stores/${st.id}/nombre`);
+  } catch (e) {
+    box.innerHTML = `<h3>Nombre visible y calidad</h3><p class="note">No se pudo leer de Meta: ${esc(e.message)}</p>`;
+    return;
+  }
+  if (!box.isConnected || store()?.id !== st.id) return;
+  if (!r.ok) return (box.innerHTML = `<h3>Nombre visible y calidad</h3><p class="note">${esc(r.motivo || '')}</p>`);
+  const col = { GREEN: 'var(--ok)', YELLOW: '#C98A00', RED: '#D33A2C' }[r.calidad_raw] || 'var(--muted)';
+  const manager = `https://business.facebook.com/latest/whatsapp_manager/phone_numbers/?asset_id=${encodeURIComponent(r.waba_id || '')}`;
+  box.innerHTML = `<h3>Nombre visible y calidad</h3>
+    <p class="sub">Lo que ven tus clientas arriba del chat: <b>${esc(r.actual || '—')}</b>${r.estado ? ` · ${esc(r.estado)}` : ''}</p>
+    <p class="sub" style="margin-top:-6px">Calidad del número: <b style="color:${col}">● ${esc(r.calidad || '—')}</b></p>
+    ${r.calidad_raw === 'RED' ? '<div class="warnbox">La calidad está <b>baja</b>: muchas clientas bloquearon o reportaron el número. Si sigue así, Meta limita los mensajes. Baja los seguimientos y no escribas a quien dijo que no.</div>' : ''}
+    ${r.activar ? `<div class="okbox" style="font-weight:400">Meta aprobó el nombre <b>«${esc(r.nuevo)}»</b>. Para que tus clientas lo vean, actívalo con el PIN de 6 números de este número (el que pusiste al conectarlo).</div>
+      <form id="nomf" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div class="field" style="flex:1;min-width:150px"><label for="nom-pin">PIN del número (6 números)</label><input id="nom-pin" name="pin" inputmode="numeric" maxlength="6" required autocomplete="off" class="mono"></div>
+        <button class="send" type="submit" style="height:38px">Activar nombre nuevo</button>
+        <p class="note" style="width:100%;margin:0">No se corta nada: los chats siguen igual. El PIN no se guarda.</p>
+        <div class="err" hidden style="width:100%"></div>
+      </form>`
+    : r.nuevo && r.nuevo_estado === 'En revisión' ? `<div class="warnbox">Meta está revisando el nombre «${esc(r.nuevo)}». Suele tardar de 1 a 3 días.</div>`
+    : r.rechazado ? `<div class="warnbox">Meta <b>rechazó</b> el nombre${r.nuevo ? ` «${esc(r.nuevo)}»` : ''}. Pide otro así:
+        <ol style="margin:6px 0 0 18px;padding:0"><li>Abre el Administrador de WhatsApp (botón de abajo).</li><li>En el número, toca ⚙️ → <b>Nombre visible</b> → Editar.</li><li>Pon el nombre de tu marca tal cual sale en tu página de Facebook o Instagram (por ejemplo «Porte»).</li></ol></div>
+      <a class="iconbtn" href="${esc(manager)}" target="_blank" rel="noopener">Abrir Administrador de WhatsApp</a>` : ''}`;
+  const f = $('#nomf');
+  if (f) f.onsubmit = async (e) => {
+    e.preventDefault();
+    const err = f.querySelector('.err');
+    err.hidden = true;
+    const btn = f.querySelector('button');
+    btn.disabled = true;
+    try {
+      const x = await api('POST', `/stores/${st.id}/nombre/activar`, { pin: f.pin.value });
+      toast(`Listo: el nombre «${x.nombre || r.nuevo}» ya está activo.`);
+      drawNombre(st);
+    } catch (e2) {
+      err.textContent = e2.message;
+      err.hidden = false;
+      btn.disabled = false;
+    }
+  };
+}
+
 async function drawSignup(st) {
   const box = $('#esconn');
   if (!box) return;
@@ -2364,6 +2414,7 @@ function cfgNumero() {
       ${S.connSteps ? `<ul class="stlist" style="margin-bottom:12px">${S.connSteps.steps.map((x) => `<li><span class="${/^(Cuenta|El token|No se pudo)/.test(x) ? 'n' : /^Info/.test(x) ? 'y' : 'y'}">${/^(Cuenta|El token|No se pudo)/.test(x) ? '•' : /^Info/.test(x) ? 'ℹ' : '✓'}</span><span style="overflow-wrap:anywhere">${esc(x)}</span></li>`).join('')}${S.connSteps.ok ? '' : `<li><span class="n">✗</span><span>${esc(S.connSteps.error)}</span></li>`}</ul>` : ''}
       ${adm || st.phone_number_id ? `<button class="send" data-act="connect" ${st.phone_number_id ? '' : 'disabled'}>${st.status === 'activo' ? 'Probar conexión otra vez' : 'Conectar número'}</button>` : ''}
     </div>
+    ${st.status === 'activo' ? '<div class="card" id="nomcard"><h3>Nombre visible y calidad</h3><span class="spin"></span></div>' : ''}
     ${adm ? `<div class="card"><h3>Activar número en la API</h3><p class="sub">Solo para un número recién agregado o pasado a una cuenta nueva: después de verificarlo con el código SMS en Meta, se activa aquí. El PIN de 6 números queda como «verificación en dos pasos». Anótalo.</p>
       <form id="rf" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
         <div class="field" style="flex:1;min-width:160px"><label for="r-pin">PIN nuevo (6 números)</label><input id="r-pin" name="pin" inputmode="numeric" maxlength="6" pattern="\\d{6}" required autocomplete="off" class="mono"></div>
@@ -2412,6 +2463,7 @@ function cfgNumero() {
       <button class="btn-danger" data-act="delstore">Borrar ${esc(st.name)}</button></div>
   </div>`;
   drawSignup(st);
+  if (st.status === 'activo') drawNombre(st);
   let color = st.color;
   $('#ssw').onclick = (e) => {
     const b = e.target.closest('[data-swatch]');

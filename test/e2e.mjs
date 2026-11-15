@@ -156,7 +156,7 @@ const meta = http.createServer(async (req, res) => {
   if (req.method === 'DELETE' && p === `${WABA_ID}/message_templates`) return json(200, { success: true });
   if (req.method === 'GET' && p === `${WABA_ID}/message_templates`) return json(200, { data: [{ name: url.searchParams.get('name'), status: 'APPROVED', language: 'es' }] });
   if (p.startsWith('file/')) { res.writeHead(200, { 'content-type': 'image/jpeg' }); return res.end(IMG); }
-  if (req.method === 'GET' && p === PHONE_ID) return json(200, { display_phone_number: '+51 924 000 111', verified_name: 'Porte Perú', quality_rating: 'GREEN', id: PHONE_ID });
+  if (req.method === 'GET' && p === PHONE_ID) return json(200, { display_phone_number: '+51 924 000 111', verified_name: 'Porte Perú', quality_rating: 'GREEN', name_status: 'APPROVED', new_name_status: 'APPROVED', new_display_name: 'Porte', id: PHONE_ID });
   if (req.method === 'POST' && p === `${WABA_ID}/subscribed_apps`) return json(200, { success: true });
   if (req.method === 'POST' && p.endsWith('/subscribed_apps')) return json(400, { error: { code: 100, message: 'Unsupported post request. Object does not exist' } });
   if (req.method === 'GET' && p === 'debug_token') return json(200, { data: { app_id: 'APP123', granular_scopes: [{ scope: 'whatsapp_business_management', target_ids: ['555', WABA_ID] }] } });
@@ -305,6 +305,19 @@ try {
     const r = await call('POST', `/api/stores/${store.id}/register`, { pin: '123456' });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.ok(calls.some((c) => c.path === `${PHONE_ID}/register` && c.body?.messaging_product === 'whatsapp'));
+  });
+  await step('nombre visible: Meta aprobó uno nuevo → se activa con el PIN', async () => {
+    const n = await call('GET', `/api/stores/${store.id}/nombre`);
+    assert.equal(n.ok, true, JSON.stringify(n));
+    assert.equal(n.actual, 'Porte Perú');
+    assert.equal(n.nuevo, 'Porte');
+    assert.equal(n.activar, true);
+    assert.equal(n.calidad, 'Alta');
+    assert.equal((await call('POST', `/api/stores/${store.id}/nombre/activar`, { pin: '12' })).status, 400);
+    const antes = calls.filter((c) => c.path === `${PHONE_ID}/register`).length;
+    const r = await call('POST', `/api/stores/${store.id}/nombre/activar`, { pin: '123 456' });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(calls.filter((c) => c.path === `${PHONE_ID}/register`).length, antes + 1);
   });
   await step('salud muestra URL del webhook y secretos', async () => {
     const h = await call('GET', `/api/stores/${store.id}/health`);
