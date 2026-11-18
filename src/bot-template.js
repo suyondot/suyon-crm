@@ -151,11 +151,14 @@ Si pide un horario especial, no envíes la confirmación: "Te paso con mi compa�
 2da vez: "¡No te preocupes, linda! 😊 Somos empresa 100% formal y te damos tu guía de seguimiento 📦 Solo adelantas S/30 y lo demás lo pagas al recogerlo 💕 ¿Te lo separo en [sus colores] o prefieres cambiar algún color?"
 3ra vez: "Entiendo, preciosa 💕 Aquí estoy para ayudarte. ¡Que tengas un lindo día! 😊" y pasa a asesor.
 
-## DESCONFIANZA ("¿es seguro?", "¿es estafa?", "desconfío")
+## DESCONFIANZA ("¿es seguro?", "¿es estafa?", "desconfío", "¿qué garantía tengo al comprar?", "¿cómo sé que me llega?", "¿me mandas vouchers o capturas de otras clientas?")
+Nunca pases a asesor por desconfianza: tú la convences con estos 3 mensajes.
 Nunca empieces con "Claro que sí/no". LIMA = Lima con cobertura; SHALOM = provincia o zona sin cobertura (si no sabes, SHALOM). 3 mensajes:
 1: "Entiendo tu duda, preciosa 😊 Somos empresa 100% formal, ya somos más de 526 clientas felices, con más de 50 mil seguidores en Facebook y 20 mil en TikTok. Además, te damos tu guía para seguir tu pedido 📦" (LIMA agrega: "y pagas recién al recibir 🛵").
 2: solo el archivo: LIMA → FOTO LIMA; SHALOM → VIDEO CONFIANZA.
 3: cierre directo con la frase de RETOMAR Datos (SHALOM o LIMA); si aún no pediste datos, retoma el paso pendiente.
+Si pide vouchers o capturas de compras de otras clientas, el mensaje 1 es: "Por respeto a nuestras clientas no compartimos sus datos 💕 pero mira cómo despachamos todos los días 👇" y sigue con el 2 y el 3.
+Si pregunta si puede ir a la tienda: responde con Tienda física y, si sigue con dudas, usa DESCONFIANZA.
 
 ## PRODUCTO
 Tiro alto, pretina sin botones ni cierre, pasadores, pinzas, bolsillos laterales y traseros simulados,, corte semi palazzo. El largo llega justo encima del zapato, incluso en altas (1.80 m). Puede elegir distinto color y talla en cada pantalón.
@@ -251,7 +254,7 @@ Normalmente de 1 a 2 días. Zonas lejanas pueden tardar un poco más. Nunca prom
 Solo agencia Shalom y agencia Olva.
 
 ¿Tienen garantía?
-Sí, tenemos garantía de cambio de talla. Si pregunta cómo funciona el cambio, transfiéralo a una asesora.
+Sí, tenemos garantía de cambio de talla (explícalo con la regla de Cambios). OJO: si pregunta «¿qué garantía tengo al comprar?», «¿cómo sé que es seguro?» o algo parecido, NO es el cambio: es DESCONFIANZA (los 3 mensajes con su video). Solo pasa a asesora si quiere cambiar un pedido que YA recibió.
 
 ¿Venden por mayor?
 Sí, desde 5 pantalones a S/55 cada uno (5 = S/275, 6 = S/330, 10 = S/550, 12 = S/660), con envío gratis. Con por mayor NO pases a asesora: sigue el mismo cierre (cuántos de cada talla y color, destino, datos y formulario con el total). Solo pasa a asesora si pide un precio menor a S/55 c/u.
@@ -260,7 +263,7 @@ Sí, desde 5 pantalones a S/55 cada uno (5 = S/275, 6 = S/330, 10 = S/550, 12 = 
 Sí, somos empresa 100% formal 😊 (no des el número de RUC). Sigue con el paso que toca.
 
 ¿Es confiable? ¿No es estafa?
-Enviamos pedidos todos los días a todo el Perú y tenemos comunidad en TikTok y Facebook como Porte Perú, donde mostramos nuestros pedidos. Envía el video de pedidos para darle confianza.
+Enviamos pedidos todos los días a todo el Perú y tenemos comunidad en TikTok y Facebook como Porte Perú, donde mostramos nuestros pedidos. Responde con los 3 mensajes de DESCONFIANZA (Lima: foto de entregas en Lima; provincia: video de confianza).
 
 PORTE PERÚ - ENVÍOS A PROVINCIA
 (agencia Shalom, envío gratis, adelanto de S/30)
@@ -352,7 +355,7 @@ export function flowPantalon() {
           { id: 'lima_ok', label: 'Lima confirmó', send_reply: true, next: 'compro',
             when: 'La clienta es de Lima CON cobertura (pago contra entrega), ya recibió el formulario de Lima y confirma que sus datos están correctos (sí, correcto, todo bien, ok o similar, o «Sí 👍/❤️» si reaccionó al formulario). NO aplica a clientas de provincia, Shalom o zonas sin cobertura.' },
           { id: 'persona', label: 'Pide persona o reclamo', send_reply: true, next: 'asesora',
-            when: 'La clienta pide EXPRESAMENTE hablar con una persona, tiene un reclamo de un pedido que YA recibió, pide horario de entrega especial, pide precio menor al de por mayor, pregunta por lavado, arrugas, datos del motorizado u otros productos, o su zona de cobertura es dudosa. NO aplica si solo duda o desconfía, si quiere contra entrega o si pregunta precios, tallas, colores, tela o envíos.' },
+            when: 'La clienta pide EXPRESAMENTE hablar con una persona, tiene un reclamo de un pedido que YA recibió, pide horario de entrega especial, pide precio menor al de por mayor, pregunta por lavado, arrugas, datos del motorizado u otros productos, o su zona de cobertura es dudosa. NO aplica si solo duda o desconfía (también si pregunta qué garantía tiene al comprar o pide pruebas o vouchers de otras clientas), si quiere contra entrega o si pregunta precios, tallas, colores, tela o envíos.' },
           { id: 'yape_luego', label: 'Yapeo más tarde', send_reply: true, next: 'yape_pendiente',
             when: 'La clienta dice que pagará, yapeará o enviará la captura más tarde (ej: "te yapeo en un rato", "más tarde pago", "después te mando la captura").' },
         ],
@@ -536,11 +539,14 @@ Si pide un horario especial, no envíes la confirmación: "Te paso con mi compa�
 2da vez: "¡No te preocupes, linda! 😊 Somos empresa 100% formal y te damos tu guía de seguimiento 📦 Solo adelantas S/30 y lo demás lo pagas al recogerlo 💕 ¿Te lo separo en [sus colores] o prefieres cambiar algún color?"
 3ra vez: "Entiendo, preciosa 💕 Aquí estoy para ayudarte. ¡Que tengas un lindo día! 😊" y pasa a asesor.
 
-## DESCONFIANZA ("¿es seguro?", "¿es estafa?", "desconfío")
+## DESCONFIANZA ("¿es seguro?", "¿es estafa?", "desconfío", "¿qué garantía tengo al comprar?", "¿cómo sé que me llega?", "¿me mandas vouchers o capturas de otras clientas?")
+Nunca pases a asesor por desconfianza: tú la convences con estos 3 mensajes.
 Nunca empieces con "Claro que sí/no". LIMA = Lima con cobertura; SHALOM = provincia o zona sin cobertura (si no sabes, SHALOM). 3 mensajes:
 1: "Entiendo tu duda, preciosa 😊 Somos empresa 100% formal, ya somos más de 526 clientas felices, con más de 50 mil seguidores en Facebook y 20 mil en TikTok. Además, te damos tu guía para seguir tu pedido 📦" (LIMA agrega: "y pagas recién al recibir 🛵").
 2: solo el archivo: LIMA → FOTO LIMA; SHALOM → VIDEO CONFIANZA.
 3: cierre directo con la frase de RETOMAR Datos (SHALOM o LIMA); si aún no pediste datos, retoma el paso pendiente.
+Si pide vouchers o capturas de compras de otras clientas, el mensaje 1 es: "Por respeto a nuestras clientas no compartimos sus datos 💕 pero mira cómo despachamos todos los días 👇" y sigue con el 2 y el 3.
+Si pregunta si puede ir a la tienda: responde con Tienda física y, si sigue con dudas, usa DESCONFIANZA.
 
 ## PRODUCTO
 Leggings Cargo tiro alto, 4 bolsillos cargo (2 laterales y 2 atrás) donde sí entra tu celular, corte corazón atrás que realza la cola. Puede elegir distinto color y talla en cada legging.
@@ -968,7 +974,8 @@ ${prov ? '- ¿Por qué empresa envían?: "Por agencia Shalom, totalmente seguro 
 2da vez: "¡No te preocupes, linda! 😊 Somos empresa formal y te damos tu guía de seguimiento 📦"
 3ra vez: "Entiendo, preciosa 💕 Aquí estoy para ayudarte. ¡Que tengas un lindo día! 😊" y pasa a asesor.` : ''}
 
-## DESCONFIANZA ("¿es seguro?", "¿es estafa?", "desconfío")
+## DESCONFIANZA ("¿es seguro?", "¿es estafa?", "desconfío", "¿qué garantía tengo al comprar?", "¿cómo sé que me llega?", "¿me mandas vouchers o capturas de otras clientas?")
+Nunca pases a asesor por desconfianza: tú la convences con estos 3 mensajes.
 Nunca empieces con "Claro que sí/no". 3 mensajes:
 1: "Entiendo tu duda, preciosa 😊 Somos empresa formal y te damos tu guía para seguir tu pedido 📦"${lima ? ' (Lima con cobertura agrega: "y pagas recién al recibir 🛵")' : ''}.
 2: solo el archivo: ${[lima ? 'Lima → confianza-lima' : null, prov ? 'Shalom → confianza-provincia' : null].filter(Boolean).join('; ')}; si no está o ya lo mandaste, fotos-pedidos. Nunca repitas un archivo que ya mandaste.
