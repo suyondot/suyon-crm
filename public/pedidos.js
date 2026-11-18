@@ -590,7 +590,9 @@ function drawConfig(body) {
     try {
       const r = await H.api('PATCH', `/stores/${H.S.storeId}/capi`, { on: cb.checked });
       CFG.capi = r.capi;
-      H.toast(r.error ? 'Meta no lo permitió todavía: revisa los pasos' : r.capi.on ? 'Listo: las compras se avisarán a Meta' : 'Apagado', r.error ? 5000 : 2500);
+      const re = r.reenvio;
+      const extra = re?.enviados ? ` · también mandé ${re.enviados} compra${re.enviados === 1 ? '' : 's'} de los últimos días` : '';
+      H.toast(r.error ? 'Meta no lo permitió todavía: revisa los pasos' : r.capi.on ? `Listo: las compras se avisarán a Meta${extra}` : 'Apagado', r.error ? 5000 : 3500);
     } catch (er) {
       H.toast(er.message, 5000);
     }

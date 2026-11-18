@@ -8,7 +8,7 @@ import {
 } from './orders.js';
 import { convOf, CONV_DEFAULT } from './conversiones.js';
 import { loadAutos, saveAuto, submitTemplate, syncTemplates, setOrderStatus, onOrderCreated, AUTO_VARS, prevFrom } from './automations.js';
-import { ensureDataset } from './capi.js';
+import { ensureDataset, backfillPurchases } from './capi.js';
 import { trackOrder } from './rastreo.js';
 import { loadSettings } from './bot.js';
 
@@ -347,8 +347,11 @@ r.patch('/stores/:id/capi', async (c) => {
   }
   await c.env.DB.prepare('UPDATE stores SET capi_on = ?, capi_last = COALESCE(?, capi_last), rev = rev + 1 WHERE id = ?')
     .bind(on && !error ? 1 : 0, error ? JSON.stringify({ at: now(), ok: false, msg: clip(error, 300) }) : null, st.id).run();
-  const fresh = await c.env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(st.id).first();
-  return c.json({ capi: capiInfo(fresh), error });
+  let fresh = await c.env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(st.id).first();
+  // Recién prendida: manda también los pedidos de los últimos días que no se avisaron
+  const reenvio = fresh.capi_on && (b.reenviar !== false) ? await backfillPurchases(c.env, fresh) : null;
+  if (reenvio?.revisados) fresh = await c.env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(st.id).first();
+  return c.json({ capi: capiInfo(fresh), error, reenvio });
 });
 
 r.patch('/stores/:id/pedidos-config', async (c) => {

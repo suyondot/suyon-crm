@@ -36,7 +36,9 @@ export async function sendPurchase(env, storeIn, order) {
         json: {
           data: [{
             event_name: 'Purchase',
-            event_time: Math.floor(now() / 1000),
+            // Hora real del pedido (Meta acepta hasta 7 días atrás): sirve para mandar pedidos de días anteriores
+            event_time: Math.floor((now() - (order.created_at || 0) < 6.5 * 86400e3 ? order.created_at : now()) / 1000),
+            event_id: `ctw-${store.id}-${order.id}`,
             action_source: 'business_messaging',
             messaging_channel: 'whatsapp',
             user_data: { whatsapp_business_account_id: String(store.waba_id), ctwa_clid: chat.ctwa_clid },
@@ -58,4 +60,25 @@ export async function sendPurchase(env, storeIn, order) {
     console.error('capi', e);
     return { ok: false, error: e.message };
   }
+}
+
+// Al prender la Compra a Meta: manda los pedidos de los últimos 6 días que todavía no se avisaron
+export async function backfillPurchases(env, store) {
+  const desde = now() - 6 * 86400e3;
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM orders WHERE store_id = ? AND created_at >= ? AND capi_at IS NULL AND chat_id IS NOT NULL AND status != 'cancelado' ORDER BY created_at LIMIT 200`
+  ).bind(store.id, desde).all();
+  let enviados = 0;
+  let sinAnuncio = 0;
+  let error = null;
+  for (const o of results) {
+    const r = await sendPurchase(env, store, o);
+    if (r.ok) enviados++;
+    else if (r.skipped) sinAnuncio++;
+    else {
+      error = r.error;
+      break;
+    }
+  }
+  return { revisados: results.length, enviados, sin_anuncio: sinAnuncio, error };
 }

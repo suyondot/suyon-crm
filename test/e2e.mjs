@@ -1229,10 +1229,15 @@ try {
     assert.equal(r.status, 200, JSON.stringify(r));
     assert.equal(r.capi.on, true);
     assert.equal(r.capi.dataset, 'DS777');
+    // al prender, revisa los pedidos de los últimos días que no se avisaron
+    assert.ok(r.reenvio && typeof r.reenvio.revisados === 'number', JSON.stringify(r));
+    assert.equal(r.reenvio.error, null);
     // clienta que llegó por anuncio (tiene ctwa_clid) → Purchase con su valor
     r = await call('POST', `/api/stores/${store.id}/pedidos`, { chat_id: botChat.id, modo: 'lima', nombre: 'Prueba Meta', distrito: 'Lince', direccion: 'Av. 1', items: [{ talla: 'S', color: 'Negro', cantidad: 1 }], forzar: true });
-    const ev = await until(async () => calls.find((x) => x.path === 'DS777/events' && x.body?.data?.[0]?.custom_data?.value === r.pedido.total));
+    const ev = await until(async () => calls.find((x) => x.path === 'DS777/events' && x.body?.data?.[0]?.event_id === `ctw-${store.id}-${r.pedido.id}`));
     const d = ev.body.data[0];
+    assert.equal(d.custom_data.value, r.pedido.total);
+    assert.ok(Math.abs(d.event_time * 1000 - r.pedido.created_at) < 2000, 'hora real del pedido');
     assert.equal(d.event_name, 'Purchase');
     assert.equal(d.action_source, 'business_messaging');
     assert.equal(d.messaging_channel, 'whatsapp');
