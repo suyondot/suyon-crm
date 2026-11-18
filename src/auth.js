@@ -106,7 +106,8 @@ export async function companyFor(c, companyId, need = 'config', { allowBlocked =
   const co = companies.find((x) => x.id === Number(companyId));
   if (!co) fail(404, 'No tienes acceso a esa empresa.');
   if (co.plan.blocked && !allowBlocked) fail(402, PLAN_OVER);
-  checkRole(co.role, need);
+  // Lo de la empresa (equipo, invitar, tiendas, plan) es solo del dueño; el «dueño de tienda» no entra aquí
+  checkRole(co.role, need === 'config' ? 'owner' : need);
   return co;
 }
 
@@ -117,7 +118,13 @@ export async function chatFor(c, chatId, need = 'chats') {
   return { chat, store };
 }
 
+// Roles: dueno (todo, empresa incluida) · tienda («Dueño de tienda»: todo lo de SUS tiendas, sin empresa/equipo/número)
+// · asesora (chats y pedidos) · despacho / despacho_prov (pedidos)
+// need: 'owner' = solo dueño · 'config' = configuración de la tienda (dueño o dueño de tienda) · 'chats' · 'any'
 function checkRole(role, need) {
-  const ok = need === 'any' ? true : need === 'config' ? role === 'dueno' : role === 'dueno' || role === 'asesora';
+  const ok = need === 'any' ? true
+    : need === 'owner' ? role === 'dueno'
+    : need === 'config' ? role === 'dueno' || role === 'tienda'
+    : role === 'dueno' || role === 'asesora' || role === 'tienda';
   if (!ok) fail(403, 'Tu rol no tiene permiso para esto.');
 }

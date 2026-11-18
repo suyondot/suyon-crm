@@ -479,7 +479,7 @@ export async function renderRapidasCfg(body) {
     body.innerHTML = `<p class="note">${e(er.message)}</p>`;
     return;
   }
-  const otras = H.S.me.stores.filter((s) => s.id !== H.S.storeId && (s.role === 'dueno' || s.role === 'asesora'));
+  const otras = H.S.me.stores.filter((s) => s.id !== H.S.storeId && (s.role === 'dueno' || s.role === 'asesora' || s.role === 'tienda'));
   body.innerHTML = `<div class="ph"><div><h2>Respuestas rápidas</h2><p>Mensajes que tu equipo manda seguido (precios, cuentas, horarios, fotos de colores…). En el chat escribe <b>/</b> o toca <b>⚡</b>. <b>{nombre}</b> pone el nombre de la clienta y <b>{saludo}</b> pone «Buenos días / tardes / noches».</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">${otras.length ? '<button class="iconbtn" id="qrcopy">Copiar de otra tienda</button>' : ''}<button class="send" id="qrnew">+ Nueva respuesta</button></div></div>
     <div class="card qrcfg">${list.length ? list.map((q, i) => `<div class="qrrow">

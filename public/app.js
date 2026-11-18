@@ -204,8 +204,10 @@ const S = {
 };
 const store = () => S.me?.stores.find((s) => s.id === S.storeId);
 const role = () => store()?.role;
-const owner = () => role() === 'dueno';
-const canChats = () => role() === 'dueno' || role() === 'asesora';
+// owner() = maneja la tienda (dueño o «dueño de tienda»); jefe() = dueño de la empresa (número, equipo, empresas, plan)
+const owner = () => role() === 'dueno' || role() === 'tienda';
+const jefe = () => role() === 'dueno';
+const canChats = () => role() === 'dueno' || role() === 'asesora' || role() === 'tienda';
 const company = (id) => S.me.companies.find((c) => c.id === id);
 const labelById = (id) => S.labels.find((l) => l.id === id);
 const pref = {
@@ -888,7 +890,7 @@ function visibleChats() {
 function storeBanner() {
   const st = store();
   if (st.status === 'activo') return '';
-  return `<div class="storebar"><span class="grow">${owner() ? 'Este número todavía no está conectado a WhatsApp.' : 'El dueño todavía no conecta este número.'}</span>${owner() ? '<button data-nav="config" data-tab="numero">Conectar</button>' : ''}</div>`;
+  return `<div class="storebar"><span class="grow">${jefe() ? 'Este número todavía no está conectado a WhatsApp.' : 'El dueño todavía no conecta este número.'}</span>${jefe() ? '<button data-nav="config" data-tab="numero">Conectar</button>' : ''}</div>`;
 }
 
 function renderListHead() {
@@ -2001,7 +2003,9 @@ function canalPicker(cur) {
 function cfgTabs() {
   const tabs = [];
   // La pestaña de pedidos cambia según cómo vende la tienda: por mensajes (Pedidos) o por su web (Shopify)
-  if (owner()) tabs.push(['general', 'General'], ['numero', 'Número de WhatsApp'], ['perfil', 'Perfil de WhatsApp'], ['pedidoscfg', store()?.canal === 'shopify' ? 'Shopify' : 'Pedidos'], ['etiquetas', 'Etiquetas'], ['rapidas', 'Respuestas rápidas'], ['plantillas', 'Plantillas de WhatsApp'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
+  if (jefe()) tabs.push(['general', 'General'], ['numero', 'Número de WhatsApp'], ['perfil', 'Perfil de WhatsApp'], ['pedidoscfg', store()?.canal === 'shopify' ? 'Shopify' : 'Pedidos'], ['etiquetas', 'Etiquetas'], ['rapidas', 'Respuestas rápidas'], ['plantillas', 'Plantillas de WhatsApp'], ['bot', 'Bot Suyon AI'], ['equipo', 'Equipo']);
+  // Dueño de tienda: solo lo de su tienda (sin número, equipo, empresas ni plan)
+  else if (owner()) tabs.push(['general', 'General'], ['perfil', 'Perfil de WhatsApp'], ['pedidoscfg', store()?.canal === 'shopify' ? 'Shopify' : 'Pedidos'], ['etiquetas', 'Etiquetas'], ['rapidas', 'Respuestas rápidas'], ['plantillas', 'Plantillas de WhatsApp'], ['bot', 'Bot Suyon AI']);
   else if (canChats()) tabs.push(['rapidas', 'Respuestas rápidas']);
   if (S.me.companies.some((c) => c.role === 'dueno')) tabs.push(['empresa', 'Empresas']);
   const co = currentCompany();
@@ -2020,7 +2024,7 @@ function renderConfig() {
   const st = store();
   content.innerHTML = `<div class="page${S.cfgTab === 'bot' ? ' full' : ''}"><div class="cfg">
     <nav class="cfgnav" aria-label="Secciones">${tabs.map(([k, l]) => `<button data-cfg="${k}" aria-current="${S.cfgTab === k}">${l}</button>`).join('')}
-      ${st && owner() ? `<div class="cfgnote">Lo de General, Número, Perfil, Etiquetas, Bot y Equipo es de <b>${esc(st.name)}</b>${S.cfgTab === 'equipo' ? ` y su empresa` : ''}. Cambia de tienda arriba a la izquierda.</div>` : ''}</nav>
+      ${st && jefe() ? `<div class="cfgnote">Lo de General, Número, Perfil, Etiquetas, Bot y Equipo es de <b>${esc(st.name)}</b>${S.cfgTab === 'equipo' ? ` y su empresa` : ''}. Cambia de tienda arriba a la izquierda.</div>` : st && owner() ? `<div class="cfgnote">Todo lo de aquí es de <b>${esc(st.name)}</b>.</div>` : ''}</nav>
     <div id="cfgbody"></div></div></div>`;
   ({ general: cfgGeneral, numero: cfgNumero, perfil: cfgPerfil, pedidoscfg: () => renderPedidosConfig($('#cfgbody')), etiquetas: cfgEtiquetas, rapidas: () => renderRapidasCfg($('#cfgbody')), plantillas: () => renderPlantillasCfg($('#cfgbody')), bot: () => renderBotTab($('#cfgbody')), equipo: cfgEquipo, empresa: cfgEmpresa, cuenta: cfgCuenta, miplan: () => renderMiPlan($('#cfgbody'), currentCompany().id) })[S.cfgTab]();
 }
@@ -2563,7 +2567,7 @@ async function cfgEquipo() {
   const T = S.team;
   const sees = (m) => (m.role === 'dueno' || m.all_stores ? 'Todas las tiendas' : m.store_ids.map((id) => coStores.find((s) => s.id === id)?.name).filter(Boolean).join(', ') || '—');
   const roleOpts = (cur) => Object.entries(S.me.roles).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v}</option>`).join('');
-  body.innerHTML = `<div class="ph"><div><h2>Equipo de ${esc(co.name)}</h2><p>Cada persona entra con su correo y ve solo lo de su rol y las tiendas que le asignes. La asesora no ve configuración, gastos ni utilidades.</p></div></div>
+  body.innerHTML = `<div class="ph"><div><h2>Equipo de ${esc(co.name)}</h2><p>Cada persona entra con su correo y ve solo lo de su rol y las tiendas que le asignes. La asesora no ve configuración, gastos ni utilidades. El <b>dueño de tienda</b> maneja todo lo de sus tiendas (chats, pedidos, pagos, envíos, reportes, bot y configuración de la tienda), pero no ve tus otras tiendas, el equipo, las empresas ni la conexión del número.</p></div></div>
     <div class="card" style="margin-bottom:14px"><div class="tbl"><table><thead><tr><th>Persona</th><th>Rol</th><th>Ve</th><th></th></tr></thead><tbody>
       ${T.members.map((m) => `<tr><td><b>${esc(m.name)}</b><br><span class="note">${esc(m.email)}</span></td><td>${esc(S.me.roles[m.role])}</td><td style="white-space:normal">${esc(sees(m))}</td>
         <td class="r"><div style="display:flex;gap:6px;justify-content:flex-end">${m.id === S.me.user.id ? '<span class="note">Tú</span>' : `<button class="iconbtn" data-medit="${m.id}">Cambiar</button><button class="iconbtn" data-mreset="${m.id}" title="Enlace para cambiar contraseña">Clave</button><button class="iconbtn" data-mdel="${m.id}" aria-label="Quitar del equipo">${ICON.trash}</button>`}</div></td></tr>`).join('')}
@@ -2593,9 +2597,14 @@ function storePicker(stores, all, selected) {
 function wireStorePicker(form) {
   const all = form.querySelector('[name=all_stores]');
   const roleSel = form.querySelector('[name=role]');
+  const allRow = all.closest('label');
   const sync = () => {
     const isOwner = roleSel?.value === 'dueno';
+    const isTienda = roleSel?.value === 'tienda';
     form.querySelector('.sp').hidden = isOwner;
+    // El dueño de tienda siempre va con tiendas elegidas una por una (nunca «Todas»)
+    if (isTienda) all.checked = false;
+    allRow.hidden = isTienda;
     form.querySelector('.sp-list').hidden = all.checked;
   };
   all.onchange = sync;

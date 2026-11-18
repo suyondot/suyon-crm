@@ -333,9 +333,9 @@ api.get('/companies/:id/team', async (c) => {
 
 function checkRoleInput(b) {
   if (!ROLES[b.role]) fail(400, 'Elige un rol.');
-  const all = b.role === 'dueno' || !!b.all_stores;
+  const all = b.role === 'dueno' || (b.role !== 'tienda' && !!b.all_stores);
   const storeIds = all ? [] : ids(b.store_ids);
-  if (!all && !storeIds.length) fail(400, 'Elige al menos una tienda o marca "Todas las tiendas".');
+  if (!all && !storeIds.length) fail(400, b.role === 'tienda' ? 'Elige la tienda (o tiendas) de este dueño de tienda.' : 'Elige al menos una tienda o marca "Todas las tiendas".');
   return { role: b.role, all, storeIds };
 }
 
@@ -483,6 +483,8 @@ api.post('/companies/:id/stores', async (c) => {
 api.patch('/stores/:id', async (c) => {
   const st = await storeFor(c, c.req.param('id'), 'config');
   const s = storeInput(await body(c), true);
+  // El dueño de tienda cambia lo de su tienda, pero no la conexión del número (eso es del dueño de la empresa)
+  if (st.role !== 'dueno' && ['phone_number_id', 'waba_id', 'token_secret'].some((k) => k in s)) fail(403, 'La conexión del número la cambia el dueño de la empresa.');
   const db = c.env.DB;
   if (s.phone_number_id && s.phone_number_id !== st.phone_number_id) {
     if (await db.prepare('SELECT 1 FROM stores WHERE phone_number_id = ? AND id != ?').bind(s.phone_number_id, st.id).first()) fail(409, 'Ese número ya está en otra tienda.');
@@ -500,7 +502,7 @@ api.patch('/stores/:id', async (c) => {
 });
 
 api.delete('/stores/:id', async (c) => {
-  const st = await storeFor(c, c.req.param('id'), 'config');
+  const st = await storeFor(c, c.req.param('id'), 'owner');
   const b = await body(c);
   if (String(b.confirm || '').trim().toLowerCase() !== st.name.trim().toLowerCase()) fail(400, 'Para borrar, escribe el nombre exacto de la tienda.');
   const db = c.env.DB;
@@ -525,7 +527,7 @@ api.delete('/stores/:id', async (c) => {
 
 // Prueba el token, guarda el nombre verificado y suscribe la app a la cuenta de WhatsApp
 api.post('/stores/:id/connect', async (c) => {
-  const st = await storeFor(c, c.req.param('id'), 'config');
+  const st = await storeFor(c, c.req.param('id'), 'owner');
   if (!st.phone_number_id) fail(400, 'Falta el "Identificador del número de teléfono".');
   const db = c.env.DB;
   const steps = [];
@@ -598,12 +600,12 @@ api.post('/stores/:id/connect', async (c) => {
 
 // Conectar WhatsApp con un clic (Registro insertado de Meta)
 api.get('/stores/:id/whatsapp/signup', async (c) => {
-  await storeFor(c, c.req.param('id'), 'config');
+  await storeFor(c, c.req.param('id'), 'owner');
   return c.json(await signupInfo(c.env, new URL(c.req.url).origin));
 });
 
 api.post('/stores/:id/whatsapp/signup', async (c) => {
-  const st = await storeFor(c, c.req.param('id'), 'config');
+  const st = await storeFor(c, c.req.param('id'), 'owner');
   const b = await body(c);
   try {
     const r = await connectSignup(c.env, st, { code: b.code, phone_number_id: b.phone_number_id, waba_id: b.waba_id, coexistencia: !!b.coexistencia, page_url: clip(String(b.page_url || ''), 300), dialog_redirect: clip(String(b.dialog_redirect || ''), 1500), es_event: clip(String(b.es_event || ''), 200), origin: new URL(c.req.url).origin });
@@ -617,7 +619,7 @@ api.post('/stores/:id/whatsapp/signup', async (c) => {
 });
 
 api.post('/stores/:id/register', async (c) => {
-  const st = await storeFor(c, c.req.param('id'), 'config');
+  const st = await storeFor(c, c.req.param('id'), 'owner');
   if (!st.phone_number_id) fail(400, 'Primero guarda el "Identificador del número de teléfono".');
   const pin = String((await body(c)).pin || '').trim();
   if (!/^\d{6}$/.test(pin)) fail(400, 'El PIN debe tener 6 números.');
@@ -635,7 +637,7 @@ const NOMBRE_ESTADO = {
 const CALIDAD = { GREEN: 'Alta', YELLOW: 'Media', RED: 'Baja', UNKNOWN: 'Sin datos' };
 
 api.get('/stores/:id/nombre', async (c) => {
-  const st = await storeFor(c, c.req.param('id'), 'config');
+  const st = await storeFor(c, c.req.param('id'), 'owner');
   if (!st.phone_number_id || st.status !== 'activo') return c.json({ ok: false, motivo: 'Primero conecta el número.' });
   const n = await nameInfo(c.env, st);
   const nuevoOk = ['APPROVED', 'AVAILABLE_WITHOUT_REVIEW'].includes(n.new_name_status);
@@ -657,7 +659,7 @@ api.get('/stores/:id/nombre', async (c) => {
 });
 
 api.post('/stores/:id/nombre/activar', async (c) => {
-  const st = await storeFor(c, c.req.param('id'), 'config');
+  const st = await storeFor(c, c.req.param('id'), 'owner');
   if (!st.phone_number_id || st.status !== 'activo') fail(409, 'Primero conecta el número.');
   const pin = String((await body(c)).pin || '').replace(/\D/g, '');
   if (!/^\d{6}$/.test(pin)) fail(400, 'El PIN debe tener 6 números (el de verificación en dos pasos de este número).');
@@ -723,7 +725,7 @@ api.post('/stores/:id/perfil/foto', async (c) => {
 });
 
 api.get('/stores/:id/health', async (c) => {
-  const st = await storeFor(c, c.req.param('id'), 'config');
+  const st = await storeFor(c, c.req.param('id'), 'owner');
   const { results: log } = await c.env.DB.prepare(
     'SELECT received_at, kind, phone_number_id, detail FROM webhook_log WHERE phone_number_id = ? OR kind = ? ORDER BY id DESC LIMIT 15'
   ).bind(st.phone_number_id || '-', 'tienda_desconocida').all();
@@ -826,7 +828,7 @@ api.delete('/labels/:id', async (c) => {
 const SYNC_COUNTS = new Map();
 api.get('/sync', async (c) => {
   const { stores } = await loadAccess(c);
-  const chatStores = stores.filter((s) => s.role === 'dueno' || s.role === 'asesora');
+  const chatStores = stores.filter((s) => s.role === 'dueno' || s.role === 'asesora' || s.role === 'tienda');
   const ids = chatStores.map((s) => s.id);
   // Los contadores (no leídos y Avisos) se calculan como máximo cada 20 s: /sync se llama cada 3 s por cada
   // celular/PC abierto y estas cuentas leían miles de filas → se pasó el límite diario de D1 (9 nov 2026).

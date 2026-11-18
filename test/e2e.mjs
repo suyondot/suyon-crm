@@ -621,6 +621,45 @@ try {
     const owner = team.members.find((m) => m.role === 'dueno');
     assert.equal((await call('DELETE', `/api/companies/${coId}/members/${owner.id}`)).status, 400, 'no puede quedar sin dueño');
   });
+  await step('dueño de tienda: maneja solo su tienda, sin empresa, equipo ni número', async () => {
+    cookie = ownerCookie;
+    const me = await call('GET', '/api/me');
+    const coId = me.companies[0].id;
+    assert.equal(me.roles.tienda, 'Dueño de tienda');
+    assert.equal((await call('POST', `/api/companies/${coId}/invites`, { email: 'henry@test.pe', role: 'tienda', all_stores: true })).status, 400, 'sin «Todas las tiendas»');
+    const r = await call('POST', `/api/companies/${coId}/invites`, { email: 'henry@test.pe', role: 'tienda', all_stores: true, store_ids: [store.id] });
+    assert.equal(r.status, 200, JSON.stringify(r));
+    cookie = '';
+    const acc = await call('POST', `/api/invites/${r.link.split('/invitacion/')[1]}/accept`, { name: 'Henry', password: 'henry-clave-1' });
+    assert.equal(acc.status, 200, JSON.stringify(acc));
+    assert.deepEqual(acc.stores.map((s) => s.id), [store.id], 'solo ve su tienda');
+    assert.equal(acc.stores[0].role, 'tienda');
+    assert.equal(acc.stores[0].phone_number_id, undefined, 'no ve datos técnicos del número');
+    // Lo de su tienda: sí
+    assert.equal((await call('GET', `/api/stores/${store.id}/chats`)).status, 200);
+    assert.equal((await call('GET', `/api/stores/${store.id}/bot`)).status, 200);
+    assert.equal((await call('GET', `/api/stores/${store.id}/reporte`)).status, 200);
+    assert.equal((await call('GET', `/api/stores/${store.id}/pedidos`)).status, 200);
+    assert.equal((await call('GET', `/api/stores/${store.id}/pagos`)).status, 200);
+    assert.equal((await call('PATCH', `/api/stores/${store.id}`, { hour12: 1 })).status, 200);
+    const lab = await call('POST', `/api/stores/${store.id}/labels`, { name: 'De Henry' });
+    assert.equal(lab.status, 200, JSON.stringify(lab));
+    // Lo del dueño de la empresa: no
+    assert.equal((await call('PATCH', `/api/stores/${store.id}`, { phone_number_id: '123456' })).status, 403);
+    assert.equal((await call('GET', `/api/stores/${store.id}/health`)).status, 403);
+    assert.equal((await call('POST', `/api/stores/${store.id}/connect`)).status, 403);
+    assert.equal((await call('DELETE', `/api/stores/${store.id}`, { confirm: store.name })).status, 403);
+    assert.equal((await call('GET', `/api/companies/${coId}/team`)).status, 403);
+    assert.equal((await call('POST', `/api/companies/${coId}/invites`, { email: 'x@test.pe', role: 'asesora', all_stores: true })).status, 403);
+    assert.equal((await call('POST', `/api/companies/${coId}/stores`, { name: 'Otra' })).status, 403);
+    assert.equal((await call('GET', `/api/companies/${coId}/plan`)).status, 403);
+    assert.equal((await call('GET', `/api/stores/${store2.id}/chats`)).status, 404, 'no ve otras tiendas');
+    cookie = ownerCookie;
+    const team = await call('GET', `/api/companies/${coId}/team`);
+    const henry = team.members.find((m) => m.email === 'henry@test.pe');
+    assert.deepEqual(henry.store_ids, [store.id]);
+    assert.equal((await call('DELETE', `/api/companies/${coId}/members/${henry.id}`)).status, 200);
+  });
   await step('recuperar cuenta de administrador con la clave de inicio', async () => {
     cookie = '';
     assert.equal((await call('POST', '/api/recover', { code: 'mal', email: 'jordan@test.pe', password: 'otra-clave-123' })).status, 403);

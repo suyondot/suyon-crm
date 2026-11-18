@@ -85,14 +85,16 @@ export function clip(s, n) {
 
 export const ROLES = {
   dueno: 'Dueño',
+  tienda: 'Dueño de tienda',
   asesora: 'Asesora',
   despacho: 'Despacho',
   despacho_prov: 'Despacho provincia',
 };
 
 export const can = {
-  chats: (role) => role === 'dueno' || role === 'asesora',
-  config: (role) => role === 'dueno',
+  chats: (role) => role === 'dueno' || role === 'asesora' || role === 'tienda',
+  config: (role) => role === 'dueno' || role === 'tienda',
+  owner: (role) => role === 'dueno',
 };
 
 // Etiquetas con las que nace cada tienda nueva (las de Pancake/Botcake)
