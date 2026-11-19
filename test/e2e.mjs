@@ -2040,6 +2040,12 @@ try {
     await conDatos(sm);
     sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'mejor por Shalom, Miraflores' });
     assert.ok(sm.messages.some((m) => /Agencias Shalom en MIRAFLORES/.test(m.body || '')), 'pidió Shalom: ofrece agencias de Lima');
+    // Un apellido que coincide con una agencia de Lima («Huaycán», caso real «Flores») no frena la búsqueda de su ciudad
+    await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' });
+    await conDatos(sm);
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'Rosa Huaycan, soy de Trujillo' });
+    assert.ok(sm.messages.some((m) => /Agencias Shalom en TRUJILLO/.test(m.body || '')), 'apellido de Lima no tapa Trujillo');
     // Celular del propio WhatsApp y candado de colores
     const { celularWa, coloresNoPedidos } = await import('../src/bot.js');
     assert.equal(celularWa('51912502934'), '912502934');

@@ -1227,13 +1227,19 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
     system += `\n\n## LA CLIENTA ACABA DE ELEGIR SU AGENCIA: ${tapped.f}\nConfírmala en una línea y sigue con lo que falta: ${datosOk() ? 'ya tiene sus datos, así que envía el formulario Shalom con los datos de pago y pide la captura del adelanto' : 'primero pide sus datos (nombre y apellido, DNI y celular)'}. ${hasCaptura ? '' : 'Todavía NO envió la captura del pago: NO uses el caso yape_sede ni digas que tu compañera valida el pago.'}`;
   }
   let near = null;
+  // Busca agencias con lo último que escribió + su destino, sin su nombre: un apellido («Flores», «Trujillo») no es su ciudad
+  const buscarAgencias = () => {
+    const nombreRe = String(vars.nombre || '').trim().split(/\s+/).filter((w) => w.length > 2).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const sinNombre = (t) => (nombreRe.length ? String(t).replace(new RegExp(`(^|[^\\p{L}])(${nombreRe.join('|')})(?=[^\\p{L}]|$)`, 'giu'), '$1') : t);
+    const quiere = /shalom|agencia|recoj|recog/i.test([...ins.slice(-4), vars.destino].filter(Boolean).join(' '));
+    return agenciesNear(env, [...ins.slice(-3).map(sinNombre), vars.destino, vars.distrito].filter(Boolean).join(' . '), cfgOf(store).sin_cobertura, quiere).catch(() => null);
+  };
   if (!vars.sede_shalom && settings.agencias_on !== 0) {
     // ¿Tocó una provincia/distrito de la lista anterior? Se usa esa zona tal cual
     const zona = (ag.zonas || []).find((z) => z.t.toLowerCase() === lastIn);
     if (zona) near = await agenciesIn(env, ag.nivel, zona.n, ag.dep).catch(() => null);
-    // ¿Pidió Shalom / agencia (aunque sea de Lima)? Entonces también se le ofrecen agencias de Lima
-    const quiereAgencia = /shalom|agencia|recoj|recog/i.test([...ins.slice(-4), vars.destino].filter(Boolean).join(' '));
-    if (!near) near = await agenciesNear(env, [...ins.slice(-3), vars.destino, vars.distrito].filter(Boolean).join(' . '), cfgOf(store).sin_cobertura, quiereAgencia).catch(() => null);
+    // (si pidió Shalom / agencia, aunque sea de Lima, buscarAgencias también ofrece agencias de Lima)
+    if (!near) near = await buscarAgencias();
     if (near && !datosOk()) {
       system += `\n\n## AGENCIA SHALOM: TODAVÍA NO\nLa clienta va por agencia (${near.lugar}). Primero pide sus datos (nombre y apellido, DNI y celular) en un solo mensaje. NO le preguntes la agencia ni la sede todavía: apenas dé sus datos, el sistema le manda la lista de agencias para tocar.`;
     } else if (near?.kind === 'agencias') {
@@ -1355,6 +1361,8 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
       }
       if (String(m.texto || '').trim()) await botSend(env, store, chat, { kind: 'text', text: String(m.texto) }, meta);
     }
+    // Si recién en esta respuesta dio su nombre/DNI, se busca otra vez (ya sin su apellido) para mandarle la lista
+    if (!near && !cs && !vars.sede_shalom && datosOk() && settings.agencias_on !== 0) near = await buscarAgencias();
     // La lista de agencias sale recién cuando ya están TODOS sus datos (nombre, DNI y celular), una vez por lugar
     const key = near ? `${near.kind}:${near.lugar}` : null;
     if (near && !cs && !vars.sede_shalom && datosOk() && ag.lugar !== key) {

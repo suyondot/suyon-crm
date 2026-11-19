@@ -259,8 +259,16 @@ export async function agenciesNear(env, text, sinCobertura = '', quiereAgencia =
       const lima = rows.filter((r) => isLimaDep(r.n.dep));
       if (lima.length) {
         // Lima o Callao: solo si es una zona sin cobertura o si la clienta pidió Shalom; si hay duda, el bot no ofrece nada
-        if (lima.length !== rows.length) return null;
-        if (!quiereAgencia && !sin.some((z) => lima.some((r) => r.n.dist.includes(z) || z.includes(r.n.dist)))) return null;
+        // Una palabra suelta («Flores», un apellido) que coincide con una agencia de Lima no frena la búsqueda:
+        // se sigue con los demás lugares (Trujillo). Un distrito o provincia de Lima sí: el bot no se mete con Lima.
+        if (lima.length !== rows.length) {
+          if (lv === 'lugar') continue;
+          return null;
+        }
+        if (!quiereAgencia && !sin.some((z) => lima.some((r) => r.n.dist.includes(z) || z.includes(r.n.dist)))) {
+          if (lv === 'lugar') continue;
+          return null;
+        }
       }
       const title = (r, k) => r[k];
       // Muchas agencias (dijo solo «Piura» o «La Libertad»): primero se pregunta la provincia o el distrito
