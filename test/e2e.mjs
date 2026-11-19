@@ -555,6 +555,8 @@ try {
   await step('buscar por nombre y por número', async () => {
     assert.equal((await call('GET', `/api/stores/${store.id}/chats?q=lucí`)).chats.length, 1);
     assert.equal((await call('GET', `/api/stores/${store.id}/chats?q=987654`)).chats.length, 1);
+    // sin tilde ni mayúsculas, y con el nombre que dejó en sus datos
+    assert.equal((await call('GET', `/api/stores/${store.id}/chats?q=LUCI`)).chats.length, 1, 'sin tilde');
     assert.equal((await call('GET', `/api/stores/${store.id}/chats?filter=unread`)).chats.every((c) => c.unread > 0), true);
   });
 

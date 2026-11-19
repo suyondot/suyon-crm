@@ -868,6 +868,12 @@ const CHAT_COLS = `id, store_id, wa_id, name, profile_name, handler, unread, las
   EXISTS(SELECT 1 FROM orders o JOIN order_events e ON e.order_id = o.id WHERE o.chat_id = chats.id AND o.status IN ('nuevo', 'por_pagar') AND e.detail LIKE 'La clienta confirmó por WhatsApp%') AS dijo_si,
   (SELECT sender FROM messages m WHERE m.chat_id = chats.id ORDER BY m.id DESC LIMIT 1) AS last_sender`;
 
+
+// Búsqueda sin tildes ni mayúsculas (SQLite solo baja las letras sin tilde)
+const TILDES = [['á', 'a'], ['é', 'e'], ['í', 'i'], ['ó', 'o'], ['ú', 'u'], ['ü', 'u'], ['ñ', 'n'], ['Á', 'a'], ['É', 'e'], ['Í', 'i'], ['Ó', 'o'], ['Ú', 'u'], ['Ü', 'u'], ['Ñ', 'n']];
+const norm = (col) => TILDES.reduce((x, [a, b]) => `REPLACE(${x}, '${a}', '${b}')`, `LOWER(COALESCE(${col}, ''))`);
+const sinTildes = (t) => String(t || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
 api.get('/stores/:id/chats', async (c) => {
   const st = await storeFor(c, c.req.param('id'));
   const q = c.req.query();
@@ -887,11 +893,20 @@ api.get('/stores/:id/chats', async (c) => {
       vals.push(Number(q.before));
     }
     if (q.q) {
-      const like = `%${String(q.q).trim().replace(/[%_]/g, '')}%`;
+      // Sin tildes ni mayúsculas, cada palabra por separado, y también en el nombre que dio en su formulario o pedido
       const digits = String(q.q).replace(/\D/g, '');
-      where.push(digits.length >= 4 ? '(name LIKE ? OR profile_name LIKE ? OR wa_id LIKE ?)' : '(name LIKE ? OR profile_name LIKE ?)');
-      vals.push(like, like);
-      if (digits.length >= 4) vals.push(`%${digits}%`);
+      const words = sinTildes(q.q).replace(/[%_]/g, '').split(/\s+/).filter((w) => w && !/^\d+$/.test(w)).slice(0, 5);
+      const parts = [];
+      for (const w of words) {
+        const like = `%${w}%`;
+        parts.push(`(${norm('name')} LIKE ? OR ${norm('profile_name')} LIKE ? OR ${norm('bot_vars')} LIKE ? OR id IN (SELECT chat_id FROM orders WHERE store_id = chats.store_id AND chat_id IS NOT NULL AND ${norm('nombre')} LIKE ?))`);
+        vals.push(like, like, like, like);
+      }
+      if (digits.length >= 4) {
+        parts.push('(wa_id LIKE ? OR bot_vars LIKE ? OR id IN (SELECT chat_id FROM orders WHERE store_id = chats.store_id AND chat_id IS NOT NULL AND (celular LIKE ? OR dni LIKE ?)))');
+        vals.push(...Array(4).fill(`%${digits}%`));
+      }
+      if (parts.length) where.push(`(${parts.join(' AND ')})`);
     }
     if (q.filter === 'unread') where.push('unread > 0');
     if (q.filter === 'pending') where.push("last_dir = 'in'");

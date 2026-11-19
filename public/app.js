@@ -852,7 +852,17 @@ function layoutChats() {
 const matchChat = (c) =>
   (S.filter === 'todos' || (S.filter === 'unread' && c.unread > 0) || (S.filter === 'pending' && c.last_dir === 'in') || (S.filter === 'confirmar' && c.por_confirmar > 0)) &&
   S.tagf.every((t) => c.labels.includes(t)) &&
-  (!S.q || (chatName(c) + ' ' + (c.profile_name || '') + ' ' + c.wa_id).toLowerCase().includes(S.q.toLowerCase()) || (S.q.replace(/\D/g, '').length >= 4 && c.wa_id.includes(S.q.replace(/\D/g, ''))));
+  (!S.q || matchQ(c));
+// Sin tildes ni mayúsculas, palabra por palabra; lo que encontró el servidor (nombre del formulario o del pedido) también vale
+const sinTildes = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+function matchQ(c) {
+  if (S.qHits?.q === S.q && S.qHits.ids.has(c.id)) return true;
+  const txt = sinTildes(chatName(c) + ' ' + (c.profile_name || '') + ' ' + c.wa_id);
+  const digits = S.q.replace(/\D/g, '');
+  const words = sinTildes(S.q).split(/\s+/).filter((w) => w && !/^\d+$/.test(w));
+  if (!words.length) return !!digits && c.wa_id.includes(digits);
+  return words.every((w) => txt.includes(w)) && (digits.length < 4 || c.wa_id.includes(digits));
+}
 const sortKey = (c) => c.last_msg_at || c.created_at;
 // 📌 Por agendar (pedido de Jordan, 10 nov): solo las que ya están listas — Lima con nombre completo, dirección y colores;
 // provincia con nombre completo, DNI y la captura del pago (o el pedido que dejó la IA). Van arriba hasta que alguien
@@ -1001,6 +1011,7 @@ async function loadChats({ more = false, search = false } = {}) {
   try {
     const r = await api('GET', `/stores/${sid}/chats?${p}`);
     if (sid !== S.storeId) return;
+    if (search) S.qHits = { q: p.get('q'), ids: new Set(r.chats.map((x) => x.id)) };
     mergeChats(r.chats);
     if (!search) S.chatsMore = r.more;
     if (!S.chatCursor) S.chatCursor = r.t;
