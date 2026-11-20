@@ -38,7 +38,7 @@ TONO: cálido y cercano (preciosa, linda, bella), emojis, mensajes de 2-4 línea
 
 ## PASOS
 1. TALLA
-- Si da talla o número de jean: confírmala ("¡Perfecto! Tu talla es la M 😍"), adjunta la IMAGEN de colores de SU talla (nunca escribas la lista de colores) y "¿Cuáles te gustan más? Llevando 3 te sale a solo S/58.33 c/u 🔥".
+- Si da talla o número de jean: confírmala ("¡Perfecto! Tu talla es la M 😍"), adjunta la IMAGEN de colores de SU talla (nunca escribas la lista de colores) y "¿Cuáles te gustan más? Llevando 3 te sale a solo S/58.33 cada uno 🔥".
 - Dos tallas o caderona: la más grande ("Te recomiendo la M para que te quede cómoda 😊").
 - No sabe: envía la TABLA DE TALLAS y "Cuéntame qué número de jean usas o tu cintura en cm y te digo tu talla perfecta 😊". Luego define la talla, confírmala y adjunta su IMAGEN de colores. Nunca vuelvas a preguntar "¿qué talla usas?".
 - Si cambia de talla: adjunta la IMAGEN de colores de la nueva talla.
@@ -141,7 +141,7 @@ Si pide un horario especial, no envíes la confirmación: "Te paso con mi compa�
 - ¿Cuesta el envío?: "¡No! El envío es GRATIS a todo el Perú 🚚" y cierra (Lima: paso 4a).
 - ¿Por qué empresa envían?: "Por agencia Shalom, totalmente seguro 🚚" y retoma.
 - Tienda física: "Somos tienda 100% online 💕 Por eso enviamos gratis a todo el Perú, y en Lima pagas recién al recibir 🛵" y retoma.
-- Caro: no bajes el precio. "Llevando 3 te sale a solo S/58.33 c/u con envío gratis 😊"
+- Caro: no bajes el precio. "Llevando 3 te sale a solo S/58.33 cada uno con envío gratis 😊"
 - Lo voy a pensar: menciona una vez la promo de 3 y retoma; si insiste, despídete amable: "¡Claro, preciosa! 💕 Aquí te espero 😊".
 - Cambios (solo si pregunta): "¡Claro! 😊 Si la talla no te queda, avísanos dentro de 2 días calendario desde que lo recibes y la cambiamos; solo cubres S/16 de envío (S/8 recojo + S/8 envío) ✨"
 - Otros modelos (si pregunta): "También tenemos leggings cargo 😊"; si quiere detalles, pasa a asesor.
@@ -180,7 +180,7 @@ Color sin stock en su talla: "Uy, preciosa, en tu talla ese color se agotó 🙈
 Beige ya no hay (en ninguna talla): "Ese color ya no lo tenemos, preciosa 🙈 El más parecido es el Perla 😍" (en talla M: Gris claro).
 Sinónimos: rojo/guinda → Vino · plomo claro → Gris claro · plomo oscuro → Gris oscuro · blanco/hueso/crema → Perla · azul/azul marino → Azul noche.
 
-PRECIOS (envío gratis): 1: S/89 · 2: S/139 (S/69.50 c/u) · 3: S/175 (S/58.33 c/u) ⭐ la más elegida. Si pregunta "precio", da solo estos tres. Si pide 4: S/219; 5 o más: S/55 c/u. Precio menor por cantidad: pasa a asesor.
+PRECIOS (envío gratis): 1: S/89 · 2: S/139 (S/69.50 cada uno) · 3: S/175 (S/58.33 cada uno) ⭐ la más elegida. Si pregunta "precio", da solo estos tres. Si pide 4: S/219; 5 o más: S/55 cada uno. Precio menor por cantidad: pasa a asesor.
 
 TALLAS (jean): 26-27 XS · 28-30 S · 31-33 M · 34-37 L · 38-40 XL. "Mediano" = M. XXL o más de 40 → XL; Nunca digas que no le quedará.
 
@@ -257,7 +257,7 @@ Solo agencia Shalom y agencia Olva.
 Sí, tenemos garantía de cambio de talla (explícalo con la regla de Cambios). OJO: si pregunta «¿qué garantía tengo al comprar?», «¿cómo sé que es seguro?» o algo parecido, NO es el cambio: es DESCONFIANZA (los 3 mensajes con su video). Solo pasa a asesora si quiere cambiar un pedido que YA recibió.
 
 ¿Venden por mayor?
-Sí, desde 5 pantalones a S/55 cada uno (5 = S/275, 6 = S/330, 10 = S/550, 12 = S/660), con envío gratis. Con por mayor NO pases a asesora: sigue el mismo cierre (cuántos de cada talla y color, destino, datos y formulario con el total). Solo pasa a asesora si pide un precio menor a S/55 c/u.
+Sí, desde 5 pantalones a S/55 cada uno (5 = S/275, 6 = S/330, 10 = S/550, 12 = S/660), con envío gratis. Con por mayor NO pases a asesora: sigue el mismo cierre (cuántos de cada talla y color, destino, datos y formulario con el total). Solo pasa a asesora si pide un precio menor a S/55 cada uno.
 
 ¿Tienen RUC? ¿Son empresa formal?
 Sí, somos empresa 100% formal 😊 (no des el número de RUC). Sigue con el paso que toca.
@@ -338,7 +338,7 @@ export function flowPantalon() {
         labels: ['pantalón prod'], next: 'precios',
       },
       { id: 'precios', type: 'send', x: 360, y: 190, title: 'Producto y precios',
-        items: [f('image', 'precios'), t('✨ Pantalón Formal Stretch ✨\n\n💰 1 pantalón: S/89\n💰 2 pantalones: S/139 → S/69.50 c/u\n🔥 3 pantalones: S/175 → ¡solo S/58.33 c/u! ⭐ La más elegida\n\n✅ Compra 100% segura')],
+        items: [f('image', 'precios'), t('✨ Pantalón Formal Stretch ✨\n\n💰 1 pantalón: S/89\n💰 2 pantalones: S/139 → S/69.50 cada uno\n🔥 3 pantalones: S/175 → ¡solo S/58.33 cada uno! ⭐ La más elegida\n\n✅ Compra 100% segura')],
         next: 'seg' },
       { id: 'seg', type: 'action', x: 360, y: 360, title: 'Inicia seguimiento talla', ops: [{ op: 'start_seq', seq: 'seg_talla' }], next: 'talla' },
       { id: 'talla', type: 'send', x: 360, y: 490, title: '¿Qué talla usas?',
@@ -346,7 +346,7 @@ export function flowPantalon() {
       { id: 'reconocer', type: 'recognize', x: 360, y: 640, title: 'Reconocer talla', from: 'respuesta', var: 'talla', options: TALLAS, next: 'etiqueta_talla', next_other: 'ia' },
       { id: 'etiqueta_talla', type: 'action', x: 360, y: 790, title: 'Etiqueta Talla X + seguimiento colores', ops: [{ op: 'add_label', label: 'Talla {talla}' }, { op: 'start_seq', seq: 'seg_colores' }], next: 'colores' },
       { id: 'colores', type: 'send', x: 360, y: 920, title: 'Colores de su talla',
-        items: [f('image', 'colores-{talla}'), t('¡Perfecto! 😍 Estos son los colores disponibles en tu talla {talla} 👇 ¿Cuáles te gustan más? Llevando 3 te sale a solo S/58.33 c/u 🔥')],
+        items: [f('image', 'colores-{talla}'), t('¡Perfecto! 😍 Estos son los colores disponibles en tu talla {talla} 👇 ¿Cuáles te gustan más? Llevando 3 te sale a solo S/58.33 cada uno 🔥')],
         wait: true, save_to: 'respuesta', next: 'ia' },
       { id: 'ia', type: 'ia', x: 360, y: 1110, title: 'IA Suyon · Ventas',
         cases: [
@@ -378,7 +378,7 @@ export function flowPantalon() {
       { id: 'seg_colores', name: 'Seguimiento colores', cancel_on: 'reply', steps: [
         { after_min: 20, items: [t('¿Cuál color te gustó más, preciosa? 😍 Escríbeme los que quieres (puedes llevar varios) y te digo el total 👇')] },
         { after_min: 180, from_h: 8, to_h: 22, items: [f('image', 'fotos-pedidos'), t('Así salieron hoy los pedidos 📦💕 ¿Te separo los tuyos? Dime tus colores y a qué distrito o ciudad te lo enviamos 🚚')] },
-        { after_min: 900, from_h: 8, to_h: 22, items: [t('¿Te animas, preciosa? 💕 Llevando 3 te sale a solo S/58.33 c/u con envío GRATIS 🚚 Dime tus colores y te lo separo hoy mismo 😊')] },
+        { after_min: 900, from_h: 8, to_h: 22, items: [t('¿Te animas, preciosa? 💕 Llevando 3 te sale a solo S/58.33 cada uno con envío GRATIS 🚚 Dime tus colores y te lo separo hoy mismo 😊')] },
       ] },
       { id: 'rec_yape', name: 'Recordatorio Yape', cancel_on: 'image', steps: [
         { after_min: 60, from_h: 8, to_h: 22, items: [t('Preciosa, no te olvides de tu moradito 💜 Apenas me envíes la captura, separo tus pantalones 🙌')] },
@@ -426,7 +426,7 @@ TONO: cálido y cercano (preciosa, linda, bella), emojis, mensajes de 2-4 línea
 
 ## PASOS
 1. TALLA
-- Si da talla o número de jean: confírmala ("¡Perfecto! Tu talla es la M 😍"), adjunta la IMAGEN de colores de SU talla (nunca escribas la lista de colores) y "¿Cuáles te gustan más? Llevando 3 te sale a solo S/69.67 c/u 🔥".
+- Si da talla o número de jean: confírmala ("¡Perfecto! Tu talla es la M 😍"), adjunta la IMAGEN de colores de SU talla (nunca escribas la lista de colores) y "¿Cuáles te gustan más? Llevando 3 te sale a solo S/69.67 cada uno 🔥".
 - Dos tallas o caderona: la más grande ("Te recomiendo la M para que te quede cómoda 😊").
 - No sabe: envía la TABLA DE TALLAS y "Cuéntame qué número de jean usas o tu cintura en cm y te digo tu talla perfecta 😊". Luego define la talla, confírmala y adjunta su IMAGEN de colores. Nunca vuelvas a preguntar "¿qué talla usas?".
 - Si cambia de talla: adjunta la IMAGEN de colores de la nueva talla.
@@ -529,7 +529,7 @@ Si pide un horario especial, no envíes la confirmación: "Te paso con mi compa�
 - ¿Cuesta el envío?: "¡No! El envío es GRATIS a todo el Perú 🚚" y cierra (Lima: paso 4a).
 - ¿Por qué empresa envían?: "Por agencia Shalom, totalmente seguro 🚚" y retoma.
 - Tienda física: "Somos tienda 100% online 💕 Por eso enviamos gratis a todo el Perú, y en Lima pagas recién al recibir 🛵" y retoma.
-- Caro: no bajes el precio. "Llevando 3 te sale a solo S/69.67 c/u con envío gratis 😊"
+- Caro: no bajes el precio. "Llevando 3 te sale a solo S/69.67 cada uno con envío gratis 😊"
 - Lo voy a pensar: menciona una vez la promo de 3 y retoma; si insiste, despídete amable: "¡Claro, preciosa! 💕 Aquí te espero 😊".
 - Cambios (solo si pregunta): "¡Claro! 😊 Si la talla no te queda, avísanos dentro de 2 días calendario desde que lo recibes y la cambiamos; solo cubres S/16 de envío (S/8 recojo + S/8 envío) ✨"
 - Otros modelos (si pregunta): "También tenemos pantalón formal stretch 😊"; si quiere detalles, pasa a asesor.
@@ -560,7 +560,7 @@ Transparencia, lavado u otra duda de tela: "Déjame confirmarlo y te aviso 😊"
 COLORES (nombres oficiales): Negro, Azul noche, Beige, Celeste bebé. Hay los 4 en XS, S, M y L. Negro es el más pedido.
 Sinónimos: azul/azul marino → Azul noche · celeste → Celeste bebé · crema/nude/camel → Beige.
 
-PRECIOS (envío gratis): 1: S/109 · 2: S/169 (S/84.50 c/u) · 3: S/209 (S/69.67 c/u) ⭐ la más elegida. Si pregunta "precio", da solo estos tres. Si pide 4: S/265. POR MAYOR: de 5 a 11 leggings S/62.50 c/u (5 = S/312.50, 6 = S/375, 10 = S/625); desde 12 (docena) S/55 c/u (12 = S/660, 24 = S/1,320). Con por mayor NO pases a asesora: sigue el mismo cierre (cuántos de cada talla y color, destino, datos y formulario con el total). Solo pasa a asesora si pide un precio menor a S/55 c/u.
+PRECIOS (envío gratis): 1: S/109 · 2: S/169 (S/84.50 cada uno) · 3: S/209 (S/69.67 cada uno) ⭐ la más elegida. Si pregunta "precio", da solo estos tres. Si pide 4: S/265. POR MAYOR: de 5 a 11 leggings S/62.50 cada uno (5 = S/312.50, 6 = S/375, 10 = S/625); desde 12 (docena) S/55 cada uno (12 = S/660, 24 = S/1,320). Con por mayor NO pases a asesora: sigue el mismo cierre (cuántos de cada talla y color, destino, datos y formulario con el total). Solo pasa a asesora si pide un precio menor a S/55 cada uno.
 
 TALLAS:
 - XS: jean 26-27 · cintura 62-67 cm · largo 97 cm
@@ -595,18 +595,18 @@ export function flowCargo() {
   node('inicio').trigger.keywords = ['Deseo mis Leggins Cargo', 'Deseo mis Leggings Cargo'];
   node('inicio').labels = [];
   node('precios').title = 'Leggings cargo y precios';
-  node('precios').items = [f('image', 'precios'), t('✨ Leggings Cargo ✨\n\n💰 1 legging: S/109\n💰 2 leggings: S/169 → S/84.50 c/u\n🔥 3 leggings: S/209\n⭐ La más elegida\n\n🚚 Envío GRATIS a todo el Perú\n✅ Compra 100% segura')];
+  node('precios').items = [f('image', 'precios'), t('✨ Leggings Cargo ✨\n\n💰 1 legging: S/109\n💰 2 leggings: S/169 → S/84.50 cada uno\n🔥 3 leggings: S/209\n⭐ La más elegida\n\n🚚 Envío GRATIS a todo el Perú\n✅ Compra 100% segura')];
   node('talla').items = [t('¿Qué talla usas normalmente? 🤗 (XS, S, M, L o tu talla de jean)')];
   node('reconocer').options = TALLAS_CARGO;
-  node('colores').items = [f('image', 'colores-{talla}'), t('¡Perfecto! 😍 Estos son los colores disponibles en tu talla {talla} 👇 ¿Cuáles te gustan más? Llevando 3 te sale a solo S/69.67 c/u 🔥')];
+  node('colores').items = [f('image', 'colores-{talla}'), t('¡Perfecto! 😍 Estos son los colores disponibles en tu talla {talla} 👇 ¿Cuáles te gustan más? Llevando 3 te sale a solo S/69.67 cada uno 🔥')];
   const asesora = node('ia').cases.find((c) => c.id === 'persona');
-  asesora.when = asesora.when.replace('pide precio menor al de por mayor', 'pide un precio menor a S/55 c/u (por mayor desde 5 NO es este caso: la IA sigue vendiendo)');
+  asesora.when = asesora.when.replace('pide precio menor al de por mayor', 'pide un precio menor a S/55 cada uno (por mayor desde 5 NO es este caso: la IA sigue vendiendo)');
   const seg = g.sequences.find((x) => x.id === 'seg_talla');
   seg.steps[2].items = [f('video', 'video-puesto'), t('Así se ve puesto 😍 Cómodo como legging, con estilo cargo 🙌\n\n¿Qué talla usas? Te muestro tus colores 👇')];
   const rec = g.sequences.find((x) => x.id === 'rec_yape');
   rec.steps[0].items = [t('Preciosa, no te olvides de tu moradito 💜 Apenas me envíes la captura, separo tus leggings 🙌')];
   const segc = g.sequences.find((x) => x.id === 'seg_colores');
-  segc.steps[2].items = [t('¿Te animas, preciosa? 💕 Llevando 3 te sale a solo S/69.67 c/u con envío GRATIS 🚚 Dime tus colores y te lo separo hoy mismo 😊')];
+  segc.steps[2].items = [t('¿Te animas, preciosa? 💕 Llevando 3 te sale a solo S/69.67 cada uno con envío GRATIS 🚚 Dime tus colores y te lo separo hoy mismo 😊')];
   return g;
 }
 
@@ -771,7 +771,7 @@ const unidad = (rubro, n) => (rubro === 'ropa' ? (n === 1 ? 'prenda' : 'prendas'
 function preciosText(a, rubro) {
   const ks = Object.keys(a.precios).map(Number).sort((x, y) => x - y);
   const best = ks.length > 1 ? ks[ks.length - 1] : 0;
-  return ks.map((k) => `${k === best && k > 1 ? '🔥' : '💰'} ${k} ${unidad(rubro, k)}: ${soles(a.precios[k])}${k > 1 ? ` → ${soles(a.precios[k] / k)} c/u` : ''}${k === best && k > 1 ? ' ⭐' : ''}`).join('\n');
+  return ks.map((k) => `${k === best && k > 1 ? '🔥' : '💰'} ${k} ${unidad(rubro, k)}: ${soles(a.precios[k])}${k > 1 ? ` → ${soles(a.precios[k] / k)} cada uno` : ''}${k === best && k > 1 ? ' ⭐' : ''}`).join('\n');
 }
 
 // Archivos que el asistente le pide al alumno. ref = clave de la imagen de referencia (Panel Suyon → Referencias).
@@ -824,7 +824,7 @@ export function promptAsistente(a, rubro) {
   const marca = a.marca || 'la tienda';
   const ks = Object.keys(a.precios || {}).map(Number).filter((k) => a.precios[k] > 0).sort((x, y) => x - y);
   const best = ks.length > 1 ? ks[ks.length - 1] : 0;
-  const promoTxt = best ? `Llevando ${best} te sale a solo ${soles(a.precios[best] / best)} c/u 🔥` : '';
+  const promoTxt = best ? `Llevando ${best} te sale a solo ${soles(a.precios[best] / best)} cada uno 🔥` : '';
   const gratis = /gratis/i.test(a.envio || '');
   const envioTxt = gratis ? 'GRATIS' : '';
   const adel = Number(a.adelanto) || 0;
@@ -985,7 +985,7 @@ Nunca empieces con "Claro que sí/no". 3 mensajes:
 ${prod}${a.descripcion ? `\n${a.descripcion}` : ''}${a.tela ? `\nTela / material: ${a.tela}` : ''}${a.beneficios ? `\nBeneficios:\n${lines(a.beneficios).map((x) => `- ${x}`).join('\n')}` : ''}${ropa ? `\nTallas: ${tallas.map((t) => t.label).join(' · ')}\nColores (acepta SOLO estos): ${a.colores}` : ''}${a.detalles?.length ? `\nDetalles (responde con esto si te preguntan):\n${a.detalles.map((d) => `- ${d.q} → ${d.a}`).join('\n')}` : ''}
 Si preguntan algo del producto que no está aquí ni en CONOCIMIENTO: "Déjame confirmarlo y te aviso 😊" y pasa a asesor.
 
-PRECIOS${gratis ? ' (envío gratis)' : ''}: ${ks.map((k) => `${k}: ${soles(a.precios[k])}${k > 1 ? ` (${soles(a.precios[k] / k)} c/u)` : ''}`).join(' · ')}${best ? ` · ⭐ la más elegida: ${best}` : ''}. Si pregunta "precio", da solo estos. ${a.envio && !gratis ? `Envío: ${a.envio}.` : ''}
+PRECIOS${gratis ? ' (envío gratis)' : ''}: ${ks.map((k) => `${k}: ${soles(a.precios[k])}${k > 1 ? ` (${soles(a.precios[k] / k)} cada uno)` : ''}`).join(' · ')}${best ? ` · ⭐ la más elegida: ${best}` : ''}. Si pregunta "precio", da solo estos. ${a.envio && !gratis ? `Envío: ${a.envio}.` : ''}
 
 ## ARCHIVOS (adjunta con su clave, solo si están en ARCHIVOS DISPONIBLES)
 ${[ropa ? '- Tabla de tallas: tabla-tallas' : null, ...tallas.map((t) => `- Colores ${t.value}: colores-${t.value}`), ropa ? '- Así se ve puesto: video-puesto' : '- Producto de cerca: producto\n- Producto en uso: video-producto', '- Pedidos listos: fotos-pedidos', lima ? '- Confianza Lima: confianza-lima' : null, prov ? '- Video de envíos (al pedir datos y adelanto): video-envios\n- Video de confianza Shalom (solo si desconfía): confianza-provincia' : null].filter(Boolean).join('\n')}`);
@@ -999,11 +999,11 @@ export function knowledgeAsistente(a) {
   return faq.length ? `PREGUNTAS FRECUENTES (respóndelas con esta información, cortito):\n${faq.join('\n')}` : '';
 }
 
-// «Llevando 3 te sale a solo S/58.33 c/u 🔥» con su promoción más grande
+// «Llevando 3 te sale a solo S/58.33 cada uno 🔥» con su promoción más grande
 function bestPromo(a) {
   const ks = Object.keys(a.precios || {}).map(Number).filter((k) => a.precios[k] > 0).sort((x, y) => x - y);
   const b = ks.length > 1 ? ks[ks.length - 1] : 0;
-  return b ? `Llevando ${b} te sale a solo ${soles(a.precios[b] / b)} c/u 🔥` : '';
+  return b ? `Llevando ${b} te sale a solo ${soles(a.precios[b] / b)} cada uno 🔥` : '';
 }
 
 // El flujo en el orden del abordaje de Jordan
