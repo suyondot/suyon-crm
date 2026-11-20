@@ -110,6 +110,18 @@ app.get('/inicio/media/:name', (c) => serveLandingMedia(c));
 app.onError((err, c) => {
   if (err instanceof HttpError) return c.json({ error: err.message, ...(err.extra || {}) }, err.status);
   console.error(err);
+  // Guarda los últimos 30 errores (ruta + mensaje) para revisarlos sin acceso a los registros de Cloudflare
+  c.executionCtx?.waitUntil?.(
+    (async () => {
+      const row = await c.env.DB.prepare("SELECT value FROM platform_settings WHERE key = 'errores'").first().catch(() => null);
+      let list = [];
+      try {
+        list = JSON.parse(row?.value || '[]');
+      } catch {}
+      list.unshift({ at: Date.now(), m: c.req.method, p: c.req.path, e: String(err?.message || err).slice(0, 300), s: String(err?.stack || '').split('\n').slice(1, 4).join(' | ').slice(0, 300) });
+      await c.env.DB.prepare("INSERT INTO platform_settings (key, value, updated_at) VALUES ('errores', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at").bind(JSON.stringify(list.slice(0, 30)), Date.now()).run();
+    })().catch(() => {})
+  );
   return c.json({ error: 'Algo falló en el servidor. Intenta de nuevo.' }, 500);
 });
 

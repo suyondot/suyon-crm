@@ -332,6 +332,13 @@ r.get('/shalom/agencias', async (c) => {
 });
 
 
+// Últimos errores del servidor (solo admin)
+r.get('/admin/errores', async (c) => {
+  await requireAdmin(c);
+  const row = await c.env.DB.prepare("SELECT value FROM platform_settings WHERE key = 'errores'").first();
+  return c.json({ errores: JSON.parse(row?.value || '[]') });
+});
+
 // Saldo de IA de las claves del sistema (solo admin)
 r.get('/admin/ia-saldo', async (c) => {
   await requireAdmin(c);
