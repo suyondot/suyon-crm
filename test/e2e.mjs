@@ -1372,8 +1372,28 @@ try {
     assert.equal((await call('GET', `/api/stores/${store.id}/kpi?p=hoy`)).dijo_si >= 1, true);
     // Jade pone ✅ LIMA → recién ahí queda agendado (Confirmado)
     const labsL = (await call('GET', `/api/stores/${store.id}/labels`)).labels;
+    // Mensaje al agendar prendido: al poner ✅ LIMA le llega «PEDIDO LISTO» (HOY o MAÑANA) como mensaje de la asesora
+    const ag = await call('PATCH', `/api/stores/${store.id}/pedidos-config`, { al_agendar: { on: true } });
+    assert.equal(ag.cfg.al_agendar.on, 1);
+    assert.match(ag.cfg.al_agendar.lima_manana, /\{entrega\}/);
+    const nTxt = calls.filter((x) => x.body?.to === '51912345678' && x.body?.type === 'text').length;
     const put = await call('PUT', `/api/chats/${lz.id}/labels/${labsL.find((l) => l.name === '✅ LIMA').id}`);
     assert.equal(put.pedido?.estado, 'confirmado', JSON.stringify(put));
+    assert.equal(put.pedido?.mensaje, 'enviado', JSON.stringify(put));
+    const listo = calls.filter((x) => x.body?.to === '51912345678' && x.body?.type === 'text').slice(nTxt);
+    assert.equal(listo.length, 1, 'un solo mensaje (sin el «Pedido confirmado» repetido)');
+    assert.match(listo[0].body.text.body, /PEDIDO LISTO[\s\S]*(HOY|MAÑANA|LUNES)/);
+    assert.ok(!/\{entrega\}/.test(listo[0].body.text.body));
+    const { textoAlAgendar } = await import('../src/agendar.js');
+    const st0 = { id: 0, timezone: 'America/Lima', order_cfg: JSON.stringify({ al_agendar: { on: 1 } }) };
+    const lima = (h, d = '2026-11-18') => new Date(`${d}T${String(h).padStart(2, '0')}:00:00-05:00`).getTime();
+    const fakeEnv = { DB: { prepare: () => ({ bind: () => ({ first: async () => null }) }) } };
+    assert.match(await textoAlAgendar(fakeEnv, st0, 'provincia', lima(11)), /enviado HOY/);
+    assert.match(await textoAlAgendar(fakeEnv, st0, 'provincia', lima(15)), /enviado MAÑANA/);
+    assert.match(await textoAlAgendar(fakeEnv, st0, 'provincia', lima(15, '2026-11-21')), /enviado el LUNES/);
+    assert.match(await textoAlAgendar(fakeEnv, st0, 'lima', lima(11)), /Entrega HOY/);
+    assert.match(await textoAlAgendar(fakeEnv, st0, 'lima', lima(15)), /Entrega MAÑANA/);
+    await call('PATCH', `/api/stores/${store.id}/pedidos-config`, { al_agendar: { on: false } });
     const ok = await until(async () => { const x = (await call('GET', `/api/stores/${store.id}/pedidos?q=Luz`)).pedidos[0]; return x.status === 'confirmado' ? x : null; });
     assert.equal(ok.status, 'confirmado');
     assert.equal((await chatOf('51912345678')).dijo_si, 0);

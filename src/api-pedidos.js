@@ -372,6 +372,13 @@ r.patch('/stores/:id/pedidos-config', async (c) => {
   if ('prov_modo' in b) cfg.prov_modo = b.prov_modo === 'ce_prov' ? 'ce_prov' : 'agencia';
   if ('sin_cobertura' in b) cfg.sin_cobertura = clip(String(b.sin_cobertura || ''), 2000);
   if ('recompra_dias' in b) cfg.recompra_dias = Math.min(Math.max(Math.round(n(b.recompra_dias, 20)), 1), 365);
+  if (b.al_agendar && typeof b.al_agendar === 'object') {
+    const a = b.al_agendar;
+    const x = cfg.al_agendar;
+    if ('on' in a) x.on = a.on ? 1 : 0;
+    if ('prov_corte_h' in a) x.prov_corte_h = Math.min(Math.max(Math.round(n(a.prov_corte_h, 14)), 0), 23);
+    for (const k of ['lima_hoy', 'lima_manana', 'prov_hoy', 'prov_manana']) if (k in a) x[k] = clip(String(a[k] || '').trim(), 1500) || DEFAULT_CFG.al_agendar[k];
+  }
   if ('carrito_min' in b) cfg.carrito_min = Math.min(Math.max(Math.round(n(b.carrito_min, 60)), 15), 1440);
   const sets = ['order_cfg = ?'];
   const vals = [JSON.stringify(cfg)];

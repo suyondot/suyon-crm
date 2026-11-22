@@ -206,7 +206,8 @@ export async function onOrderCreated(env, store, order) {
 export async function onOrderStatus(env, store, order, prev) {
   if (order.status === prev) return;
   const key = STATUS_AUTO[order.status];
-  if (key) await sendAuto(env, store, key, { order });
+  // Con el mensaje de ✅ LIMA / ✅ PROVINCIA prendido, el «Pedido confirmado» no se manda (sería doble)
+  if (key && !(key === 'agendado' && cfgOf(store).al_agendar?.on)) await sendAuto(env, store, key, { order });
   // 100% confirmado (Lima dijo «Sí» / provincia con el adelanto validado) → compra confirmada a los píxeles
   if (CONFIRMADOS.includes(order.status)) await sendConversion(env, store, order).catch((e) => console.error('conv', e));
   if (VENDIDO.includes(order.status)) {

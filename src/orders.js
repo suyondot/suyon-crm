@@ -56,6 +56,15 @@ export const DEFAULT_CFG = {
   sin_cobertura: 'Ancón, Santa Rosa, Carabayllo (después del km 22), Ate (después del Real Plaza Puruchuco), Jicamarca, Manchay, Chosica, Chaclacayo, Cieneguilla, Pachacámac, Lurín, Punta Hermosa, Punta Negra, San Bartolo, Santa María del Mar, Pucusana',
   recompra_dias: 20,
   carrito_min: 60,
+  // Mensaje que sale solo cuando el equipo pone ✅ LIMA / ✅ PROVINCIA (como si lo escribiera la asesora)
+  al_agendar: {
+    on: 0,
+    prov_corte_h: 14, // provincia: antes de esta hora se despacha HOY, después MAÑANA
+    lima_hoy: '✅ PEDIDO LISTO 🛍️\n\n🚚 Delivery GRATIS + CONTRA ENTREGA\n\n⏰ Entrega HOY: 2:00 a 8:00 p.m.\n💳 Yape, Plin, efectivo, transferencia\n\n🔴 HOY LLEGA SU PEDIDO',
+    lima_manana: '✅ PEDIDO LISTO 🛍️\n\n🚚 Delivery GRATIS + CONTRA ENTREGA\n\n⏰ Entrega {entrega}: 2:00 a 8:00 p.m.\n💳 Yape, Plin, efectivo, transferencia\n\n🔴 {entrega} LLEGA SU PEDIDO',
+    prov_hoy: 'AGENDADO! 🧑🏻‍💻✅\n\n• Tu pedido será enviado HOY a la agencia de 4 p.m. a 7 p.m. 📦\n\n• La guía de seguimiento te la damos el mismo día 📃\n\n• Llegará a tu localidad en 1 o 2 días como máximo 🚚💨',
+    prov_manana: 'AGENDADO! 🧑🏻‍💻✅\n\n• Tu pedido será enviado {entrega} a la agencia de 4 p.m. a 7 p.m. 📦\n\n• La guía de seguimiento te la damos ese mismo día 📃\n\n• Llegará a tu localidad en 1 o 2 días como máximo 🚚💨',
+  },
 };
 
 export function cfgOf(store) {
@@ -63,7 +72,7 @@ export function cfgOf(store) {
   try {
     c = JSON.parse(store?.order_cfg || '{}') || {};
   } catch {}
-  return { ...DEFAULT_CFG, ...c, precios: c.precios && Object.keys(c.precios).length ? { ...c.precios } : { ...DEFAULT_CFG.precios } };
+  return { ...DEFAULT_CFG, ...c, precios: c.precios && Object.keys(c.precios).length ? { ...c.precios } : { ...DEFAULT_CFG.precios }, al_agendar: { ...DEFAULT_CFG.al_agendar, ...(c.al_agendar || {}) } };
 }
 
 export function priceFor(units, cfg) {

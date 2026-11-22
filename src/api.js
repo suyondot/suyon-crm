@@ -9,7 +9,7 @@ import { sendText, uploadMedia, sendMediaById, listTemplates, sendTemplateFull, 
 import { preview, mediaKey, fetchMediaToR2 } from './webhook.js';
 import botApi, { pauseForHuman, pendingCounts } from './api-bot.js';
 import { quitarPendientes, removeLabel } from './bot.js';
-import { pedidoAlAgendar } from './agendar.js';
+import { pedidoAlAgendar, mensajeAlAgendar } from './agendar.js';
 import { retryAutoTemplate } from './automations.js';
 import pagosApi from './api-pagos.js';
 import gastoApi from './api-gasto.js';
@@ -1001,7 +1001,11 @@ api.put('/chats/:id/labels/:labelId', async (c) => {
   // ✅ LIMA / ✅ PROVINCIA = agendado: se crea el pedido con su formulario (y con eso sale la compra a Meta)
   let pedido = null;
   if (ins.meta?.changes && /✅\s*(LIMA|PROVINCIA)/i.test(l.name) && !chat.sim) {
-    pedido = await pedidoAlAgendar(c.env, store, chat.id, /PROVINCIA/i.test(l.name) ? 'provincia' : 'lima', u.id).catch((e) => ({ error: e.message }));
+    const zona = /PROVINCIA/i.test(l.name) ? 'provincia' : 'lima';
+    pedido = await pedidoAlAgendar(c.env, store, chat.id, zona, u.id).catch((e) => ({ error: e.message }));
+    // Mensaje de «pedido listo / agendado» (Configuración → Pedidos), como si lo escribiera la asesora
+    const m = await mensajeAlAgendar(c.env, store, chat.id, zona, u.id).catch((e) => ({ error: e.message }));
+    if (pedido && !pedido.error) pedido.mensaje = m?.ok ? 'enviado' : m?.error || null;
   }
   await bump(c.env, store.id);
   return c.json({ ok: true, pedido });

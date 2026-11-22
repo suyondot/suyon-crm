@@ -7,7 +7,7 @@ import { storeFor, chatFor, requireUser } from './auth.js';
 import { addEvent, getOrder } from './orders.js';
 import { setOrderStatus } from './automations.js';
 import { addLabel } from './bot.js';
-import { pedidoAlAgendar } from './agendar.js';
+import { mensajeAlAgendar, pedidoAlAgendar } from './agendar.js';
 
 const r = new Hono();
 const DAY = 864e5;
@@ -226,6 +226,7 @@ r.post('/chats/:id/pago', async (c) => {
     }
     await addEvent(c.env, order.id, 'pago', `Pago validado${monto ? ` · S/${monto}` : ''}${nota ? ` · ${nota}` : ''}`, u.id);
     await addLabel(c.env, store.id, chat.id, order.modo === 'lima' ? '✅ LIMA' : '✅ PROVINCIA');
+    await mensajeAlAgendar(c.env, store, chat.id, order.modo === 'lima' ? 'lima' : 'provincia', u.id).catch(() => null);
   } else if (order) {
     await addEvent(c.env, order.id, 'pago', `El pago no llegó${monto ? ` (decía S/${monto})` : ''}${nota ? ` · ${nota}` : ''}`, u.id);
   }

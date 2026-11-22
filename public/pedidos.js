@@ -523,6 +523,18 @@ function drawConfig(body) {
             <button class="iconbtn sm" data-asave>Guardar</button>
           </div></div>`;
       }).join('')}</div></div>`;
+  const ag = c.al_agendar || {};
+  const alAgendar = `<form class="card" id="agf"><h3>Mensaje al agendar (✅ LIMA / ✅ PROVINCIA)</h3>
+      <p class="sub">Cuando tu equipo pone <b>✅ LIMA</b> o <b>✅ PROVINCIA</b> en un chat, a la clienta le llega este mensaje solo, como si lo escribiera la asesora. Sale gratis dentro de la ventana de 24 h (72 h si vino por anuncio); si la ventana ya cerró, no sale nada.</p>
+      <label class="bswitch"><input type="checkbox" name="on" ${ag.on ? 'checked' : ''}><span>Mandar el mensaje al poner ✅</span></label>
+      <div class="fields3" style="margin-top:10px">
+        <div class="field"><label>Lima: antes de la hora de corte (llega HOY)</label><textarea name="lima_hoy" rows="7" class="notesbox">${e(ag.lima_hoy || '')}</textarea></div>
+        <div class="field"><label>Lima: después de la hora de corte</label><textarea name="lima_manana" rows="7" class="notesbox">${e(ag.lima_manana || '')}</textarea><span class="note"><span class="mono">{entrega}</span> = MAÑANA, o el LUNES si es sábado por la tarde. La hora de corte de Lima es la de Bot Suyon AI → IA Suyon → «Entregas en Lima».</span></div>
+        <div class="field"><label>Provincia: antes de la hora de corte</label><textarea name="prov_hoy" rows="7" class="notesbox">${e(ag.prov_hoy || '')}</textarea></div>
+        <div class="field"><label>Provincia: después de la hora de corte</label><textarea name="prov_manana" rows="7" class="notesbox">${e(ag.prov_manana || '')}</textarea><span class="note"><span class="mono">{entrega}</span> = MAÑANA, o el LUNES si es sábado por la tarde o domingo.</span></div>
+        <div class="field"><label>Hora de corte de provincia</label><select name="prov_corte_h">${Array.from({ length: 13 }, (_, i) => i + 9).map((h) => `<option value="${h}" ${Number(ag.prov_corte_h ?? 14) === h ? 'selected' : ''}>${h > 12 ? h - 12 : h}:00 ${h >= 12 ? 'p.m.' : 'a.m.'}</option>`).join('')}</select></div>
+      </div>
+      <div class="err" hidden></div><div><button class="send" type="submit">Guardar mensaje al agendar</button></div></form>`;
   const cp = CFG.capi || {};
   const capi = `<div class="card"><h3>Compra a Meta (anuncios)</h3>
       <p class="sub">Cuando se crea un pedido de una clienta que llegó por un anuncio de clic a WhatsApp, se avisa a Meta la <b>Compra</b> con el valor del pedido. Así en el Administrador de anuncios ves cuántas ventas y cuánto costó cada una, y Meta optimiza para traer compradoras.</p>
@@ -550,10 +562,10 @@ function drawConfig(body) {
       <div class="err" hidden></div><button class="send" style="height:auto">Guardar</button></form>`;
   body.innerHTML = shop
     ? `<div class="ph"><div><h2>Shopify</h2><p>Esta tienda vende por su web. Aquí conectas Shopify y eliges los mensajes de WhatsApp que salen solos con cada pedido.</p></div></div>
-      <div class="grid" style="gap:14px">${shopify}${mensajes}${conv}${capi}${precios}
+      <div class="grid" style="gap:14px">${shopify}${alAgendar}${mensajes}${conv}${capi}${precios}
         <p class="note">¿Esta tienda vende por chat? Cámbiala a «Por mensajes de WhatsApp» en <button class="linkbtn" data-cfg="general">General</button>.</p></div>`
     : `<div class="ph"><div><h2>Pedidos</h2><p>Precios, envíos y los mensajes que salen solos según el estado del pedido.</p></div></div>
-      <div class="grid" style="gap:14px">${precios}${mensajes}${conv}${capi}
+      <div class="grid" style="gap:14px">${precios}${alAgendar}${mensajes}${conv}${capi}
         <p class="note">¿Esta tienda vende por su web? Cámbiala a «Por Shopify» en <button class="linkbtn" data-cfg="general">General</button>.</p></div>`;
   const f = body.querySelector('#pcf');
   f.onsubmit = async (ev) => {
@@ -567,6 +579,20 @@ function drawConfig(body) {
       H.toast('Precios guardados');
     } catch (er) {
       const x = f.querySelector('.err');
+      x.textContent = er.message;
+      x.hidden = false;
+    }
+  };
+  const agf = body.querySelector('#agf');
+  agf.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const d = Object.fromEntries(new FormData(agf));
+    try {
+      const r = await H.api('PATCH', `/stores/${H.S.storeId}/pedidos-config`, { al_agendar: { on: !!d.on, lima_hoy: d.lima_hoy, lima_manana: d.lima_manana, prov_hoy: d.prov_hoy, prov_manana: d.prov_manana, prov_corte_h: Number(d.prov_corte_h) } });
+      CFG.cfg = r.cfg;
+      H.toast(r.cfg.al_agendar?.on ? 'Listo: el mensaje saldrá al poner ✅' : 'Guardado (apagado)');
+    } catch (er) {
+      const x = agf.querySelector('.err');
       x.textContent = er.message;
       x.hidden = false;
     }
