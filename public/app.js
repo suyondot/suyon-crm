@@ -3029,7 +3029,7 @@ initClientes({
   },
 });
 
-initReportes({ api, esc, $, S, store, goChat });
+initReportes({ api, esc, $, S, store, goChat, owner });
 initPedidos({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, listTime, canChats, kpiBar });
 initEnvios({ api, esc, toast, $, $$, S, store, owner, goChat, fmtPhone, canChats });
 initPanel({ api, esc, toast });

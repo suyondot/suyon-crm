@@ -338,6 +338,142 @@ r.get('/stores/:id/kpi', async (c) => {
   return c.json(v);
 });
 
+/* ---------- Dinero: cuánto entró (bruto), ticket medio, promociones, adelantos y proyección (pedido de Jordan) ---------- */
+// Bruto = total completo de los pedidos agendados (Confirmado/Validado o más adelante), aunque solo hayan pagado el adelanto.
+// Cobrado = entregados/recogidos completos + adelantos de los que aún no se cobran. Por cobrar = bruto − cobrado.
+const PERDIDOS = ['rechazado', 'no_recogido', 'cancelado'];
+const AGENDADOS = CONFIRMADOS.filter((s) => !PERDIDOS.includes(s));
+const unidadesDe = (o) => {
+  let items = [];
+  try { items = JSON.parse(o.items || '[]') || []; } catch {}
+  return { items, qty: o.unidades || items.reduce((a, it) => a + (Number(it.cantidad) || 0), 0) || 1 };
+};
+
+r.get('/stores/:id/dinero', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'config');
+  const tz = st.timezone || 'America/Lima';
+  const q = c.req.query();
+  const today = localDay(now(), tz);
+  const re = /^\d{4}-\d{2}-\d{2}$/;
+  const desde = re.test(q.desde || '') ? q.desde : today;
+  const hasta = re.test(q.hasta || '') ? q.hasta : desde;
+  if (hasta < desde) fail(400, 'La fecha final es antes que la inicial.');
+  const t0 = dayStart(desde, tz);
+  const t1 = dayStart(hasta, tz) + DAY;
+  if (t1 - t0 > 93 * DAY) fail(400, 'Elige como máximo 3 meses.');
+  const oneDay = t1 - t0 <= DAY + 3600e3;
+  const db = c.env.DB;
+  const hoy0 = dayStart(today, tz);
+  // Para la curva y la proyección: las últimas 8 semanas, siempre (no depende del periodo elegido)
+  const w0 = hoy0 - 55 * DAY;
+  const lo = Math.min(t0, w0);
+  const hi = Math.max(t1, hoy0 + DAY);
+  const { results } = await db.prepare(
+    `SELECT id, modo, status, items, unidades, total, adelanto, created_at FROM orders WHERE store_id = ? AND created_at >= ? AND created_at < ? LIMIT 50000`
+  ).bind(st.id, lo, hi).all();
+
+  const buckets = [];
+  if (oneDay) for (let h = 0; h < 24; h++) buckets.push({ key: String(h), label: `${h}h` });
+  else for (let t = t0; t < t1; t += DAY) {
+    const d = localDay(t + 3600e3, tz);
+    buckets.push({ key: d, label: d.slice(8) + '/' + d.slice(5, 7) });
+  }
+  const bucketOf = (t) => (oneDay ? String(localParts(t, tz).h) : localDay(t, tz));
+  const series = new Map(buckets.map((b) => [b.key, { monto: 0, ventas: 0 }]));
+  const T = { ventas: 0, bruto: 0, unidades: 0, cobrado: 0, por_cobrar: 0, lima: { n: 0, monto: 0 }, provincia: { n: 0, monto: 0 },
+    adelantos: { n: 0, monto: 0 }, entregados: { n: 0, monto: 0 }, cayeron: { n: 0, monto: 0 }, sin_agendar: { n: 0, monto: 0 } };
+  const promos = new Map();
+  const productos = new Map();
+  const r2 = (x) => Math.round(x * 100) / 100;
+  for (const o of results) {
+    if (o.created_at < t0 || o.created_at >= t1) continue;
+    const total = Number(o.total) || 0;
+    if (PERDIDOS.includes(o.status)) {
+      // Rechazado en Lima / no recogido en agencia: ya estaban agendados y se cayeron (cancelado = nunca se agendó)
+      if (o.status !== 'cancelado') { T.cayeron.n++; T.cayeron.monto += total; }
+      continue;
+    }
+    if (!AGENDADOS.includes(o.status)) { T.sin_agendar.n++; T.sin_agendar.monto += total; continue; }
+    const { items, qty } = unidadesDe(o);
+    T.ventas++;
+    T.bruto += total;
+    T.unidades += qty;
+    const z = o.modo === 'lima' ? T.lima : T.provincia;
+    z.n++; z.monto += total;
+    const adel = Math.min(Number(o.adelanto) || 0, total);
+    if (adel > 0) { T.adelantos.n++; T.adelantos.monto += adel; }
+    if (['entregado', 'recogido'].includes(o.status)) { T.entregados.n++; T.entregados.monto += total; T.cobrado += total; }
+    else T.cobrado += adel;
+    const pk = qty >= 5 ? 5 : qty;
+    const p = promos.get(pk) || { qty: pk, n: 0, monto: 0 };
+    p.n++; p.monto += total;
+    promos.set(pk, p);
+    for (const it of items) {
+      const name = title(it.producto || '') || 'Sin nombre';
+      const x = productos.get(name) || { name, unidades: 0, monto: 0 };
+      const n = Number(it.cantidad) || 1;
+      x.unidades += n;
+      x.monto += total * (n / qty);
+      productos.set(name, x);
+    }
+    const b = series.get(bucketOf(o.created_at));
+    if (b) { b.ventas++; b.monto += total; }
+  }
+  T.por_cobrar = Math.max(0, T.bruto - T.cobrado);
+  T.ticket = T.ventas ? T.bruto / T.ventas : 0;
+  T.prendas = T.ventas ? T.unidades / T.ventas : 0;
+  for (const k of ['bruto', 'cobrado', 'por_cobrar', 'ticket']) T[k] = r2(T[k]);
+  for (const k of ['lima', 'provincia', 'adelantos', 'entregados', 'cayeron', 'sin_agendar']) T[k].monto = r2(T[k].monto);
+  const promoList = [...promos.values()].sort((a, b) => a.qty - b.qty).map((p) => ({
+    ...p, monto: r2(p.monto), name: p.qty >= 5 ? '5 o más (por mayor)' : `Promo de ${p.qty}`, share: T.ventas ? p.n / T.ventas : 0,
+  }));
+  const top = [...promoList].sort((a, b) => b.n - a.n || b.monto - a.monto)[0] || null;
+
+  // Semanas (lunes a domingo) de las últimas 8: cuánto se vendió en cada una
+  const p0 = localParts(hoy0 + 3600e3, tz);
+  const lunes = hoy0 - ((p0.dow + 6) % 7) * DAY;
+  const semanas = [];
+  for (let i = 7; i >= 0; i--) {
+    const a = lunes - i * 7 * DAY;
+    const d = localDay(a + 3600e3, tz);
+    semanas.push({ desde: a, label: `${d.slice(8)}/${d.slice(5, 7)}`, monto: 0, ventas: 0, actual: i === 0 });
+  }
+  let u7 = 0, u7n = 0, p7 = 0;
+  for (const o of results) {
+    if (!AGENDADOS.includes(o.status)) continue;
+    const total = Number(o.total) || 0;
+    const w = semanas.find((s) => o.created_at >= s.desde && o.created_at < s.desde + 7 * DAY);
+    if (w) { w.monto += total; w.ventas++; }
+    if (o.created_at >= hoy0 - 6 * DAY && o.created_at < hoy0 + DAY) { u7 += total; u7n++; }
+    else if (o.created_at >= hoy0 - 13 * DAY && o.created_at < hoy0 - 6 * DAY) p7 += total;
+  }
+  for (const s of semanas) { s.monto = r2(s.monto); delete s.desde; }
+  const diasSemana = ((p0.dow + 6) % 7) + 1; // días que van de esta semana (lunes = 1)
+  const actual = semanas[semanas.length - 1];
+  const anterior = semanas[semanas.length - 2];
+  const proyeccion = {
+    promedio_dia: r2(u7 / 7),
+    ventas_dia: u7n / 7,
+    ultimos7: r2(u7),
+    previos7: r2(p7),
+    cambio: p7 ? (u7 - p7) / p7 : null,
+    semana_actual: actual.monto,
+    semana_dias: diasSemana,
+    semana_ritmo: r2((actual.monto / diasSemana) * 7),
+    semana_anterior: anterior.monto,
+    proxima: r2(u7),
+    x2: r2(u7 * 2),
+    x3: r2(u7 * 3),
+    ticket7: u7n ? r2(u7 / u7n) : 0,
+  };
+  return c.json({
+    desde, hasta, oneDay, totales: T, promos: promoList, top_promo: top,
+    productos: [...productos.values()].map((x) => ({ ...x, monto: r2(x.monto) })).sort((a, b) => b.monto - a.monto).slice(0, 10),
+    series: buckets.map((b) => ({ label: b.label, ...series.get(b.key), monto: r2(series.get(b.key).monto) })),
+    semanas, proyeccion,
+  });
+});
+
 export default r;
 
 /* ---------------- Embudo: hasta qué paso llega cada conversación ---------------- */

@@ -1394,6 +1394,14 @@ try {
     assert.match(await textoAlAgendar(fakeEnv, st0, 'lima', lima(11)), /Entrega HOY/);
     assert.match(await textoAlAgendar(fakeEnv, st0, 'lima', lima(15)), /Entrega MAÑANA/);
     await call('PATCH', `/api/stores/${store.id}/pedidos-config`, { al_agendar: { on: false } });
+    // Reportes → Dinero: el pedido agendado cuenta completo en el bruto, con su ticket y su promo
+    const din = await call('GET', `/api/stores/${store.id}/dinero`);
+    assert.ok(din.totales.bruto >= 89, JSON.stringify(din.totales));
+    assert.ok(din.totales.ventas >= 1 && din.totales.ticket > 0);
+    assert.ok(din.promos.some((x) => x.n >= 1));
+    assert.equal(din.semanas.length, 8);
+    assert.equal(din.proyeccion.x2, Math.round(din.proyeccion.proxima * 2 * 100) / 100);
+    assert.ok(din.totales.por_cobrar >= 0 && din.totales.cobrado <= din.totales.bruto);
     const ok = await until(async () => { const x = (await call('GET', `/api/stores/${store.id}/pedidos?q=Luz`)).pedidos[0]; return x.status === 'confirmado' ? x : null; });
     assert.equal(ok.status, 'confirmado');
     assert.equal((await chatOf('51912345678')).dijo_si, 0);

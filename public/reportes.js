@@ -29,7 +29,11 @@ export function resetReportes() {
   R.data = null;
 }
 
+// Vistas: Resumen · Embudo (solo mensajes) · Dinero (solo quien maneja la tienda)
+const views = () => [['resumen', 'Resumen'], ...(web() ? [] : [['embudo', 'Embudo']]), ...(H.owner?.() ? [['dinero', '💰 Dinero']] : [])];
+
 export async function renderReportes(content) {
+  if (!views().some(([k]) => k === R.view)) R.view = 'resumen';
   if (R.storeId !== H.S.storeId || R.canal !== web()) {
     R.storeId = H.S.storeId;
     R.canal = web();
@@ -39,7 +43,7 @@ export async function renderReportes(content) {
   if (!R.desde) [R.desde, R.hasta] = [d0, d1];
   content.innerHTML = `<div class="rep">
     <div class="rephead">
-      ${web() ? '' : `<div class="seg" role="tablist" aria-label="Vista">${[['resumen', 'Resumen'], ['embudo', 'Embudo']].map(([k, l]) => `<button data-rv="${k}" aria-pressed="${R.view === k}">${l}</button>`).join('')}</div>`}
+      ${views().length > 1 ? `<div class="seg" role="tablist" aria-label="Vista">${views().map(([k, l]) => `<button data-rv="${k}" aria-pressed="${R.view === k}">${l}</button>`).join('')}</div>` : ''}
       <div class="seg" role="tablist" aria-label="Periodo">${[['hoy', 'Hoy'], ['ayer', 'Ayer'], ['7', '7 días'], ['30', '30 días'], ['rango', 'Elegir fechas']].map(([k, l]) => `<button data-rr="${k}" aria-pressed="${R.range === k}">${l}</button>`).join('')}</div>
       <div class="repdates" ${R.range === 'rango' ? '' : 'hidden'}><input type="date" id="rd0" value="${e(R.desde)}" aria-label="Desde"><span>a</span><input type="date" id="rd1" value="${e(R.hasta)}" aria-label="Hasta"></div>
       <span class="grow"></span><span class="note" id="repwhen"></span>
@@ -73,10 +77,12 @@ async function load() {
   R.loading = true;
   try {
     const emb = !web() && R.view === 'embudo';
+    const din = R.view === 'dinero';
     const extra = emb ? `&ad=${encodeURIComponent(R.ad)}&zona=${R.zona}` : '';
-    R.data = await H.api('GET', `/stores/${H.S.storeId}/${web() ? 'reporte-web' : emb ? 'embudo' : 'reporte'}?desde=${desde}&hasta=${hasta}${extra}`);
+    R.data = await H.api('GET', `/stores/${H.S.storeId}/${din ? 'dinero' : web() ? 'reporte-web' : emb ? 'embudo' : 'reporte'}?desde=${desde}&hasta=${hasta}${extra}`);
     R.data._web = web();
     R.data._embudo = emb;
+    R.data._dinero = din;
   } catch (er) {
     const b = H.$('#repbody');
     if (b) b.innerHTML = `<div class="err">${e(er.message)}</div>`;
@@ -120,6 +126,7 @@ function draw() {
   const box = H.$('#repbody');
   const d = R.data;
   if (!box || !d) return;
+  if (d._dinero) return drawDinero(box, d);
   if (d._web) return drawWeb(box, d);
   if (d._embudo) return drawEmbudo(box, d);
   const t = d.totales;
@@ -302,4 +309,61 @@ function drawEmbudo(box, d) {
     const c = ev.target.closest('[data-ec]');
     if (c && H.goChat) H.goChat(Number(c.dataset.ec));
   };
+}
+
+/* ---------------- Dinero: cuánto entró, ticket medio, promociones, adelantos y proyección ---------------- */
+function drawDinero(box, d) {
+  const t = d.totales;
+  const p = d.proyeccion;
+  const when = H.$('#repwhen');
+  if (when) when.textContent = d.desde === d.hasta ? new Date(d.desde + 'T12:00').toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' }) : `${d.desde.slice(8)}/${d.desde.slice(5, 7)} al ${d.hasta.slice(8)}/${d.hasta.slice(5, 7)}`;
+  const top = d.top_promo;
+  const lp = t.lima.n + t.provincia.n;
+  const flecha = (x) => (x == null ? '' : `<b class="${x >= 0 ? 'up' : 'down'}">${x >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(x * 100))} %</b>`);
+  const mx = Math.max(...d.semanas.map((s) => s.monto), 1);
+  const metric = R.dmetric || 'monto';
+  const series = d.series.map((s) => ({ ...s, monto: Math.round(s.monto) }));
+  box.innerHTML = `
+    <div class="rtiles">
+      ${tile('Vendido (bruto)', money(t.bruto), `${fmt(t.ventas)} ${t.ventas === 1 ? 'venta agendada' : 'ventas agendadas'} · ${fmt(t.unidades)} prendas`, 'hi')}
+      ${tile('Ticket medio', money(t.ticket), t.ventas ? `${t.prendas.toFixed(1)} prendas por pedido` : '—')}
+      ${tile('Promo más vendida', top ? e(top.name) : '—', top ? `${fmt(top.n)} pedidos · ${pct(top.share)}` : 'todavía no hay ventas')}
+      ${tile('Adelantos', money(t.adelantos.monto), `${fmt(t.adelantos.n)} ${t.adelantos.n === 1 ? 'adelanto' : 'adelantos'} cobrados`)}
+      ${tile('Ya cobrado', money(t.cobrado), `entregados/recogidos (${fmt(t.entregados.n)}) + adelantos`)}
+      ${tile('Por cobrar', money(t.por_cobrar), 'lo que falta que pague al recibir o recoger')}
+      ${tile('Lima', money(t.lima.monto), lp ? `${fmt(t.lima.n)} ventas · ${Math.round((t.lima.n / lp) * 100)} %` : '—')}
+      ${tile('Provincia', money(t.provincia.monto), lp ? `${fmt(t.provincia.n)} ventas · ${Math.round((t.provincia.n / lp) * 100)} %` : '—')}
+      ${tile('Se cayeron', money(t.cayeron.monto), t.cayeron.n ? `${fmt(t.cayeron.n)} rechazados o no recogidos` : 'ninguno')}
+      ${tile('Sin agendar', money(t.sin_agendar.monto), t.sin_agendar.n ? `${fmt(t.sin_agendar.n)} pedidos esperan ✅ o el adelanto` : 'ninguno')}
+    </div>
+    <section class="rcard rwide"><div class="rch"><h3>${d.oneDay ? 'Por hora' : 'Por día'}</h3>
+      <div class="seg sm" role="tablist">${[['monto', 'Soles'], ['ventas', 'Ventas']].map(([k, l]) => `<button data-rd="${k}" aria-pressed="${metric === k}">${l}</button>`).join('')}</div></div>
+      ${vbarsWeb(series, metric, { monto: 'Soles', ventas: 'Ventas' })}</section>
+    <div class="rgrid">
+      <section class="rcard"><h3>Promociones</h3><p class="rsub">Qué promo compran más y cuánta plata deja cada una</p>
+        ${d.promos.length ? `<div class="rtable"><table><thead><tr><th>Promo</th><th class="r">Pedidos</th><th class="r">%</th><th class="r">Soles</th><th class="r">Ticket</th></tr></thead><tbody>
+          ${d.promos.map((x) => `<tr${top && x.qty === top.qty ? ' class="best"' : ''}><td>${e(x.name)}</td><td class="r mono">${fmt(x.n)}</td><td class="r mono">${pct(x.share)}</td><td class="r mono">${money(x.monto)}</td><td class="r mono">${money(x.n ? x.monto / x.n : 0)}</td></tr>`).join('')}
+        </tbody></table></div>` : '<p class="note rempty">Todavía no hay ventas agendadas en este periodo.</p>'}</section>
+      <section class="rcard"><h3>Productos</h3><p class="rsub">Soles por producto</p>${hbars(d.productos.map((x) => ({ name: x.name, value: Math.round(x.monto) })), { unit: ' soles', empty: 'Todavía no hay ventas' })}</section>
+    </div>
+    <section class="rcard rwide"><h3>Cómo vas por semana</h3><p class="rsub">Vendido (bruto) de lunes a domingo, últimas 8 semanas</p>
+      <div class="wkbars">${d.semanas.map((s) => `<div class="wk${s.actual ? ' now' : ''}" title="Semana del ${e(s.label)}: ${money(s.monto)} · ${fmt(s.ventas)} ventas"><span class="wkv">${s.monto ? money(Math.round(s.monto)) : ''}</span><i style="height:${s.monto ? Math.max(3, (s.monto / mx) * 100) : 0}%"></i><span class="wkl">${s.actual ? 'Esta' : e(s.label)}</span></div>`).join('')}</div>
+      <p class="note" style="margin:10px 0 0">Esta semana llevas <b>${money(p.semana_actual)}</b> en ${p.semana_dias} ${p.semana_dias === 1 ? 'día' : 'días'}. A este ritmo cerrarías en <b>~${money(Math.round(p.semana_ritmo))}</b> (la semana pasada: ${money(p.semana_anterior)}).</p></section>
+    <section class="rcard rwide"><h3>Proyección de la próxima semana</h3>
+      <p class="rsub">Últimos 7 días: <b>${money(p.ultimos7)}</b> (${money(Math.round(p.promedio_dia))} al día, ticket ${money(p.ticket7)}) ${flecha(p.cambio)} vs los 7 días anteriores</p>
+      <div class="rtiles">
+        ${tile('Si sigues igual', `~${money(Math.round(p.proxima))}`, 'misma pauta, mismo cierre', 'hi')}
+        ${tile('Si duplicas la pauta', `~${money(Math.round(p.x2))}`, 'el doble de clientas')}
+        ${tile('Si triplicas la pauta', `~${money(Math.round(p.x3))}`, 'el triple de clientas')}
+      </div>
+      <p class="note" style="margin:8px 0 0">Es una cuenta simple: supone que con más pauta llegan más clientas y cierran igual que hoy. Al escalar, el costo por venta suele subir y la tasa de cierre bajar, así que tómalo como el máximo posible, no como promesa.</p></section>
+    <p class="note rnote">Vendido (bruto) = el total completo de cada pedido agendado (✅ LIMA, ✅ PROVINCIA o pago validado), aunque solo haya pagado el adelanto. Ya cobrado = pedidos entregados o recogidos + los adelantos de los que todavía no llegan. Se cuentan los pedidos creados en el periodo.</p>`;
+  const sg = box.querySelector('[data-rd]')?.parentElement;
+  if (sg) sg.onclick = (ev) => {
+    const b = ev.target.closest('[data-rd]');
+    if (!b) return;
+    R.dmetric = b.dataset.rd;
+    drawDinero(box, d);
+  };
+  chartTips(box);
 }
