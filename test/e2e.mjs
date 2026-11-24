@@ -1384,6 +1384,11 @@ try {
     assert.equal(listo.length, 1, 'un solo mensaje (sin el «Pedido confirmado» repetido)');
     assert.match(listo[0].body.text.body, /PEDIDO LISTO[\s\S]*(HOY|MAÑANA|LUNES)/);
     assert.ok(!/\{entrega\}/.test(listo[0].body.text.body));
+    const { cfgForChat, preciosAntiguos } = await import('../src/orders.js');
+    const stP = { order_cfg: JSON.stringify({ precios: { 1: 99, 2: 159, 3: 209 }, precios_antes: { 1: 109, 2: 169, 3: 209 }, precios_desde: 1000 }) };
+    assert.equal(cfgForChat(stP, { created_at: 500 }).precios[1], 109, 'clienta antigua: precio de antes');
+    assert.equal(cfgForChat(stP, { created_at: 2000 }).precios[1], 99, 'clienta nueva: precio nuevo');
+    assert.equal(preciosAntiguos(cfgForChat(stP, null), { created_at: 500, sim: 1 }), false, 'el simulador usa los nuevos');
     const { textoAlAgendar } = await import('../src/agendar.js');
     const st0 = { id: 0, timezone: 'America/Lima', order_cfg: JSON.stringify({ al_agendar: { on: 1 } }) };
     const lima = (h, d = '2026-11-18') => new Date(`${d}T${String(h).padStart(2, '0')}:00:00-05:00`).getTime();

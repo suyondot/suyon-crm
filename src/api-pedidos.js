@@ -372,6 +372,18 @@ r.patch('/stores/:id/pedidos-config', async (c) => {
   if ('prov_modo' in b) cfg.prov_modo = b.prov_modo === 'ce_prov' ? 'ce_prov' : 'agencia';
   if ('sin_cobertura' in b) cfg.sin_cobertura = clip(String(b.sin_cobertura || ''), 2000);
   if ('recompra_dias' in b) cfg.recompra_dias = Math.min(Math.max(Math.round(n(b.recompra_dias, 20)), 1), 365);
+  // Precios viejos para clientas que ya escribían antes del cambio (null = quitar)
+  if ('precios_antes' in b) {
+    if (b.precios_antes && typeof b.precios_antes === 'object') {
+      const pa = {};
+      for (const [k, v] of Object.entries(b.precios_antes)) if (Number(k) > 0 && Number(v) > 0) pa[Number(k)] = Math.round(Number(v) * 100) / 100;
+      cfg.precios_antes = pa;
+    } else delete cfg.precios_antes;
+  }
+  if ('precios_desde' in b) {
+    if (Number(b.precios_desde) > 0) cfg.precios_desde = Math.round(Number(b.precios_desde));
+    else delete cfg.precios_desde;
+  }
   if (b.al_agendar && typeof b.al_agendar === 'object') {
     const a = b.al_agendar;
     const x = cfg.al_agendar;

@@ -4,7 +4,7 @@ import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay, Http
 import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON, PROMPT_GENERICO } from './bot-template.js';
 import { iaAllowed } from './billetera.js';
-import { draftFromChat, insertOrder, cfgOf, varsFromForm, modoFor, pedidoAbierto } from './orders.js';
+import { draftFromChat, insertOrder, cfgOf, varsFromForm, modoFor, pedidoAbierto, preciosAntiguos } from './orders.js';
 import { agenciesNear, agenciesIn, agencyOptions } from './shalom.js';
 import { onOrderCreated } from './automations.js';
 import { storeBlocked, loadPlan, priceText } from './billing.js';
@@ -1191,6 +1191,12 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   if (celWa && !vars.celular) vars.celular = celWa;
   const { results: arows } = await env.DB.prepare('SELECT key FROM bot_assets WHERE store_id = ?').bind(store.id).all();
   let system = buildSystem(await withPlan(env, settings), node, labels, vars, arows.map((a) => a.key));
+  // Cambio de precios solo para clientas nuevas: a la que ya escribía antes se le respetan sus precios
+  const ocfg = cfgOf(store);
+  if (preciosAntiguos(ocfg, chat)) {
+    const tabla = Object.entries(ocfg.precios_antes).sort((a, b) => a[0] - b[0]).map(([u, p]) => `${u}: S/${p}`).join(' · ');
+    system += `\n\n## PRECIOS DE ESTA CLIENTA (manda sobre cualquier otro precio)\nEsta clienta ya conversaba con nosotras antes del cambio de precios: respétale SIEMPRE estos precios en tus mensajes y en el formulario: ${tabla}. No le menciones otros precios.`;
+  }
   system += `\n\n## CÓMO RESPONDER (reglas del sistema)
 - Si la clienta te hizo una pregunta, respóndela PRIMERO (en tu primer mensaje) y recién después pide lo que falta. Nunca la ignores ni empieces con «Disculpa» o «Perdón».
 - No repitas un mensaje que ya le mandaste igual (por ejemplo, el pedido de datos o el adelanto): si falta algo, pídelo en una línea corta.

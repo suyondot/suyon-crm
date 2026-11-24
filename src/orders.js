@@ -75,6 +75,16 @@ export function cfgOf(store) {
   return { ...DEFAULT_CFG, ...c, precios: c.precios && Object.keys(c.precios).length ? { ...c.precios } : { ...DEFAULT_CFG.precios }, al_agendar: { ...DEFAULT_CFG.al_agendar, ...(c.al_agendar || {}) } };
 }
 
+// Cambio de precios solo para clientas NUEVAS: las que ya escribían antes de `precios_desde` conservan `precios_antes`
+export function preciosAntiguos(cfg, chat) {
+  return !!(cfg?.precios_desde && cfg.precios_antes && Object.keys(cfg.precios_antes).length && chat && !chat.sim && (chat.created_at || 0) < cfg.precios_desde);
+}
+export function cfgForChat(store, chat) {
+  const cfg = cfgOf(store);
+  if (preciosAntiguos(cfg, chat)) cfg.precios = { ...cfg.precios_antes };
+  return cfg;
+}
+
 export function priceFor(units, cfg) {
   const u = Math.max(0, Math.round(Number(units) || 0));
   if (!u) return 0;
@@ -389,7 +399,7 @@ export function formText(d, cfg) {
 
 // Borrador desde la conversación: lo que guardó el bot + el chat
 export function draftFromChat(chat, store) {
-  const cfg = cfgOf(store);
+  const cfg = cfgForChat(store, chat);
   let v = {};
   try {
     v = JSON.parse(chat.bot_vars || '{}') || {};
