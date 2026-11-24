@@ -75,13 +75,26 @@ export function cfgOf(store) {
   return { ...DEFAULT_CFG, ...c, precios: c.precios && Object.keys(c.precios).length ? { ...c.precios } : { ...DEFAULT_CFG.precios }, al_agendar: { ...DEFAULT_CFG.al_agendar, ...(c.al_agendar || {}) } };
 }
 
-// Cambio de precios solo para clientas NUEVAS: las que ya escribían antes de `precios_desde` conservan `precios_antes`
+// Cambio de precios solo para clientas NUEVAS: cada clienta conserva los precios que había cuando empezó a escribir.
+// `precios_tramos` = [{ hasta, precios }] (los que escribieron antes de `hasta` usan esos precios); también vale el
+// formato viejo de un solo cambio (`precios_desde` + `precios_antes`).
+function tramosDe(cfg) {
+  const t = Array.isArray(cfg?.precios_tramos) ? cfg.precios_tramos.filter((x) => x && x.hasta > 0 && x.precios && Object.keys(x.precios).length) : [];
+  if (!t.length && cfg?.precios_desde && cfg.precios_antes && Object.keys(cfg.precios_antes).length) t.push({ hasta: cfg.precios_desde, precios: cfg.precios_antes });
+  return t.sort((a, b) => a.hasta - b.hasta);
+}
+export function preciosDeChat(cfg, chat) {
+  if (!chat || chat.sim) return null;
+  const t = tramosDe(cfg).find((x) => (chat.created_at || 0) < x.hasta);
+  return t ? { ...t.precios } : null;
+}
 export function preciosAntiguos(cfg, chat) {
-  return !!(cfg?.precios_desde && cfg.precios_antes && Object.keys(cfg.precios_antes).length && chat && !chat.sim && (chat.created_at || 0) < cfg.precios_desde);
+  return !!preciosDeChat(cfg, chat);
 }
 export function cfgForChat(store, chat) {
   const cfg = cfgOf(store);
-  if (preciosAntiguos(cfg, chat)) cfg.precios = { ...cfg.precios_antes };
+  const p = preciosDeChat(cfg, chat);
+  if (p) cfg.precios = p;
   return cfg;
 }
 

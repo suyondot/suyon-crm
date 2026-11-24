@@ -380,6 +380,21 @@ r.patch('/stores/:id/pedidos-config', async (c) => {
       cfg.precios_antes = pa;
     } else delete cfg.precios_antes;
   }
+  // Varios cambios de precio seguidos: [{ hasta: timestamp, precios: {1: 109, …} }]
+  if ('precios_tramos' in b) {
+    if (Array.isArray(b.precios_tramos) && b.precios_tramos.length) {
+      cfg.precios_tramos = b.precios_tramos
+        .map((t) => {
+          const pr = {};
+          for (const [k, v] of Object.entries(t?.precios || {})) if (Number(k) > 0 && Number(v) > 0) pr[Number(k)] = Math.round(Number(v) * 100) / 100;
+          return { hasta: Math.round(Number(t?.hasta) || 0), precios: pr };
+        })
+        .filter((t) => t.hasta > 0 && Object.keys(t.precios).length)
+        .slice(0, 10);
+      delete cfg.precios_antes;
+      delete cfg.precios_desde;
+    } else delete cfg.precios_tramos;
+  }
   if ('precios_desde' in b) {
     if (Number(b.precios_desde) > 0) cfg.precios_desde = Math.round(Number(b.precios_desde));
     else delete cfg.precios_desde;
