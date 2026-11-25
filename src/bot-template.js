@@ -665,7 +665,7 @@ PREGUNTAS FRECUENTES
 - ¿Es la API oficial? Sí, la API oficial de WhatsApp de Meta. Nada de programas piratas.
 - ¿Puedo seguir usando WhatsApp Business en el celular? Sí, se puede conectar en modo coexistencia y seguir usando la app con el mismo número.
 - ¿Mi número está en otra herramienta (otro CRM o bot)? Hay que desconectarlo de esa herramienta antes de pasarlo. Lo vemos juntos en la demo.
-- ¿Cómo conecto mi número? Lo hacemos juntos en la demo o al empezar: toma unos minutos.
+- ¿Cómo conecto mi número? Tú mismo, con un clic: en Configuración → Número de WhatsApp tocas «Conectar WhatsApp», se abre la ventana de Meta, eliges tu cuenta y pones el código SMS. Si ya usas WhatsApp Business en el celular, tocas «Ya uso WhatsApp Business en el celular» y traemos tus contactos y tu historial de chats. Si prefieres, lo hacemos juntos en la demo.
 - ¿Cuánto cobra Meta? Meta cobra aparte, directo a tu tarjeta, según el tipo de mensaje. Si la clienta llega por un anuncio de clic a WhatsApp y respondes dentro de las primeras 24 h, los mensajes de los siguientes 3 días son gratis. El sistema muestra cuándo un chat está en esa ventana.
 - ¿Necesito saber de IA o programar? No. Hay una plantilla para vender ropa y solo cambias precios, tallas, colores y fotos.
 - ¿Me pueden bloquear el número? Las reglas son las mismas que para cualquier herramienta oficial. Lo que causa bloqueos es que te reporten o mandar mensajes masivos a quien no te escribió.

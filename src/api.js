@@ -24,7 +24,7 @@ import { fixSpelling } from './ortografia.js';
 import { loadSaldo } from './saldo.js';
 import { loadPlan } from './billing.js';
 import { mailReady, sendCode, checkCode, sendReset } from './correo.js';
-import { signupInfo, connectSignup } from './signup.js';
+import { signupInfo, connectSignup, coexSync, parseCoex } from './signup.js';
 
 const api = new Hono();
 const H24 = 24 * 3600e3;
@@ -55,6 +55,7 @@ function publicStore(s) {
     Object.assign(out, {
       phone_number_id: s.phone_number_id, waba_id: s.waba_id, token_secret: s.token_secret,
       read_receipts: s.read_receipts, last_webhook_at: s.last_webhook_at, connect_error: s.connect_error, token_exp: s.token_enc ? s.token_exp || null : null,
+      coex_sync: s.connected_via === 'coexistencia' ? parseCoex(s.coex_sync) : null,
     });
   }
   return out;
@@ -616,6 +617,16 @@ api.post('/stores/:id/whatsapp/signup', async (c) => {
     c.set('access', undefined);
     return c.json({ ok: false, steps: [], error: e.message, ...(await mePayload(c)) }, 200);
   }
+});
+
+// Coexistencia: volver a pedir a Meta los contactos o el historial que fallaron (solo en las primeras 24 h)
+api.post('/stores/:id/whatsapp/coex-sync', async (c) => {
+  const st = await storeFor(c, c.req.param('id'), 'owner');
+  if (st.connected_via !== 'coexistencia' || !st.phone_number_id) fail(400, 'Este número no se conectó con la app WhatsApp Business del celular.');
+  const r = await coexSync(c.env, st);
+  if (r.expired) fail(400, 'Pasaron más de 24 horas desde que se conectó: Meta ya no deja traer los contactos ni el historial. Para hacerlo hay que desconectar y volver a conectar el número.');
+  c.set('access', undefined);
+  return c.json({ ok: true, sync: r, ...(await mePayload(c)) });
 });
 
 api.post('/stores/:id/register', async (c) => {
