@@ -2291,8 +2291,22 @@ async function drawSignup(st) {
       <button class="iconbtn esbtn" id="es-coex" type="button"><span><b>Ya uso WhatsApp Business en el celular</b><small>Lo sigues usando en el celular y también aquí</small></span></button>
     </div>
     <p class="note" style="margin:8px 0 0">Tu número queda a tu nombre, en tu propia cuenta de Meta. Después de conectar, agrega una tarjeta en esa cuenta (Meta cobra directo los mensajes que no son gratis).</p>
+    ${st.connected_via === 'coexistencia' ? coexHTML(st) : ''}
     ${S.me.user.is_admin ? '' : helpWA('Hola, tuve un problema al conectar mi número de WhatsApp en Control Total', '¿Algo no funcionó? Escríbenos y lo conectamos juntos.')}`;
   loadFbSdk(es).catch(() => {});
+  const cx = $('#coex-retry');
+  if (cx) cx.onclick = async () => {
+    cx.disabled = true;
+    try {
+      const r = await api('POST', `/stores/${st.id}/whatsapp/coex-sync`);
+      setMe(r);
+      toast('Listo: se lo pedimos a Meta otra vez', 4000);
+      render();
+    } catch (e) {
+      toast(e.message, 6000);
+      cx.disabled = false;
+    }
+  };
   $('#es-new').onclick = () => startSignup(st, false);
   $('#es-coex').onclick = () => startSignup(st, true);
 }
@@ -2398,6 +2412,30 @@ function startSignup(st, coex) {
     // la coexistencia la detecta Meta sola si el número ya usa WhatsApp Business en el celular
     extras: { setup: {} },
   });
+}
+
+// Coexistencia: estado de los contactos y del historial que se traen del celular (Meta da 24 h)
+function coexHTML(st) {
+  const s = st.coex_sync;
+  if (!s) return '';
+  const left = s.at + 24 * 3600e3 - Date.now();
+  const ct = s.contacts || {};
+  const hi = s.history || {};
+  const fila = (icon, txt) => `<li>${icon} ${txt}</li>`;
+  const cont = ct.ok
+    ? fila('✅', `Contactos del celular${ct.n ? `: ${ct.n} nombres guardados` : ': pedidos, llegan en unos minutos'}`)
+    : fila('⚠️', `Contactos del celular: ${esc(ct.error || 'todavía no se pidieron')}`);
+  const hist = hi.declined
+    ? fila('🚫', 'Historial: en el celular no se aceptó «Compartir historial». Los chats nuevos sí llegan.')
+    : hi.done
+      ? fila('✅', `Historial importado (${hi.msgs || 0} mensajes)`)
+      : hi.ok
+        ? fila('⏳', `Historial: ${hi.progress ? `${hi.progress} % · ${hi.msgs || 0} mensajes` : 'pedido. En el celular acepta «Compartir historial» y deja abierta la app WhatsApp Business'}`)
+        : fila('⚠️', `Historial: ${esc(hi.error || 'todavía no se pidió')}`);
+  const falta = !ct.ok || (!hi.ok && !hi.declined);
+  return `<div class="${falta ? 'warnbox' : 'note'}" style="margin:10px 0 0"><b>Del celular a Control Total</b><ul style="margin:6px 0 0;padding-left:18px">${cont}${hist}</ul>
+    ${falta && left > 0 ? `<button class="iconbtn" id="coex-retry" type="button" style="margin-top:8px">Volver a pedirlo a Meta</button> <small>Quedan ${Math.max(1, Math.round(left / 3600e3))} h para hacerlo</small>` : ''}
+    ${falta && left <= 0 ? '<small>Pasaron las 24 h que da Meta: para traerlo hay que conectar el número otra vez.</small>' : ''}</div>`;
 }
 
 // Permiso de Meta con fecha de vencimiento (Conectar con un clic: 30 o 60 días)

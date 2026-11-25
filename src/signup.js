@@ -112,7 +112,7 @@ export async function connectSignup(env, store, { code, phone_number_id, waba_id
   if (other) throw new HttpError(409, `Ese número ya está en la tienda «${other.name}».`);
   const sealed = await sealText(env, token);
   const via = coexistencia ? 'coexistencia' : 'embedded';
-  await env.DB.prepare("UPDATE stores SET phone_number_id = ?, waba_id = ?, token_enc = ?, token_exp = ?, connected_via = ?, status = 'pendiente', connect_error = NULL, rev = rev + 1 WHERE id = ?")
+  await env.DB.prepare("UPDATE stores SET phone_number_id = ?, waba_id = ?, token_enc = ?, token_exp = ?, connected_via = ?, coex_sync = NULL, status = 'pendiente', connect_error = NULL, rev = rev + 1 WHERE id = ?")
     .bind(phone, waba, sealed, tokenExp, via, store.id).run();
   const st = { ...store, phone_number_id: phone, waba_id: waba };
   await graphCall(tenv, { ...st, ...tst }, `${waba}/subscribed_apps`, { method: 'POST' });
@@ -126,13 +126,57 @@ export async function connectSignup(env, store, { code, phone_number_id, waba_id
     } catch (e) {
       steps.push(`Activar el número: ${e.message}`);
     }
-  } else steps.push('Número de la app WhatsApp Business: sigue funcionando también en el celular');
+  } else {
+    // Coexistencia: el número ya está registrado (NO se llama a register). Meta da 24 h para traer
+    // los contactos y el historial del celular, y cada uno se puede pedir UNA sola vez.
+    steps.push('Número de la app WhatsApp Business: sigue funcionando también en el celular');
+    const sync = await coexSync(tenv, { ...store, phone_number_id: phone, waba_id: waba, ...tst }, { fresh: true });
+    if (sync.contacts?.ok) steps.push('Contactos del celular: pedidos a Meta (llegan en unos minutos)');
+    else steps.push(`Contactos del celular: ${sync.contacts?.error || 'no se pudieron pedir'} (reintenta desde Número de WhatsApp en las próximas 24 h)`);
+    if (sync.history?.ok) steps.push('Historial de chats: pedido. En tu celular acepta «Compartir historial» y deja la app WhatsApp Business abierta unos minutos');
+    else steps.push(`Historial de chats: ${sync.history?.error || 'no se pudo pedir'} (reintenta desde Número de WhatsApp en las próximas 24 h)`);
+  }
   const info = await graphCall(tenv, { ...st, ...tst }, `${phone}?fields=display_phone_number,verified_name,quality_rating`).catch(() => ({}));
   await env.DB.prepare("UPDATE stores SET status = 'activo', connect_error = NULL, verified_name = ?, phone_display = COALESCE(?, phone_display), rev = rev + 1 WHERE id = ?")
     .bind(info.verified_name || null, info.display_phone_number || null, store.id).run();
   steps.push(`Conectado como ${info.verified_name || 'tu negocio'} · ${info.display_phone_number || phone}`);
   if (tokenExp) steps.push(`Info: el permiso de Meta vence el ${new Date(tokenExp).toLocaleDateString('es-PE', { timeZone: store.timezone || 'America/Lima', day: 'numeric', month: 'long', year: 'numeric' })}. Antes de esa fecha te avisamos para volver a tocar «Conectar WhatsApp» (mismo número, 1 minuto).`);
   return { steps, at: now(), via, phone: clip(info.display_phone_number || phone, 40) };
+}
+
+// ---------- Coexistencia: traer contactos e historial del celular ----------
+export const COEX_WINDOW = 24 * 3600e3; // Meta da 24 h desde que se conectó
+export const COEX_TYPES = { contacts: 'smb_app_state_sync', history: 'history' };
+
+export function parseCoex(raw) {
+  try {
+    const o = raw ? JSON.parse(raw) : null;
+    return o && typeof o === 'object' ? o : null;
+  } catch {
+    return null;
+  }
+}
+
+// Pide a Meta lo que falta (cada tipo una sola vez por conexión). `fresh` = recién conectado (empieza de cero).
+export async function coexSync(env, store, { fresh = false } = {}) {
+  const t = now();
+  let s = fresh ? null : parseCoex(store.coex_sync);
+  if (!s) s = { at: t };
+  if (t - s.at > COEX_WINDOW) {
+    s.expired = true;
+  } else {
+    for (const [k, type] of Object.entries(COEX_TYPES)) {
+      if (s[k]?.ok) continue;
+      try {
+        const r = await graphCall(env, store, `${store.phone_number_id}/smb_app_data`, { method: 'POST', json: { messaging_product: 'whatsapp', sync_type: type } });
+        s[k] = { ok: true, request_id: r?.request_id || null, at: now() };
+      } catch (e) {
+        s[k] = { ok: false, error: clip(e.message, 200), at: now() };
+      }
+    }
+  }
+  await env.DB.prepare('UPDATE stores SET coex_sync = ?, rev = rev + 1 WHERE id = ?').bind(JSON.stringify(s), store.id).run();
+  return s;
 }
 
 // Una vez al día: avisa a la tienda cuando su permiso de Meta está por vencer o ya venció

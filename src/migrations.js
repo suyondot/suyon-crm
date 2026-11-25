@@ -720,6 +720,20 @@ export const MIGRATIONS = [
       `UPDATE stores SET rev = rev + 1`,
     ],
   },
+  {
+    id: 35,
+    name: 'coexistencia: estado de la sincronización (contactos e historial) y contactos guardados en el celular',
+    sql: [
+      'ALTER TABLE stores ADD COLUMN coex_sync TEXT',
+      `CREATE TABLE wa_contacts (
+        store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+        wa_id TEXT NOT NULL,
+        name TEXT,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (store_id, wa_id)
+      )`,
+    ],
+  },
 ];
 
 let ready = null;

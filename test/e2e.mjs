@@ -136,6 +136,7 @@ const meta = http.createServer(async (req, res) => {
   if (auth === 'Bearer es-token-1') {
     if (req.method === 'POST' && p === '770000000001/subscribed_apps') return json(200, { success: true });
     if (req.method === 'POST' && p === '880000000001/register') return json(200, { success: /^\d{6}$/.test(body?.pin || '') });
+    if (req.method === 'POST' && p === '880000000001/smb_app_data') return json(200, { messaging_product: 'whatsapp', request_id: 'REQ-' + body?.sync_type });
     if (req.method === 'GET' && p === '880000000001') return json(200, { display_phone_number: '+51 955 000 001', verified_name: 'Tienda Alumna', quality_rating: 'GREEN', id: '880000000001' });
     if (req.method === 'GET' && p === 'debug_token') return json(200, { data: { app_id: 'APP123', expires_at: Math.floor(Date.now() / 1000) + 60 * 86400 } });
     return json(404, { error: { code: 100, message: 'Unknown path ' + p } });
@@ -1753,6 +1754,57 @@ try {
     assert.match(r.error, /ya está en la tienda/);
     assert.equal((await call('DELETE', `/api/stores/${sid}`, { confirm: 'Alumna' })).status, 200);
     assert.equal((await call('DELETE', `/api/stores/${n2.store_id}`, { confirm: 'Alumna 2' })).status, 200);
+  });
+  await step('coexistencia: conectar, traer contactos e historial, y desconexión desde el celular', async () => {
+    const me = await call('GET', '/api/me');
+    const n = await call('POST', `/api/companies/${me.companies[0].id}/stores`, { name: 'Coex', canal: 'mensajes' });
+    const sid = n.store_id;
+    const before = calls.length;
+    let r = await call('POST', `/api/stores/${sid}/whatsapp/signup`, { code: 'es-code-1234567890', phone_number_id: '880000000001', waba_id: '770000000001', coexistencia: true });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const mine = calls.slice(before);
+    assert.ok(!mine.some((x) => x.path === '880000000001/register'), 'en coexistencia NO se registra el número');
+    const syncs = mine.filter((x) => x.path === '880000000001/smb_app_data').map((x) => x.body.sync_type);
+    assert.deepEqual(syncs.sort(), ['history', 'smb_app_state_sync']);
+    let st = r.stores.find((x) => x.id === sid);
+    assert.equal(st.connected_via, 'coexistencia');
+    assert.equal(st.coex_sync.contacts.ok, true);
+    assert.equal(st.coex_sync.history.request_id, 'REQ-history');
+    // reintentar no vuelve a pedir lo que ya salió bien (Meta deja una sola vez)
+    const b2 = calls.length;
+    r = await call('POST', `/api/stores/${sid}/whatsapp/coex-sync`);
+    assert.equal(r.ok, true);
+    assert.equal(calls.slice(b2).filter((x) => x.path === '880000000001/smb_app_data').length, 0);
+    const mdx = (extra) => ({ messaging_product: 'whatsapp', metadata: { display_phone_number: '51955000001', phone_number_id: '880000000001' }, ...extra });
+    // contactos del celular: el nombre guardado aparece en el chat
+    await hook(mdx({ state_sync: [{ type: 'contact', contact: { full_name: 'Rosa Clienta', first_name: 'Rosa', phone_number: '51977000111' }, action: 'add', metadata: { timestamp: ts() } }] }), 'smb_app_state_sync');
+    // historial: un chat viejo con mensajes de ida y vuelta (no despierta al bot ni suma no leídos)
+    const old = Math.floor(Date.now() / 1000) - 5 * 86400;
+    await hook(mdx({ history: [{ metadata: { phase: 2, chunk_order: 1, progress: 100 }, threads: [{ id: '51977000111', messages: [
+      { from: '51977000111', id: 'wamid.H1', timestamp: String(old), type: 'text', text: { body: 'Hola, ¿tienen talla M?' }, history_context: { status: 'read' } },
+      { from: '51955000001', to: '51977000111', id: 'wamid.H2', timestamp: String(old + 60), type: 'text', text: { body: 'Sí hay 😊' }, history_context: { status: 'read' } },
+      { from: '51977000111', id: 'wamid.H3', timestamp: String(old + 120), type: 'media_placeholder', history_context: { status: 'played' } },
+    ] }] }] }), 'history');
+    await wait(300);
+    const list = await call('GET', `/api/stores/${sid}/chats`);
+    const ch = list.chats.find((x) => x.wa_id === '51977000111');
+    assert.ok(ch, 'el chat del historial aparece');
+    assert.equal(ch.name, 'Rosa Clienta');
+    assert.equal(ch.unread, 0);
+    assert.ok(Date.now() - ch.created_at > 4 * 864e5, 'con la fecha real del primer mensaje');
+    const msgs = (await call('GET', `/api/chats/${ch.id}/messages`)).messages;
+    assert.equal(msgs.find((x) => x.wamid === 'wamid.H2').sender, 'cel');
+    assert.equal(msgs.find((x) => x.wamid === 'wamid.H1').direction, 'in');
+    st = (await call('GET', '/api/me')).stores.find((x) => x.id === sid);
+    assert.ok(st.coex_sync.history.done, 'historial completo');
+    assert.equal(st.coex_sync.contacts.n, 1);
+    // se desconecta desde la app del celular → queda pendiente con aviso
+    const payload = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'PARTNER1', changes: [{ field: 'account_update', value: { event: 'PARTNER_REMOVED', waba_info: { waba_id: '770000000001', owner_business_id: 'B1' }, disconnection_info: { reason: 'PRIMARY_INACTIVITY', initiated_by: 'SYSTEM' } } }] }] });
+    await fetch(BASE + '/webhook', { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(payload) }, body: payload });
+    st = (await call('GET', '/api/me')).stores.find((x) => x.id === sid);
+    assert.equal(st.status, 'pendiente');
+    assert.match(st.connect_error, /celular/);
+    assert.equal((await call('DELETE', `/api/stores/${sid}`, { confirm: 'Coex' })).status, 200);
   });
   await step('alumnos: registro con prueba gratis, precio, Panel Suyon y bloqueo', async () => {
     const { statusOf, priceOf, DEFAULT_PLAN } = await import('../src/billing.js');
