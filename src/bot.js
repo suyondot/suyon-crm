@@ -4,7 +4,7 @@ import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay, Http
 import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON, PROMPT_GENERICO } from './bot-template.js';
 import { iaAllowed } from './billetera.js';
-import { draftFromChat, insertOrder, cfgOf, varsFromForm, modoFor, pedidoAbierto, preciosDeChat } from './orders.js';
+import { draftFromChat, insertOrder, cfgOf, varsFromForm, modoFor, pedidoAbierto, preciosDeChat, lugarLima } from './orders.js';
 import { agenciesNear, agenciesIn, agencyOptions } from './shalom.js';
 import { onOrderCreated } from './automations.js';
 import { storeBlocked, loadPlan, priceText } from './billing.js';
@@ -82,16 +82,28 @@ export function esRechazo(text) {
   return RECHAZO.some((re) => re.test(t));
 }
 
-export function followText(settings, vars, { ropa = true, captura = false } = {}) {
+// Qué ya avanzó la conversación según lo que la IA misma escribió (la IA a veces no guarda colores/destino en sus datos)
+export function avanceDe(textosIA) {
+  const t = (textosIA || []).join('\n');
+  const ultimoPide = [...(textosIA || [])].reverse().find((x) => /nombre y apellido/i.test(x)) || '';
+  const pidio = /nombre y apellido/i.test(ultimoPide) ? (/direcci[oó]n:/i.test(ultimoPide) ? 'lima' : /dni:/i.test(ultimoPide) ? 'prov' : '') : '';
+  // Si ya pidió los datos, los colores ya pasaron
+  return { eligio: !!pidio || /total( con tu promo)?:? ?s\/|excelente elecci[oó]n|pedido:/i.test(t), pidio };
+}
+
+export function followText(settings, vars, { ropa = true, captura = false, avance = {} } = {}) {
   const fixed = String(settings.ia_follow_text || '').trim();
   if (Number(settings.ia_follow_auto) === 0) return fixed;
-  const has = (k) => !!String(vars[k] || '').trim();
+  const has = (k) => !!String(vars[k] || '').trim() || (k === 'colores' && avance.eligio);
   const p = /preciosa|bella|linda/i.test(fixed) ? ', preciosa' : '';
   if (has('sede_shalom') && !captura) return `¿Pudiste hacer el adelanto${p}? 💜 Apenas me mandes la captura, separo tu pedido y sale en el próximo despacho 📦`;
   // Se pregunta lo que falta EN ORDEN: talla → colores → distrito/ciudad → datos (aunque ya haya dicho su ciudad)
   if (ropa && !has('talla')) return `¿Qué talla usas${p}? 😊 Dime tu talla de jean (28, 30, 32…) y te muestro los colores que te quedan 👇`;
   if (ropa && !has('colores')) return `¿Cuáles colores te gustaron más${p}? 😍 Dime cuáles y te digo el total con tu promo 💕`;
   if (!ropa && !has('cantidad')) return fixed;
+  // La IA ya pidió los datos: se le recuerdan esos mismos (no se vuelve a preguntar colores ni distrito)
+  if (avance.pidio === 'lima' && (!has('nombre') || !has('direccion'))) return `Para agendar tu pedido solo me faltan tus datos${p} 😊\n\nNombre y apellido:\nDirección:`;
+  if (avance.pidio === 'prov' && (!has('nombre') || !has('dni'))) return `Para separar tu pedido solo me faltan tus datos${p} 😊\n\nNombre y apellido:\nDNI:`;
   const dest = String(vars.destino || '').trim();
   const lima = /\b(lima|callao)\b/i.test(dest) || (has('distrito') && !dest);
   if (!has('distrito') && (!dest || /^(lima|callao)( metropolitana)?$/i.test(dest))) return dest ? `¿En qué distrito te lo llevamos${p}? 🛵 Así te digo si te llega hoy o mañana 😊` : `¿A qué distrito o ciudad te lo enviamos${p}? 🚚 Así te digo cuándo te llega 😊`;
@@ -1198,6 +1210,11 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
     const tabla = Object.entries(suyos).sort((a, b) => a[0] - b[0]).map(([u, p]) => `${u}: S/${p}`).join(' · ');
     system += `\n\n## PRECIOS DE ESTA CLIENTA (manda sobre cualquier otro precio)\nEsta clienta ya conversaba con nosotras antes del cambio de precios: respétale SIEMPRE estos precios en tus mensajes y en el formulario: ${tabla}. No le menciones otros precios.`;
   }
+  // Provincias del departamento de Lima (Huarochirí, Cañete, Huaral…): van por agencia, no por motorizado
+  const zonaTxt = [vars.distrito, vars.destino, ...nuevos.slice(-3)].filter(Boolean).join(' ');
+  if (zonaTxt && lugarLima(zonaTxt) === 'prov') {
+    system += `\n\n## ZONA DE LA CLIENTA\nLo que dijo («${zonaTxt.slice(0, 80)}») es una PROVINCIA del departamento de Lima, fuera de Lima Metropolitana: ahí NO llega el motorizado. Trátala como provincia: envío GRATIS por agencia Shalom con adelanto, igual que a provincia. No digas «déjame confirmar» ni la pases a una asesora por esto.`;
+  }
   system += `\n\n## CÓMO RESPONDER (reglas del sistema)
 - Si la clienta te hizo una pregunta, respóndela PRIMERO (en tu primer mensaje) y recién después pide lo que falta. Nunca la ignores ni empieces con «Disculpa» o «Perdón».
 - No repitas un mensaje que ya le mandaste igual (por ejemplo, el pedido de datos o el adelanto): si falta algo, pídelo en una línea corta.
@@ -1475,7 +1492,9 @@ export async function runJob(env, j) {
     if (!ok) await cancelJobs(env, chat.id, seq.id); // ventana cerrada: no tiene sentido seguir
   } else if (j.kind === 'ia_follow') {
     const captura = !!(await env.DB.prepare("SELECT 1 FROM messages WHERE chat_id = ? AND direction = 'in' AND type IN ('image', 'document') LIMIT 1").bind(chat.id).first());
-    const text = followText(settings, vars, { ropa: store.rubro !== 'simple', captura });
+    const { results: outs } = await env.DB.prepare("SELECT body FROM messages WHERE chat_id = ? AND direction = 'out' AND body IS NOT NULL ORDER BY id DESC LIMIT 25").bind(chat.id).all();
+    const avance = avanceDe(outs.map((m) => m.body).reverse());
+    const text = followText(settings, vars, { ropa: store.rubro !== 'simple', captura, avance });
     if (text) await botSend(env, store, chat, { kind: 'text', text }, { flowId: flow.id, node: `${j.node_id}:seguimiento`, sender: 'ia', vars });
   } else if (j.kind === 'ia_again') {
     // Quedó un mensaje sin responder porque otra respuesta de la IA estaba en curso

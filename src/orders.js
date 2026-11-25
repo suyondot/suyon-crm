@@ -137,7 +137,7 @@ const LIMA_METRO = ['lima', 'cercado', 'ancon', 'ate', 'vitarte', 'barranco', 'b
   'ventanilla', 'mi peru', 'huaycan', 'manchay', 'canto grande', 'zarate', 'collique', 'mangomarca', 'jicamarca', 'magdalena del mar'];
 const LIMA_PROV = ['barranca', 'paramonga', 'pativilca', 'supe', 'cajatambo', 'canta', 'huamantanga', 'santa rosa de quives', 'obrajillo', 'canete', 'san vicente de canete',
   'imperial', 'nuevo imperial', 'mala', 'chilca', 'asia', 'cerro azul', 'lunahuana', 'quilmana', 'huaral', 'chancay', 'aucallama', 'huaura', 'huacho', 'hualmay', 'sayan',
-  'vegueta', 'carquin', 'huarochiri', 'matucana', 'san mateo', 'ricardo palma', 'santa eulalia', 'callahuanca', 'oyon', 'churin', 'andajes', 'yauyos', 'pachangara', 'naván', 'navan'];
+  'vegueta', 'carquin', 'huarochiri', 'huaruchiri', 'matucana', 'san mateo', 'ricardo palma', 'santa eulalia', 'callahuanca', 'oyon', 'churin', 'andajes', 'yauyos', 'pachangara', 'naván', 'navan'];
 const words = (x) => ` ${norm(x).replace(/[^a-z0-9]+/g, ' ').trim()} `;
 // 'metro' | 'prov' | '?' (no lo reconoce)
 export function lugarLima(distrito) {

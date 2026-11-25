@@ -712,6 +712,14 @@ try {
     assert.match(followText(fx, { talla: 'L', colores: 'Negro', distrito: 'Comas' }), /Dirección/);
     assert.match(followText(fx, { destino: 'Piura', nombre: 'Ana', dni: '12345678', sede_shalom: 'X' }), /adelanto/);
     assert.equal(followText({ ...fx, ia_follow_auto: 0 }, {}), fx.ia_follow_text);
+    const { avanceDe } = await import('../src/bot.js');
+    const av = avanceDe(['¡Excelente elección, preciosa! 😍 2 leggings talla M. Total con tu promo: S/149', 'Separas con S/30 😊 Compárteme estos datos, linda 👇 Nombre y apellido: DNI:']);
+    assert.match(followText(fx, { talla: 'M', destino: 'Cusco' }, { avance: av }), /DNI/, 'ya eligió colores (lo dijo la IA): no vuelve a preguntar colores');
+    assert.match(followText(fx, { talla: 'M' }, { avance: avanceDe(['Delivery GRATIS y pagas al recibir. Compárteme estos datos 👇 Nombre y apellido: Dirección:']) }), /Dirección/);
+    assert.match(followText(fx, { talla: 'M' }, { avance: avanceDe(['¿Cuáles te gustan más?']) }), /colores/);
+    const { lugarLima } = await import('../src/orders.js');
+    assert.equal(lugarLima('San antoño de huaruchiri'), 'prov');
+    assert.equal(lugarLima('Lima Sjl'), 'metro');
     assert.equal(followText(fx, {}, { ropa: false }), fx.ia_follow_text);
     // «Dijo que no»: se deja de insistir (casos reales del 912)
     const { esRechazo } = await import('../src/bot.js');
