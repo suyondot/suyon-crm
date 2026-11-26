@@ -151,7 +151,7 @@ async function chatConForm(env, chat) {
     v = JSON.parse(chat.bot_vars || '{}') || {};
   } catch {}
   if (!v.colores || !v.talla || !v.nombre || !v.dni || !v.direccion) {
-    const f = await env.DB.prepare("SELECT body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' ORDER BY id DESC LIMIT 1").bind(chat.id).first();
+    const f = await env.DB.prepare("SELECT body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' AND (body LIKE '%Cantidad%' OR body LIKE '%Monto total%') ORDER BY id DESC LIMIT 1").bind(chat.id).first();
     if (f?.body) for (const [k, x] of Object.entries(varsFromForm(f.body))) if (!v[k]) v[k] = x;
   }
   return { ...chat, bot_vars: JSON.stringify(v) };

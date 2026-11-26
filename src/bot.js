@@ -4,7 +4,7 @@ import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay, Http
 import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON, PROMPT_GENERICO } from './bot-template.js';
 import { iaAllowed } from './billetera.js';
-import { draftFromChat, insertOrder, cfgOf, varsFromForm, modoFor, pedidoAbierto, preciosDeChat, lugarLima } from './orders.js';
+import { draftFromChat, insertOrder, cfgOf, cfgForChat, varsFromForm, modoFor, pedidoAbierto, preciosDeChat, lugarLima, parseColores, priceFor, storeColors, avisoCantidad } from './orders.js';
 import { agenciesNear, agenciesIn, agencyOptions } from './shalom.js';
 import { onOrderCreated } from './automations.js';
 import { storeBlocked, loadPlan, priceText } from './billing.js';
@@ -291,7 +291,7 @@ export async function marcarListo(env, chatId) {
   try {
     v = JSON.parse(chat.bot_vars || '{}') || {};
   } catch {}
-  const f = await env.DB.prepare("SELECT id, body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' ORDER BY id DESC LIMIT 1").bind(chat.id).first();
+  const f = await env.DB.prepare("SELECT id, body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' AND (body LIKE '%Cantidad%' OR body LIKE '%Monto total%') ORDER BY id DESC LIMIT 1").bind(chat.id).first();
   if (f?.body) for (const [k, x] of Object.entries(varsFromForm(f.body))) if (!v[k]) v[k] = x;
   // Pedido de Shopify por Shalom (sin formulario de la IA): los datos salen del pedido
   const ord = await env.DB.prepare("SELECT nombre, dni, sede, modo, created_at FROM orders WHERE chat_id = ? AND status = 'por_pagar' ORDER BY id DESC LIMIT 1").bind(chat.id).first();
@@ -609,7 +609,7 @@ async function orderFromBot(env, store, chatId, vars) {
   const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(chatId).first();
   // Si al bot le faltan colores/talla/datos, se toman del último formulario que mandó la IA
   if (!vars.colores || !vars.talla || !vars.nombre || !vars.dni || !vars.direccion) {
-    const f = await env.DB.prepare("SELECT body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' ORDER BY id DESC LIMIT 1").bind(chatId).first();
+    const f = await env.DB.prepare("SELECT body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' AND (body LIKE '%Cantidad%' OR body LIKE '%Monto total%') ORDER BY id DESC LIMIT 1").bind(chatId).first();
     if (f?.body) for (const [k, v] of Object.entries(varsFromForm(f.body))) if (!vars[k]) vars[k] = v;
   }
   const draft = draftFromChat({ ...chat, bot_vars: JSON.stringify(vars) }, store);
@@ -622,7 +622,7 @@ async function orderFromBot(env, store, chatId, vars) {
   // Si ya hay un pedido en curso (de la IA o que hizo la asesora a mano), no se crea otro
   if (await pedidoAbierto(env, chat.id)) return;
   try {
-    const o = await insertOrder(env, store, draft, { source: 'ia' });
+    const o = await insertOrder(env, store, draft, { source: 'ia', nota: avisoCantidad(draft) });
     if (o) await onOrderCreated(env, store, o);
     // 🟡 la IA lo dejó listo: arriba hasta que alguien lo abra
     await env.DB.prepare('UPDATE chats SET listo_at = ?, updated_at = ? WHERE id = ?').bind(now(), now(), chat.id).run();
@@ -1055,6 +1055,27 @@ const COLOR_GRUPOS = [
   ['naranja', 'coral'],
 ];
 const nrm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+// ¿El formulario que manda la IA no cuadra? Devuelve el motivo (o null). Mira «Cantidad:», los colores y «Monto total:».
+export function formularioNoCuadra(mensajes, cfg, own = []) {
+  const t = (mensajes || []).map((m) => String(m.texto || '')).find((x) => /pedido\s*:/i.test(x) && /cantidad\s*:/i.test(x));
+  if (!t) return null;
+  const dice = [...t.matchAll(/cantidad\s*:\s*\**\s*(\d+)/gi)].reduce((a, m) => a + Number(m[1]), 0);
+  if (!dice) return null;
+  const motivos = [];
+  // Colores: la línea «Color:» o el bloque «Tallas y colores:» con sus renglones
+  let colTxt = (t.match(/colou?r(?:es)?\s*:[ \t]*([^\n]+)/i) || [])[1] || '';
+  const bloque = t.match(/tallas?\s+y\s+colou?res\s*:\s*\n((?:[ \t]*[-•*].*\n?)+)/i);
+  if (bloque) colTxt = bloque[1].split('\n').map((x) => x.trim()).filter(Boolean).join('; ');
+  const suma = parseColores(colTxt, own).reduce((a, c) => a + c.n, 0);
+  if (suma && suma !== dice) motivos.push(`dice «Cantidad: ${dice}» pero los colores suman ${suma} prendas`);
+  const tot = t.match(/monto total\s*:\s*\**\s*S\/\s*([\d.,]+)/i);
+  // Solo se revisa el precio si la tabla tiene ese número exacto (o es por mayor): no se adivinan precios que la tienda no puso
+  const exacto = (cfg.precios && cfg.precios[dice] != null) || (cfg.mayor_desde && cfg.mayor_unit && dice >= cfg.mayor_desde);
+  const esperado = exacto ? priceFor(dice, cfg) : 0;
+  if (tot && esperado && Math.abs(Number(tot[1].replace(/,/g, '')) - esperado) > 1) motivos.push(`para ${dice} prendas el total es S/${esperado} (pusiste S/${tot[1]})`);
+  return motivos.length ? motivos.join('; ') : null;
+}
+
 export function coloresNoPedidos(colores, textos) {
   const t = ` ${nrm(textos.join(' ')).replace(/[^a-z0-9]+/g, ' ')} `;
   const words = t.trim().split(' ');
@@ -1282,6 +1303,7 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   let reply = null;
   let lastErr = null;
   let colorFix = null;
+  let formFix = false;
   const lastInImage = results.length && results[results.length - 1].direction === 'in' && results[results.length - 1].type === 'image';
   // Hasta 2 intentos: si la IA no responde en el formato pedido, se le pide de nuevo. Nunca se manda texto raro.
   for (let attempt = 0; attempt < 2 && !reply; attempt++) {
@@ -1319,6 +1341,17 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
       if (extra.length) {
         colorFix = extra;
         hist.push({ role: 'assistant', text: clip(out.text, 1500) }, { role: 'user', text: `(Nota del sistema, no de la clienta) La clienta NO pidió: ${extra.join(', ')}. Corrige tu respuesta: usa SOLO los colores que ella dijo, sin sumar otros por tu cuenta. Si quiere más prendas, pregúntale cuáles. Responde de nuevo solo con el JSON.` });
+        reply = null;
+        attempt = -1;
+      }
+    }
+    // Candado del formulario: la cantidad tiene que ser la suma de los colores y el total el de la tabla de precios.
+    // (D´Loire 24 nov: «Cantidad: 6» con 7 colores; Porte 18 nov: 4 vestidos a S/209 cuando eran S/219)
+    if (reply && !formFix) {
+      const malo = formularioNoCuadra(reply.mensajes, cfgForChat(store, chat), storeColors(store));
+      if (malo) {
+        formFix = true;
+        hist.push({ role: 'assistant', text: clip(out.text, 1500) }, { role: 'user', text: `(Nota del sistema, no de la clienta) Tu formulario no cuadra: ${malo}. Corrige el formulario (cantidad = número de prendas que eligió, cada color con su cantidad y su talla, y el total según la tabla de precios). Si no sabes cuántas de cada color quiere, pregúntale en vez de mandar el formulario. Responde de nuevo solo con el JSON.` });
         reply = null;
         attempt = -1;
       }

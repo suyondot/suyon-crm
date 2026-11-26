@@ -724,6 +724,22 @@ try {
     const own = storeColors({ order_cfg: JSON.stringify({ colores: ['Negro', 'Rojo', 'Rosado bebé', 'Marrón'] }) });
     assert.deepEqual(own, ['Negro', 'Rojo', 'Rosado bebé', 'Marrón']);
     assert.deepEqual(colorQty('1 Rojo y 1 Marrón', own).map((x) => x.color), ['Rojo', 'Marrón'], 'con colores propios, rojo no se vuelve Vino');
+    // Formularios con varias tallas (D´Loire 24 nov: pedido de 6 salía de 10)
+    const { itemsFromVars, varsFromForm: vff } = await import('../src/orders.js');
+    const pol = ['Blanco', 'Café claro', 'Lila', 'Negro', 'Naranja'];
+    const it6 = itemsFromVars({ colores: '4 polos talla M: Blanco, Café claro, Lila, Negro; 2 polos talla S: Negro, Blanco', cantidad: '6', talla: 'M, S' }, { producto: 'Polo' }, pol);
+    assert.equal(it6.reduce((a, i) => a + i.cantidad, 0), 6, 'el 4 de «4 polos talla M:» no es la cantidad de un color');
+    assert.deepEqual(it6.filter((i) => i.talla === 'S').map((i) => i.color), ['Negro', 'Blanco']);
+    const it3 = itemsFromVars({ colores: 'Beige y Azul noche (talla S), Negro (talla M)', cantidad: '3', talla: '2 S y 1 M' }, { producto: 'Cargo' });
+    assert.deepEqual(it3.map((i) => `${i.cantidad} ${i.talla}`), ['1 S', '1 S', '1 M'], 'la talla entre paréntesis vale para los colores de antes');
+    assert.equal(itemsFromVars({ colores: 'Negro, Lila y Blanco', cantidad: '5', talla: 'M' }, { producto: 'Polo' }, pol).reduce((a, i) => a + i.cantidad, 0), 3, 'con varios colores no se inventan prendas');
+    assert.equal(vff('Pedido: Cargo ✨\n✅ Cantidad: 2\n✅ Tallas y colores:\n- Talla M: Negro\n- Talla M: Beige\n💰 Monto total: S/169').colores, 'Talla M: Negro; Talla M: Beige');
+    const { formularioNoCuadra } = await import('../src/bot.js');
+    const cfgP = { precios: { 1: 35, 2: 59, 3: 79, 4: 89, 6: 109 } };
+    assert.match(formularioNoCuadra([{ texto: 'Pedido: Polo ✨\n✅ Cantidad: 6\n✅ Color: Negro, Rojo, Naranja, Café claro (2) y Lila, Blanco\nMonto total: S/109' }], cfgP, pol) || '', /suman 7/);
+    assert.match(formularioNoCuadra([{ texto: 'Pedido: Vestido ✨\n✅ Cantidad: 4\n✅ Color: 2 Negro, 1 Vino, 1 Celeste\nMonto total: S/209' }], { precios: { 4: 219 } }) || '', /S\/219/);
+    assert.equal(formularioNoCuadra([{ texto: 'Pedido: Polo ✨\n✅ Cantidad: 6\n✅ Talla: 4 L y 2 M\n✅ Color: L: Blanco, Negro, Café claro, Naranja · M: Blanco, Naranja\nMonto total: S/109' }], cfgP, pol), null);
+    assert.equal(formularioNoCuadra([{ texto: 'Pedido: Polo ✨\n✅ Cantidad: 5\n✅ Color: 5 Negro\nMonto total: S/120' }], cfgP, pol), null, 'sin precio exacto en la tabla no se revisa el total');
     assert.equal(followText(fx, {}, { ropa: false }), fx.ia_follow_text);
     // «Dijo que no»: se deja de insistir (casos reales del 912)
     const { esRechazo } = await import('../src/bot.js');

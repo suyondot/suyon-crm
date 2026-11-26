@@ -78,7 +78,7 @@ async function pendientes(env, st) {
     const [o, cap, form, marks] = await env.DB.batch([
       env.DB.prepare("SELECT * FROM orders WHERE chat_id = ? AND status != 'cancelado' AND created_at > ? ORDER BY id DESC LIMIT 1").bind(c.id, desde),
       env.DB.prepare("SELECT id, type, media_mime, media_name, created_at FROM messages WHERE chat_id = ? AND direction = 'in' AND type IN ('image', 'document') AND created_at > ? ORDER BY id DESC LIMIT 1").bind(c.id, desde),
-      env.DB.prepare("SELECT id, body, created_at FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' ORDER BY id DESC LIMIT 1").bind(c.id),
+      env.DB.prepare("SELECT id, body, created_at FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' AND (body LIKE '%Cantidad%' OR body LIKE '%Monto total%') ORDER BY id DESC LIMIT 1").bind(c.id),
       env.DB.prepare('SELECT msg_id, order_id FROM pago_marks WHERE chat_id = ?').bind(c.id),
     ]);
     const order = o.results[0] || null;
@@ -211,7 +211,7 @@ r.post('/chats/:id/pago', async (c) => {
   if (accion === 'ok') {
     if (!order) {
       // Sin pedido todavía: se agenda con su último formulario (provincia → Validado, Lima → Confirmado)
-      const f = await c.env.DB.prepare("SELECT body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' ORDER BY id DESC LIMIT 1").bind(chat.id).first();
+      const f = await c.env.DB.prepare("SELECT body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' AND (body LIKE '%Cantidad%' OR body LIKE '%Monto total%') ORDER BY id DESC LIMIT 1").bind(chat.id).first();
       const r0 = await pedidoAlAgendar(c.env, store, chat.id, zonaDeForm(f?.body), u.id);
       if (r0?.error) fail(400, 'No pude crear el pedido: ' + r0.error);
       order = await getOrder(c.env, r0.id);

@@ -216,19 +216,103 @@ export function colorQty(text, own = []) {
   return out;
 }
 
+// Talla escrita como «S», «talla M», «xl»… (solo letras; los números de jean los resuelve tallaOf)
+const TALLA_TXT = '(?:XXL|XL|XS|S|M|L)';
+const tallaDe = (x) => {
+  const m = String(x || '').match(new RegExp(`^\\s*(?:talla\\s+)?(${TALLA_TXT})\\s*$`, 'i'));
+  return m ? (m[1].toUpperCase() === 'XXL' ? 'XL' : m[1].toUpperCase()) : null;
+};
+
+// Colores con su talla y cantidad, tal como los escribe la IA en el formulario o en sus datos. Entiende:
+// «2 Negro, Vino» · «Negro x2» · «Café claro (2)» · «4 polos talla M: Blanco, Lila; 2 polos talla S: Negro, Blanco»
+// · «2 S: Beige, Azul noche; 1 M: Negro» · «Beige y Azul noche (talla S), Negro (talla M)» · «Blanco, Lila (M) · Negro (S)»
+// · «- Talla M: Negro». El número delante de «talla X:» es cuántas prendas van en ese grupo, NO la cantidad de un color.
+export function parseColores(text, own = []) {
+  const out = [];
+  const grupos = String(text || '').split(/\n|;|·|\|/).map((g) => g.replace(/^[\s\-•*]+/, '').trim()).filter(Boolean);
+  for (const g of grupos) {
+    let rest = g;
+    let talla = null;
+    let cuenta = 0;
+    const head = rest.match(new RegExp(`^(?:(\\d+)\\s*(?:[a-záéíóúñ]+\\s+)?)?(?:en\\s+)?(?:de\\s+)?(?:talla\\s+)?(${TALLA_TXT})\\s*:\\s*(.+)$`, 'i'));
+    if (head) {
+      cuenta = Number(head[1]) || 0;
+      talla = tallaDe(head[2]);
+      rest = head[3];
+    }
+    const piezas = [];
+    let pendientes = [];
+    for (const part of rest.split(/,|\sy\s|\+|\//)) {
+      let raw = part.trim();
+      if (!raw) continue;
+      let t = null;
+      let n = 0;
+      // «(talla S)» / «(S)» = talla de esta pieza (y de las anteriores del grupo que no tenían) · «(2)» = cantidad
+      raw = raw.replace(/\(([^)]*)\)/g, (all, inner) => {
+        const tt = tallaDe(inner.replace(/^talla\s+/i, ''));
+        if (tt) t = tt;
+        else if (/^\s*x?\s*\d+\s*$/i.test(inner)) n = parseInt(inner.replace(/\D/g, ''), 10);
+        return ' ';
+      }).replace(/\s+/g, ' ').trim();
+      const tl = raw.match(new RegExp(`\\s+talla\\s+(${TALLA_TXT})$`, 'i'));
+      if (tl) {
+        t = tallaDe(tl[1]);
+        raw = raw.slice(0, tl.index).trim();
+      }
+      const m = raw.match(/^(\d+)\s*(?:x\s*)?(?:de\s+)?(.*)$/i) || raw.match(/^(.*?)\s*(?:x\s*)?(\d+)$/i);
+      let name = raw;
+      if (m) {
+        const lead = /^\d+$/.test(m[1]);
+        n = n || Math.min(50, parseInt(lead ? m[1] : m[2], 10) || 1);
+        name = lead ? m[2] : m[1];
+      }
+      const c = colorQty(name, own)[0];
+      if (!c) continue;
+      const pz = { color: c.color, n: n || 1, talla: t || talla };
+      piezas.push(pz);
+      if (t) {
+        for (const p of pendientes) p.talla = t;
+        pendientes = [];
+      } else if (!talla) pendientes.push(pz);
+    }
+    // «3 M: Negro» = 3 negros; «4 M: Blanco, Lila» con 2 colores = no se adivina cuál va doble (queda 1 y 1)
+    if (cuenta > 1 && piezas.length === 1 && piezas[0].n === 1) piezas[0].n = cuenta;
+    out.push(...piezas);
+  }
+  return out;
+}
+
 export function itemsFromVars(v, cfg, own = []) {
   const talla = tallaOf(v.talla) || clip(v.talla || '', 20);
-  const cols = colorQty(v.colores, own);
+  // Si la talla dice varias («2 S y 1 M», «M, S») no se pone una sola talla a todo
+  const varias = new Set((String(v.talla || '').toUpperCase().match(/\b(XXL|XL|XS|S|M|L)\b/g) || [])).size > 1;
+  const cols = parseColores(v.colores, own);
   // El producto que dice el formulario («Pedido: Pantalón formal») manda sobre el producto fijo de la tienda
   cfg = { ...cfg, producto: clip(String(v.producto || '').trim(), 80) || cfg.producto };
   let qty = parseInt(String(v.cantidad || '').replace(/\D/g, ''), 10);
   const sum = cols.reduce((a, c) => a + c.n, 0);
   if (!qty || qty > 100) qty = sum || 1;
-  if (!cols.length) return [{ producto: cfg.producto, talla, color: '', cantidad: qty }];
-  if (qty > sum) cols[0].n += qty - sum;
+  if (!cols.length) return [{ producto: cfg.producto, talla: varias ? '' : talla, color: '', cantidad: qty }];
+  // Un solo color y la cantidad es mayor («Negro», cantidad 2) → son todos de ese color.
+  // Con varios colores NO se inventa a cuál sumarle: queda lo que se escribió y el pedido avisa que no cuadra.
+  if (qty > sum && cols.length === 1) cols[0].n += qty - sum;
   const map = new Map();
-  for (const c of cols) map.set(c.color, (map.get(c.color) || 0) + c.n);
-  return [...map.entries()].map(([color, cantidad]) => ({ producto: cfg.producto, talla, color, cantidad }));
+  for (const c of cols) {
+    const t = c.talla || (varias ? '' : talla);
+    const k = `${c.color}|${t}`;
+    if (!map.has(k)) map.set(k, { producto: cfg.producto, talla: t, color: c.color, cantidad: 0 });
+    map.get(k).cantidad += c.n;
+  }
+  return [...map.values()];
+}
+
+export const avisoCantidad = (d) => (d?.aviso ? `⚠️ Revisar: el formulario decía ${d.aviso.dice} prendas y los colores anotados suman ${d.aviso.colores}. Confirma con la clienta antes de despachar.` : '');
+
+// La cantidad que dice el formulario no coincide con los colores que se anotaron (para avisar en el pedido)
+export function cantidadNoCuadra(v, items) {
+  const q = parseInt(String(v?.cantidad || '').replace(/\D/g, ''), 10);
+  const u = units(items);
+  return q && q <= 100 && u && q !== u ? { dice: q, colores: u } : null;
 }
 
 export const units = (items) => items.reduce((a, it) => a + (Number(it.cantidad) || 0), 0);
@@ -365,7 +449,7 @@ export function varsFromForm(text) {
   };
   const map = {
     producto: /pedido\s*:\s*([^\n]+)/i,
-    colores: /colou?r(?:es)?\s*:\s*([^\n]+)/i,
+    colores: /colou?r(?:es)?\s*:[ \t]*([^\n]+)/i,
     talla: /talla\s*:\s*([^\n]+)/i,
     cantidad: /cantidad\s*:\s*([^\n]+)/i,
     nombre: /nombre(?: y apellido)?\s*:\s*([^\n]+)/i,
@@ -377,6 +461,12 @@ export function varsFromForm(text) {
   for (const [k, re] of Object.entries(map)) {
     const v = get(re);
     if (v && !/^\[.*\]$/.test(v)) out[k] = v.slice(0, 200);
+  }
+  // «✅ Tallas y colores:» con un renglón por talla («- Talla M: Negro») → «Talla M: Negro; Talla M: Beige»
+  const bloque = String(text || '').match(/tallas?\s+y\s+colou?res\s*:[ \t]*\n((?:[ \t]*[-•*].*\n?)+)/i);
+  if (bloque) {
+    out.colores = bloque[1].split('\n').map((x) => x.replace(/^[\s\-•*]+/, '').trim()).filter(Boolean).join('; ').slice(0, 200);
+    delete out.talla;
   }
   // «Pedido: Leggins Cargo ✨» → solo el nombre (sin emojis); si no queda texto, no cuenta
   if (out.producto) out.producto = out.producto.replace(/[^\p{L}\p{N} .\-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 80);
@@ -398,8 +488,12 @@ export function formText(d, cfg) {
   }
   if (!grupos.size) grupos.set('', { prod: def, items: [] });
   const bloque = ({ prod, items }) => {
-    const tallas = [...new Set(items.map((i) => i.talla).filter(Boolean))].join(', ');
-    const cols = items.map((i) => (i.cantidad > 1 ? `${i.cantidad} ${i.color}` : i.color)).filter((x) => String(x).trim()).join(', ');
+    const ts = [...new Set(items.map((i) => i.talla).filter(Boolean))];
+    // Varias tallas: «Talla: 4 M y 2 S» y los colores agrupados por talla («M: Blanco, Lila · S: Negro»)
+    const porTalla = (t) => items.filter((i) => i.talla === t);
+    const tallas = ts.length > 1 ? ts.map((t) => `${units(porTalla(t))} ${t}`).join(' y ') : ts.join(', ');
+    const colsDe = (arr) => arr.map((i) => (i.cantidad > 1 ? `${i.cantidad} ${i.color}` : i.color)).filter((x) => String(x).trim()).join(', ');
+    const cols = ts.length > 1 ? [...ts.map((t) => `${t}: ${colsDe(porTalla(t))}`), colsDe(items.filter((i) => !i.talla))].filter((x) => x && !/:\s*$/.test(x)).join(' · ') : colsDe(items);
     return [`Pedido: ${prod} ✨`, '', `✅ Cantidad: ${units(items)}`, tallas ? `✅ Talla: ${tallas}` : null, cols ? `✅ Color: ${cols}` : null].filter((x) => x !== null).join('\n');
   };
   const pedido = [...grupos.values()].map(bloque).join('\n\n');
@@ -437,5 +531,6 @@ export function draftFromChat(chat, store) {
     total: priceFor(u, cfg),
     adelanto: modo === 'agencia' ? Number(cfg.adelanto) || 0 : 0,
     ad_id: chat.ad_id || null,
+    aviso: cantidadNoCuadra(v, items),
   };
 }

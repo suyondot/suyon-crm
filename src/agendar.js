@@ -1,6 +1,6 @@
 // Agendar un chat: crea el pedido con su último formulario (o pasa a Confirmado/Validado el que dejó la IA)
 import { now, windowOpen, localParts, clip } from './util.js';
-import { draftFromChat, insertOrder, varsFromForm, cfgOf } from './orders.js';
+import { draftFromChat, insertOrder, varsFromForm, cfgOf, avisoCantidad } from './orders.js';
 import { sendText } from './whatsapp.js';
 import { entregaDia, loadSettings } from './bot.js';
 import { onOrderCreated, setOrderStatus } from './automations.js';
@@ -19,7 +19,7 @@ export async function pedidoAlAgendar(env, store, chatId, zona, userId) {
     vars = JSON.parse(chat.bot_vars || '{}') || {};
   } catch {}
   // El último formulario que se le mandó (de la IA o de la asesora) es lo que se acordó: manda sobre lo guardado
-  const f = await env.DB.prepare("SELECT body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' ORDER BY id DESC LIMIT 1").bind(chatId).first();
+  const f = await env.DB.prepare("SELECT body FROM messages WHERE chat_id = ? AND direction = 'out' AND body LIKE '%Pedido:%' AND (body LIKE '%Cantidad%' OR body LIKE '%Monto total%') ORDER BY id DESC LIMIT 1").bind(chatId).first();
   if (f?.body) Object.assign(vars, varsFromForm(f.body));
   const draft = draftFromChat({ ...chat, bot_vars: JSON.stringify(vars) }, store);
   if (zona === 'lima') draft.modo = 'lima';
@@ -28,7 +28,7 @@ export async function pedidoAlAgendar(env, store, chatId, zona, userId) {
   const ad = String(f?.body || '').match(/adelanto\s*:\s*S\/\s*([\d.,]+)/i)?.[1];
   if (ad) draft.adelanto = Number(ad.replace(',', '.')) || draft.adelanto;
   draft.status = draft.modo === 'agencia' ? 'validado' : 'confirmado';
-  const o = await insertOrder(env, store, draft, { userId, source: 'etiqueta' });
+  const o = await insertOrder(env, store, draft, { userId, source: 'etiqueta', nota: avisoCantidad(draft) });
   if (!o) return { error: 'no se pudo guardar' };
   await onOrderCreated(env, store, o);
   const cap = await env.DB.prepare('SELECT capi_at FROM orders WHERE id = ?').bind(o.id).first();
