@@ -720,6 +720,10 @@ try {
     const { lugarLima } = await import('../src/orders.js');
     assert.equal(lugarLima('San antoño de huaruchiri'), 'prov');
     assert.equal(lugarLima('Lima Sjl'), 'metro');
+    const { storeColors, colorQty } = await import('../src/orders.js');
+    const own = storeColors({ order_cfg: JSON.stringify({ colores: ['Negro', 'Rojo', 'Rosado bebé', 'Marrón'] }) });
+    assert.deepEqual(own, ['Negro', 'Rojo', 'Rosado bebé', 'Marrón']);
+    assert.deepEqual(colorQty('1 Rojo y 1 Marrón', own).map((x) => x.color), ['Rojo', 'Marrón'], 'con colores propios, rojo no se vuelve Vino');
     assert.equal(followText(fx, {}, { ropa: false }), fx.ia_follow_text);
     // «Dijo que no»: se deja de insistir (casos reales del 912)
     const { esRechazo } = await import('../src/bot.js');

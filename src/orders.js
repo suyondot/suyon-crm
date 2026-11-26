@@ -177,6 +177,9 @@ export function cleanItems(items, cfg) {
 // Colores propios de la tienda (los que puso en el asistente); vacío = colores de Porte
 export function storeColors(store) {
   try {
+    // Colores propios: los de Pedidos (order_cfg.colores) o los del asistente de inicio
+    const propios = cfgOf(store).colores;
+    if (Array.isArray(propios) && propios.length) return propios.map((x) => String(x).trim()).filter(Boolean).slice(0, 40);
     const a = JSON.parse(store?.asistente || '{}')?.respuestas?.colores || '';
     return String(a).split(/,|\n|;/).map((x) => x.trim()).filter(Boolean).slice(0, 40);
   } catch {

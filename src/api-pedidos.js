@@ -360,6 +360,11 @@ r.patch('/stores/:id/pedidos-config', async (c) => {
   const cfg = cfgOf(st);
   const n = (v, d) => (Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : d);
   if ('producto' in b) cfg.producto = clip(String(b.producto || '').trim(), 80) || DEFAULT_CFG.producto;
+  if ('colores' in b) {
+    const l = (Array.isArray(b.colores) ? b.colores : String(b.colores || '').split(/,|\n|;/)).map((x) => clip(String(x).trim(), 30)).filter(Boolean).slice(0, 40);
+    if (l.length) cfg.colores = l;
+    else delete cfg.colores;
+  }
   if (b.precios && typeof b.precios === 'object') {
     const p = {};
     for (const [k, v] of Object.entries(b.precios)) if (/^\d{1,2}$/.test(k) && Number(v) > 0) p[k] = Math.round(Number(v) * 100) / 100;
