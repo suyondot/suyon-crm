@@ -288,6 +288,38 @@ export async function agenciesNear(env, text, sinCobertura = '', quiereAgencia =
   return null;
 }
 
+// La clienta escribió su agencia («Shalom Av grau», «Shalon Tambopata av Ucayali»): se busca UNA agencia real que coincida,
+// dentro de su zona (destino/distrito/lo que dijo). Devuelve null si no hay agencias o no se sabe su zona,
+// { agencia } si hay una clara, o { ninguna: true } si no coincide o hay varias parecidas.
+const SEDE_STOP = new Set(['shalom', 'shalon', 'salom', 'chalom', 'agencia', 'agencias', 'sede', 'sucursal', 'recojo', 'recoger', 'recogo', 'recojer', 'oficina', 'avenida', 'jiron', 'calle', 'los', 'las', 'del', 'por', 'para', 'quiero', 'queda', 'cerca', 'frente', 'nro', 'numero', 'dni', 'con', 'que', 'una', 'uno', 'esta', 'este', 'seria', 'mejor', 'envio', 'envia', 'enviar', 'manden', 'mande', 'gracias', 'hola', 'porfavor', 'favor', 'nombre', 'celular']);
+export async function matchAgency(env, sedeText, zonaText = '') {
+  const ix = await index(env);
+  if (!ix) return null;
+  const words = [...new Set(norm(sedeText).split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !SEDE_STOP.has(w)))];
+  if (!words.length) return null;
+  const zHits = (t) => ix.places.filter((p) => p.lv !== 'lugar' && W(p.name).test(norm(t)));
+  const inHits = (r, hs) => hs.some((p) => r.n[p.lv] === (p.full || p.name));
+  const zona = zHits(zonaText);
+  const all = [...zona, ...zHits(sedeText)];
+  if (!all.length) return null; // sin zona no se puede saber cuál es
+  const rows = ix.rows.filter((r) => r.ok && inHits(r, all));
+  if (!rows.length) return null;
+  const has = (txt, w) => W(w).test(norm(txt));
+  const scored = rows.map((r) => {
+    // El nombre de su propia ciudad no cuenta («Shalom Piura» no es «AEROPUERTO PIURA»; «Tambopata» no elige entre las de Tambopata)
+    const esLugar = (w) => [r.n.dist, r.n.prov, r.n.dep].some((x) => x && W(w).test(x));
+    let pal = 0; // por palabras del nombre o la dirección
+    for (const w of words) if (!esLugar(w)) pal += (has(r.name, w) ? 3 : 0) + (has(r.address, w) ? 1 : 0);
+    const lugar = words.filter(esLugar).length;
+    return { r, pal, total: pal + lugar + (zona.length && inHits(r, zona) ? 2 : 0) };
+  }).sort((a, b) => b.total - a.total);
+  const [a, b] = scored;
+  // Tiene que coincidir por el nombre (o 2+ palabras de la dirección) y ganarle claro a la siguiente
+  if (!a || a.pal < 2 || (b && a.total - b.total < 2)) return { ninguna: true };
+  const { n, lw, ...ag } = a.r;
+  return { agencia: { ...ag, full: agencyOptions([ag])[0].full } };
+}
+
 // Agencias de una zona que la clienta tocó de la lista (provincia o distrito de un departamento)
 export async function agenciesIn(env, nivel, name, dep) {
   const ix = await index(env);

@@ -54,6 +54,7 @@ const meta = http.createServer(async (req, res) => {
     if (/formshalom/i.test(txt)) return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: 'Revisa tus datos 👇\nShalom: 🚚📦\nMonto total: S/109\nAdelanto: S/30\nMonto restante: S/79' }], caso: null, datos: {} }) }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/pidedatos/i.test(txt)) return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: 'Te lo enviamos GRATIS por Shalom 🚚' }, { texto: 'Separas con S/30 👇\nNombre y apellido:\nDNI:\nCelular:' }], caso: null, datos: {} }) }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/cuenta bcp/i.test(txt)) return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: 'Cuenta BCP: [FALTA BCP]' }], caso: null, datos: {} }) }], usage: { input_tokens: 10, output_tokens: 10 } });
+    if (/sedelibre/i.test(txt)) return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: 'Revisa tus datos 👇\nShalom: 🚚📦\n➡️ Sede: Av. Brasil\nMonto total: S/109\nAdelanto: S/30\nMonto restante: S/79' }], caso: null, datos: { sede_shalom: 'Av. Brasil' } }) }], usage: { input_tokens: 10, output_tokens: 10 } });
     if (/juliaca|miraflores|ancón|ancon|terminal|libertad|trujillo/i.test(txt)) {
       const sede = /terminal/i.test(txt) ? { sede_shalom: 'Juliaca Terminal' } : {};
       return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: [{ texto: /terminal/i.test(txt) ? '¡Listo! Anotado 💕' : '¡Sí enviamos! 📦 Va por Shalom, ¿qué agencia te queda mejor?' }], caso: null, datos: sede }) }], usage: { input_tokens: 10, output_tokens: 10 } });
@@ -2220,6 +2221,22 @@ try {
     const al = sm.messages.filter((m) => m.sender === 'bot').pop();
     assert.match(al.body, /Agencias Shalom en TRUJILLO \(LA LIBERTAD\) \(8 de 8\)|Agencias Shalom en TRUJILLO \(LA LIBERTAD\)\./);
     assert.ok(/VICTOR LARCO/.test(JSON.stringify(al.extra || '')), 'tocó la provincia: salen todas las de la provincia, no solo el distrito');
+    // La clienta escribe su agencia junto con sus datos (caso real «Shalom Av grau»): si es UNA agencia real de su zona, se guarda exacta
+    await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
+    await conDatos(await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' }));
+    n = iaCalls.length;
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'Ana Pérez\n70000003\nRecojo en Shalom terminal de Juliaca' });
+    assert.match(sm.chat.vars.sede_shalom, /^JULIACA TERMINAL — Av\. Circunvalación 45/, 'la que escribió = la agencia real');
+    assert.match(iaCalls.slice(n).pop().system, /ELEGIR SU AGENCIA: JULIACA TERMINAL[\s\S]*La escribió ella/);
+    assert.ok(!sm.messages.some((m) => /Agencias Shalom en/.test(m.body || '')), 'ya la eligió: no manda la lista');
+    // Escribe una agencia que no está en el sistema: no se guarda, sale la lista y el formulario espera a que elija
+    await call('POST', `/api/stores/${sid}/sim/reset`, { flow_id: fl.id });
+    await conDatos(await call('POST', `/api/stores/${sid}/sim/send`, { text: 'hola' }));
+    sm = await call('POST', `/api/stores/${sid}/sim/send`, { text: 'sedelibre Trujillo, Shalom Av. Brasil' });
+    assert.ok(!sm.chat.vars.sede_shalom, 'Av. Brasil no es una agencia de Trujillo');
+    assert.ok(sm.messages.some((m) => /Agencias Shalom en TRUJILLO/.test(m.body || '')), 'sale la lista para tocar');
+    assert.ok(!sm.messages.some((m) => /Monto restante/.test(m.body || '')), 'el formulario espera a que elija');
+    assert.ok(sm.messages.some((m) => /elige la agencia Shalom/.test(m.body || '')));
   });
   await step('Envíos a provincia: formularios, cruzar guía, fotos, ya recogió e importar del artifact', async () => {
     const me = await call('GET', '/api/me');

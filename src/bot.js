@@ -5,7 +5,7 @@ import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendLis
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON, PROMPT_GENERICO } from './bot-template.js';
 import { iaAllowed } from './billetera.js';
 import { draftFromChat, insertOrder, cfgOf, cfgForChat, varsFromForm, modoFor, pedidoAbierto, preciosDeChat, lugarLima, parseColores, priceFor, storeColors, avisoCantidad } from './orders.js';
-import { agenciesNear, agenciesIn, agencyOptions } from './shalom.js';
+import { agenciesNear, agenciesIn, agencyOptions, matchAgency } from './shalom.js';
 import { onOrderCreated } from './automations.js';
 import { storeBlocked, loadPlan, priceText } from './billing.js';
 import { addSpend } from './saldo.js';
@@ -1259,17 +1259,27 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   try {
     ag = JSON.parse(chat.bot_ag || '{}') || {};
   } catch {}
+  const prevSede = vars.sede_shalom || null;
   const ins = results.filter((m) => m.direction === 'in').map((m) => String(m.transcript || m.body || ''));
   const lastIn = (ins[ins.length - 1] || '').trim().toLowerCase();
-  const tapped = (ag.opts || []).find((o) => o.t.toLowerCase() === lastIn);
+  let tapped = (ag.opts || []).find((o) => o.t.toLowerCase() === lastIn);
   // ¿Ya mandó la captura del pago? (una foto o un PDF de la clienta)
   const hasCaptura = results.some((m) => m.direction === 'in' && (m.type === 'image' || m.type === 'document'));
   const datosOk = () => !!(String(vars.nombre || '').trim() && String(vars.dni || '').trim() && String(vars.celular || '').trim());
+  // Zona de la clienta para reconocer la agencia que ella misma escribe («Shalom Av grau»)
+  const zonaAg = () => [vars.destino, vars.distrito, ...ins.slice(-4)].filter(Boolean).join(' . ');
+  // Las líneas donde habla de la agencia (sin su nombre ni DNI): «Yessica… / 4597… / Shalon Tambopata av Ucayali»
+  const lineasSede = (t) => String(t || '').split(/\n+/).filter((l) => /shal?l?o[mn]|salom|agencia|sede|recoj|recog/i.test(l)).join(' . ');
+  if (!tapped && !vars.sede_shalom && settings.agencias_on !== 0) {
+    const txt = ag.opts?.length ? lastIn : lineasSede(ins[ins.length - 1]);
+    const m = txt ? await matchAgency(env, txt, zonaAg()).catch(() => null) : null;
+    if (m?.agencia) tapped = { f: m.agencia.full, escrita: true };
+  }
   if (tapped) {
     vars.sede_shalom = tapped.f;
     ag.chosen = tapped.f;
     system = system.replace('## DATOS YA GUARDADOS DE ESTA CLIENTA\n', `## DATOS YA GUARDADOS DE ESTA CLIENTA\nsede_shalom (la eligió de la lista): ${tapped.f} · `);
-    system += `\n\n## LA CLIENTA ACABA DE ELEGIR SU AGENCIA: ${tapped.f}\nConfírmala en una línea y sigue con lo que falta: ${datosOk() ? 'ya tiene sus datos, así que envía el formulario Shalom con los datos de pago y pide la captura del adelanto' : 'primero pide sus datos (nombre y apellido, DNI y celular)'}. ${hasCaptura ? '' : 'Todavía NO envió la captura del pago: NO uses el caso yape_sede ni digas que tu compañera valida el pago.'}`;
+    system += `\n\n## LA CLIENTA ACABA DE ELEGIR SU AGENCIA: ${tapped.f}\n${tapped.escrita ? 'La escribió ella y es una agencia real del sistema: usa este nombre exacto en el formulario. ' : ''}Confírmala en una línea y sigue con lo que falta: ${datosOk() ? 'ya tiene sus datos, así que envía el formulario Shalom con los datos de pago y pide la captura del adelanto' : 'si en sus mensajes ya están su nombre y DNI, envía el formulario Shalom con los datos de pago y pide la captura del adelanto; si falta alguno, pídelo'}. ${hasCaptura ? '' : 'Todavía NO envió la captura del pago: NO uses el caso yape_sede ni digas que tu compañera valida el pago.'}`;
   }
   let near = null;
   // Busca agencias con lo último que escribió + su destino, sin su nombre: un apellido («Flores», «Trujillo») no es su ciudad
@@ -1390,11 +1400,34 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
   for (const [k, v] of Object.entries(reply.datos)) if (v != null && String(v).trim()) vars[k] = clip(String(v), 200);
   fixIds(vars, lastIn);
   if (celWa && !vars.celular) vars.celular = celWa;
+  // Sede que puso la IA sin que la clienta la tocara de la lista: solo vale si es UNA agencia real de su zona
+  // (caso real: «Shalom Av grau» → la IA la guardó tal cual y la lista nunca salió)
+  if (!ag.chosen && vars.sede_shalom && vars.sede_shalom !== prevSede && settings.agencias_on !== 0) {
+    const m = await matchAgency(env, [vars.sede_shalom, lineasSede(lastIn)].join(' . '), zonaAg()).catch(() => null);
+    if (m?.agencia) ag.chosen = m.agencia.full;
+    else if (m?.ninguna && !hasCaptura) {
+      if (!near && datosOk()) near = await buscarAgencias();
+      if (near) {
+        vars.__sede_txt = clip(String(vars.sede_shalom), 120);
+        delete vars.sede_shalom; // no está en el sistema: sale la lista para que elija una real
+      }
+    }
+  }
   if (ag.chosen) vars.sede_shalom = ag.chosen; // la elegida de la lista manda
   // «Yape + sede» solo vale con captura del pago, sede y datos: si falta algo, la IA sigue vendiendo (no pasa a la asesora)
   if (reply.caso === 'yape_sede' && !(hasCaptura && String(vars.sede_shalom || '').trim() && datosOk())) reply.caso = null;
   const cs = (node.cases || []).find((c) => c.id === reply.caso);
   const sendIt = !cs || cs.send_reply !== false;
+  // Si en esta respuesta sale la lista de agencias, todavía no van el formulario ni los datos de pago (van cuando elija)
+  if (sendIt && !near && !cs && !vars.sede_shalom && datosOk() && settings.agencias_on !== 0) near = await buscarAgencias();
+  if (sendIt && near && !cs && !vars.sede_shalom && datosOk() && ag.lugar !== `${near.kind}:${near.lugar}`) {
+    const esForm = (t) => /monto restante|sede\s*:|yape|plin|captura|\d{3}\s?\d{3}\s?\d{3}/i.test(String(t || ''));
+    const antes = reply.mensajes.length;
+    reply.mensajes = reply.mensajes.filter((m) => !esForm(m.texto));
+    if (reply.mensajes.length < antes && !reply.mensajes.some((m) => String(m.texto || '').trim())) {
+      reply.mensajes.push({ texto: `¡Gracias${vars.nombre ? `, ${String(vars.nombre).trim().split(/\s+/)[0]}` : ''}! 💕 Ahora elige la agencia Shalom donde vas a recoger 👇` });
+    }
+  }
   if (sendIt) {
     const sentMedia = new Set(results.filter((m) => m.direction === 'out' && m.media_key).map((m) => m.media_key));
     // Video de envíos garantizado: si la IA pide los datos de Shalom (DNI) y se olvidó del video, va antes de ese mensaje
