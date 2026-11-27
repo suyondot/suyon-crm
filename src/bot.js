@@ -4,7 +4,7 @@ import { now, clip, windowOpen, DEFAULT_TZ, localParts, tzOffset, localDay, Http
 import { sendText, uploadMedia, sendMediaById, kindForMime, sendButtons, sendList } from './whatsapp.js';
 import { PROMPT_PANTALON, KNOWLEDGE_PANTALON, PROMPT_GENERICO } from './bot-template.js';
 import { iaAllowed } from './billetera.js';
-import { draftFromChat, insertOrder, cfgOf, cfgForChat, varsFromForm, modoFor, pedidoAbierto, preciosDeChat, lugarLima, parseColores, priceFor, storeColors, avisoCantidad } from './orders.js';
+import { draftFromChat, insertOrder, cfgOf, cfgForChat, varsFromForm, modoFor, pedidoAbierto, preciosDeChat, lugarLima, parseColores, priceFor, storeColors, avisoCantidad, shape, itemsText, MODOS, addEvent } from './orders.js';
 import { agenciesNear, agenciesIn, agencyOptions, matchAgency } from './shalom.js';
 import { onOrderCreated } from './automations.js';
 import { storeBlocked, loadPlan, priceText } from './billing.js';
@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS = {
   ia_follow_min: 30,
   ia_follow_text: '¿Te quedó alguna duda, bella? 💕 Cuéntame y te ayudo con tu pedido 😊',
   ia_follow_auto: 1, // 1 = el seguimiento pregunta lo que falta (talla, colores, distrito, datos, adelanto)
+  postventa_on: 1, // 1 = con el bot en pausa y el pedido ya agendado, la IA responde sus dudas (medidas, talla, cuándo llega)
   pay_yape: '',
   pay_titular: '',
   pay_bcp: '',
@@ -722,7 +723,11 @@ export async function onInbound(env, ctx, store, chatId, msg, { sim = false } = 
   // Volvió por un anuncio nuevo: el bot la atiende otra vez, aunque estuviera en pausa o el flujo hubiera terminado
   // (en Botcake solo se atendía a «nuevos suscriptores» y estas clientas se quedaban sin respuesta)
   if (msg.fromAd && !sim && (await volvioPorAnuncio(env, ctx, store, chat, msg, text))) return;
-  if (chat.bot_paused) return;
+  if (chat.bot_paused) {
+    // Ya agendada y pregunta algo (medidas, talla, cuándo llega): la IA le responde en unos minutos si nadie del equipo lo hace
+    if (!sim) await postventaQueue(env, store, chat, settings).catch((e) => console.error('postventa', e));
+    return;
+  }
 
   if (chat.bot_flow_id && chat.bot_node && chat.bot_wait) {
     const flow = await loadFlow(env, chat.bot_flow_id);
@@ -1335,13 +1340,7 @@ async function iaCore(env, store, chat, flow, node, settings, vars, final) {
       return { ok: false };
     }
     delete vars.__iaRetry; // respondió: se reinician los reintentos
-    const price = IA_MODELS[out.model];
-    const cost = (out.inTok * price.in + out.outTok * price.out) / 1e6;
-    await env.DB.prepare(
-      `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 1, ?, ?, ?)
-       ON CONFLICT (store_id, day) DO UPDATE SET calls = calls + 1, in_tokens = in_tokens + excluded.in_tokens, out_tokens = out_tokens + excluded.out_tokens, cost = cost + excluded.cost`
-    ).bind(store.id, today(store.timezone), out.inTok, out.outTok, cost).run();
-    if (!settings.ia_secret || ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'].includes(settings.ia_secret)) await addSpend(env, price.provider, cost, store.timezone, store.id);
+    await logIA(env, store, settings, out);
     const p = parseReply(out.text, caseIds);
     if (p.valid && (p.mensajes.length || p.caso || allowEmpty)) reply = p;
     else lastErr = { raw: clip(out.text, 1500) };
@@ -1539,7 +1538,199 @@ export async function seguirBot(env, ctx, store, chatId) {
 
 /* ---------------- Cron: seguimientos y esperas ---------------- */
 
+// Gasto de la IA: por tienda y día (y del saldo del sistema si usa las claves centrales)
+async function logIA(env, store, settings, out) {
+  const price = IA_MODELS[out.model];
+  const cost = (out.inTok * price.in + out.outTok * price.out) / 1e6;
+  await env.DB.prepare(
+    `INSERT INTO ia_usage (store_id, day, calls, in_tokens, out_tokens, cost) VALUES (?, ?, 1, ?, ?, ?)
+     ON CONFLICT (store_id, day) DO UPDATE SET calls = calls + 1, in_tokens = in_tokens + excluded.in_tokens, out_tokens = out_tokens + excluded.out_tokens, cost = cost + excluded.cost`
+  ).bind(store.id, today(store.timezone), out.inTok, out.outTok, cost).run();
+  if (!settings.ia_secret || ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'].includes(settings.ia_secret)) await addSpend(env, price.provider, cost, store.timezone, store.id);
+}
+
+/* ---------------- Postventa ----------------
+   La clienta ya está agendada (✅), el bot quedó en pausa y pregunta algo: «¿cuánto mide?», «¿qué talla es?», «¿a qué hora llega?».
+   Antes nadie le respondía hasta que la asesora la viera. Ahora, si en 2 minutos nadie del equipo le contesta, la IA responde
+   su duda con la información del producto y le recuerda su pedido y cuándo llega. No vende, no cambia nada del pedido:
+   si quiere cambiar algo o reclama, avisa a la asesora. */
+const POSTVENTA_MIN = 2;
+const AGENDADOS = ['confirmado', 'en_ruta', 'validado', 'enviado', 'en_camino', 'en_agencia'];
+const TRIVIAL = new Set(['ok', 'oki', 'okey', 'okay', 'ya', 'listo', 'lista', 'bueno', 'buena', 'dale', 'perfecto', 'perfecta', 'genial', 'gracias', 'muchas', 'mil', 'si', 'sí', 'sii', 'ok.', 'amen', 'amén', 'bendiciones', 'igualmente', 'excelente', 'super', 'súper', 'claro', 'entendido', 'vale', 'ya', 'okis', 'muy', 'bien', 'q', 'que', 'tenga', 'buen', 'dia', 'día', 'buenas', 'noches', 'tardes', 'feliz', 'nada', 'de', 'a', 'usted', 'ti', 'tambien', 'también', 'hola', 'gracia', 'grasias', 'graciass', 'okk', 'okok', 'yaa', 'yap', 'yapo', 'listooo', 'listoo', 'la', 'espero', 'esperare', 'esperaré', 'aqui', 'aquí', 'estare', 'estaré', 'atenta', 'pendiente']);
+export function esTrivial(t) {
+  const words = String(t || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+  if (!words.length) return true; // solo emojis o signos
+  if (/\?|¿/.test(t)) return false;
+  return words.length <= 8 && words.every((w) => TRIVIAL.has(w) || /^(ja)+$|^(je)+$/.test(w));
+}
+const pvTexto = (m) => ['text', 'audio', 'button', 'interactive'].includes(m.type) && !esTrivial(m.transcript || m.body || '');
+
+async function pedidoAgendado(env, chatId) {
+  return env.DB.prepare(`SELECT * FROM orders WHERE chat_id = ? AND status IN (${AGENDADOS.map(() => '?').join(', ')}) AND status_at > ? ORDER BY id DESC LIMIT 1`)
+    .bind(chatId, ...AGENDADOS, now() - 10 * 864e5).first();
+}
+
+// Mensajes de la clienta que nadie respondió todavía (después del último mensaje del equipo, del bot o de la IA)
+function sinResponder(rows) {
+  const lastOut = rows.reduce((a, m, i) => (m.direction === 'out' ? i : a), -1);
+  return rows.slice(lastOut + 1).filter((m) => m.direction === 'in');
+}
+
+async function postventaQueue(env, store, chat, settings) {
+  if (Number(settings.postventa_on) === 0 || (store.canal || 'mensajes') !== 'mensajes') return;
+  if (!(await pedidoAgendado(env, chat.id))) return;
+  const { results } = await env.DB.prepare("SELECT id, direction, type, body, transcript FROM messages WHERE chat_id = ? AND sender != 'sys' ORDER BY id DESC LIMIT 12").bind(chat.id).all();
+  if (!sinResponder(results.reverse()).some(pvTexto)) return; // solo «ok», «gracias», emojis o fotos: nada que responder
+  await env.DB.prepare(`INSERT INTO bot_jobs (store_id, chat_id, flow_id, kind, node_id, cancel_on, run_at, created_at) VALUES (?, ?, ?, 'postventa', NULL, 'reply', ?, ?)`)
+    .bind(store.id, chat.id, chat.bot_flow_id || 0, now() + POSTVENTA_MIN * MIN, now()).run();
+}
+
+// Cuántos días después de «t» sale/llega (corte de Lima o de provincia, sin domingo si no entregan)
+function diasHasta(t, tz, { corte_h = 13, entrega_sab = 1, entrega_dom = 0 } = {}) {
+  const p = localParts(t, tz);
+  const ok = (dow) => (dow === 6 ? !!entrega_sab : dow === 0 ? !!entrega_dom : true);
+  let add = ok(p.dow) && p.h < Number(corte_h ?? 13) ? 0 : 1;
+  while (add < 8 && !ok((p.dow + add) % 7)) add++;
+  return add;
+}
+// «2026-11-27» → «HOY» / «MAÑANA» / «el viernes 28/11» / «ya pasó (26/11)»
+function diaRelativo(dia, tz) {
+  if (!dia) return null;
+  const hoy = localDay(now(), tz);
+  if (dia === hoy) return 'HOY';
+  if (dia === localDay(now() + 864e5, tz)) return 'MAÑANA';
+  const [y, mo, d] = dia.split('-').map(Number);
+  const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
+  const fecha = `${String(d).padStart(2, '0')}/${String(mo).padStart(2, '0')}`;
+  return dia < hoy ? `ya pasó (${fecha})` : `el ${DIAS[dow]} ${fecha}`;
+}
+
+export function entregaDePedido(o, store, settings) {
+  const tz = settings.timezone || DEFAULT_TZ;
+  const x = shape(o);
+  const horario = String(settings.entrega_horario || DEFAULT_SETTINGS.entrega_horario).replace(/\.+$/, '');
+  const saldo = x.saldo > 0 ? `S/${x.saldo}` : null;
+  if (x.modo === 'agencia') {
+    const sede = x.sede ? ` (${String(x.sede).split(' — ')[0]})` : '';
+    const guia = x.guia ? ` Su guía Shalom: orden ${x.guia}${x.guia_codigo ? `, código ${x.guia_codigo}` : ''}.` : '';
+    const paga = saldo ? ` Al recoger paga el saldo de ${saldo}.` : '';
+    if (x.status === 'en_agencia') return `Su pedido YA LLEGÓ a su agencia Shalom${sede}: puede recogerlo con su DNI.${paga}${guia}`;
+    if (x.status === 'enviado' || x.status === 'en_camino') return `Su pedido YA SALIÓ por Shalom${sede} y llega a su agencia en 1 a 2 días.${guia}${paga}`;
+    const corte = Number(cfgOf(store).al_agendar?.prov_corte_h ?? 14);
+    const add = diasHasta(x.status_at || now(), tz, { corte_h: corte, entrega_sab: 1, entrega_dom: 0 });
+    const sale = diaRelativo(localDay((x.status_at || now()) + add * 864e5, tz), tz);
+    return `Su pedido está separado y sale por Shalom${sede} ${sale && !sale.startsWith('ya') ? sale : 'en el próximo despacho'} (despacho de 4 a 7 p.m.). Llega a su agencia en 1 a 2 días; la guía de seguimiento se le manda el día del envío.${paga}`;
+  }
+  const paga = saldo ? ` Paga ${saldo} al recibir (efectivo, Yape o Plin).` : '';
+  if (x.status === 'en_ruta') return `Su pedido YA ESTÁ EN RUTA con el motorizado: llega HOY ${horario}.${paga}`;
+  // Día de entrega: el del pedido o, si se agendó después, el que toca según la hora en que se agendó
+  let dia = x.entrega || null;
+  if (x.modo === 'lima' && x.status_at) {
+    const d2 = localDay(x.status_at + diasHasta(x.status_at, tz, settings) * 864e5, tz);
+    if (!dia || d2 > dia) dia = d2;
+  }
+  const rel = diaRelativo(dia, tz);
+  if (!rel) return `Su pedido está agendado; se entrega ${horario}.${paga}`;
+  if (rel.startsWith('ya pasó')) return `Su pedido estaba para entregarse el ${rel.slice(9, -1)} y todavía no figura como entregado: dile que su asesora le confirma ahora mismo la hora de llegada (no inventes una hora).${paga}`;
+  return `Su pedido llega ${rel} ${horario}${x.modo === 'lima' ? ' con nuestro motorizado' : ''}.${paga}`;
+}
+
+function promptPostventa(o, store, settings) {
+  const x = shape(o);
+  const prendas = itemsText(x.items).split('\n').map((l) => `- ${l}`).join('\n') || '- (sin detalle)';
+  return `
+
+## MODO POSTVENTA (esto manda sobre todo lo anterior)
+Esta clienta YA COMPRÓ y su pedido ya está AGENDADO. Una asesora la atiende; tú solo respondes sus dudas mientras tanto.
+PEDIDO #${x.number} (${MODOS[x.modo] || x.modo}):
+${prendas}
+Total: S/${x.total}${x.adelanto > 0 ? ` · adelanto pagado: S/${x.adelanto}` : ''}
+ENTREGA (calculado por el sistema): ${entregaDePedido(o, store, settings)}
+Si en el chat la asesora ya le dijo otro día u hora, respeta lo que dijo la asesora.
+
+QUÉ HACER:
+1. Responde PRIMERO lo que pregunta (medidas, largo, talla, tela, cómo le queda, colores, cuidado, cuándo llega, cómo paga) con la información del producto. Si pregunta por medidas o tallas y tienes el archivo «tabla-tallas», adjúntalo.
+2. Luego, en una línea, tranquilízala con su pedido: qué lleva y cuándo le llega. Ej.: «Tu vestido talla L Beige te llega HOY entre 2 y 8 p.m. 🛵💕».
+3. Si pregunta qué talla le queda y su pedido ya tiene talla, dile si la talla elegida le va bien según la tabla.
+4. Si pide CAMBIAR algo (talla, color, cantidad, dirección, día u hora de entrega), cancelar, o reclama: NO lo cambies ni prometas nada. Dile que ya le avisas a su asesora para que lo revise ahora mismo y pon "caso": "cambio".
+5. NO vuelvas a vender: no repitas precios ni promociones, no pidas datos, no mandes formularios ni datos de pago (si pregunta cuánto paga al recibir, dile el saldo).
+6. Si solo agradece o confirma («ok», «gracias»), devuelve "mensajes": [].
+Corto: 1 o 2 mensajes, con el mismo trato cariñoso de siempre. "datos": {}.`;
+}
+
+async function postventaRun(env, j) {
+  const store = await env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(j.store_id).first();
+  const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(j.chat_id).first();
+  if (!store || !chat || chat.sim || !chat.bot_paused || store.status !== 'activo' || !windowOpen(chat)) return;
+  const settings = await loadSettings(env, store.id);
+  if (!settings.bot_on || Number(settings.postventa_on) === 0 || !audienceOk(settings, chat.wa_id)) return;
+  if (await storeBlocked(env, store.id)) return;
+  const o = await pedidoAgendado(env, chat.id);
+  if (!o) return;
+  const { results } = await env.DB.prepare(
+    "SELECT id, direction, sender, type, body, transcript, media_key, media_mime FROM messages WHERE chat_id = ? AND sender != 'sys' ORDER BY id DESC LIMIT 30"
+  ).bind(chat.id).all();
+  results.reverse();
+  // Si alguien del equipo ya le respondió (o la IA ya respondió esto), no se repite
+  if (!sinResponder(results).some(pvTexto)) return;
+  // Tope: no más de 6 respuestas de postventa en 12 h por chat (para eso está la asesora)
+  const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM messages WHERE chat_id = ? AND bot_node = 'postventa' AND created_at > ?").bind(chat.id, now() - 12 * 3600e3).first();
+  if (n >= 6) return;
+  const cap = Number(settings.ia_daily_cap) || 0;
+  if (cap > 0) {
+    const u = await env.DB.prepare('SELECT cost FROM ia_usage WHERE store_id = ? AND day = ?').bind(store.id, today(store.timezone)).first();
+    if (u && u.cost >= cap) return;
+  }
+  if (!(await iaAllowed(env, store.id)).ok) return;
+  const hist = historyFor(results);
+  if (!hist.length || hist[hist.length - 1].role !== 'user') return;
+  let vars = {};
+  try {
+    vars = JSON.parse(chat.bot_vars || '{}') || {};
+  } catch {}
+  for (const k of Object.keys(vars)) if (k.startsWith('__')) delete vars[k];
+  const labels = await chatLabels(env, chat.id);
+  const { results: arows } = await env.DB.prepare('SELECT key FROM bot_assets WHERE store_id = ?').bind(store.id).all();
+  const node = { cases: [{ id: 'cambio', when: 'Pide cambiar algo de su pedido (talla, color, cantidad, dirección, día u hora), cancelarlo, reclama, o pregunta algo que no puedes responder con la información.' }] };
+  const system = buildSystem(await withPlan(env, settings), node, labels, vars, arows.map((a) => a.key)) + promptPostventa(o, store, settings);
+  let out;
+  try {
+    out = await callModel(env, settings, system, hist);
+  } catch (e) {
+    console.error('postventa ia', e);
+    return;
+  }
+  await logIA(env, store, settings, out);
+  const reply = parseReply(out.text, ['cambio']);
+  if (!reply.valid) return;
+  // Otra vez: si mientras pensaba alguien del equipo escribió, no se manda
+  const last = await env.DB.prepare("SELECT sender FROM messages WHERE chat_id = ? AND direction = 'out' AND sender != 'sys' ORDER BY id DESC LIMIT 1").bind(chat.id).first();
+  const lastOutPrev = [...results].reverse().find((m) => m.direction === 'out');
+  if (last && lastOutPrev && last.sender !== lastOutPrev.sender && ['ase', 'cel'].includes(last.sender)) return;
+  const meta = { flowId: chat.bot_flow_id || null, node: 'postventa', sender: 'ia', vars: {} };
+  const sentMedia = new Set(results.filter((m) => m.direction === 'out' && m.media_key).map((m) => m.media_key));
+  let first = true;
+  for (const m of reply.mensajes) {
+    if (!first) await sleep(900);
+    first = false;
+    if (m.archivo) {
+      const a = await assetFor(env, store.id, String(m.archivo));
+      if (a && !sentMedia.has(a.r2_key)) {
+        await botSend(env, store, chat, { kind: 'file', asset: String(m.archivo), opcional: true }, meta);
+        sentMedia.add(a.r2_key);
+      }
+    }
+    if (String(m.texto || '').trim()) await botSend(env, store, chat, { kind: 'text', text: String(m.texto) }, meta);
+  }
+  if (reply.caso === 'cambio') {
+    await env.DB.prepare('UPDATE chats SET unread = MAX(unread, 1), updated_at = ? WHERE id = ?').bind(now(), chat.id).run();
+    await addEvent(env, o.id, 'nota', 'La clienta pidió un cambio o tiene un reclamo (respondió la IA de postventa): revisa el chat.');
+    await alertFor(env, store, chat, { kind: 'aviso', title: `Pedido #${o.number}: la clienta quiere cambiar algo`, body: clip(sinResponder(results).map((m) => m.transcript || m.body || '').join(' · '), 300) });
+  }
+}
+
 export async function runJob(env, j) {
+  if (j.kind === 'postventa') return postventaRun(env, j);
   const store = await env.DB.prepare('SELECT * FROM stores WHERE id = ?').bind(j.store_id).first();
   const chat = await env.DB.prepare('SELECT * FROM chats WHERE id = ?').bind(j.chat_id).first();
   if (!store || !chat || chat.bot_paused) return;

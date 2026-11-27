@@ -44,6 +44,12 @@ const meta = http.createServer(async (req, res) => {
     const txt = typeof last.content === 'string' ? last.content : last.content.map((x) => x.text || '').join(' ');
     // Como la IA real: no acepta que la conversación termine en un mensaje suyo
     if (last.role === 'assistant') return json(400, { error: { message: 'This model does not support assistant message prefill. The conversation must end with a user message.' } });
+    if (/MODO POSTVENTA/.test(body.system || '')) {
+      // IA de postventa: responde la duda y recuerda el pedido; si quiere cambiar algo → caso cambio
+      globalThis.__pvSystem = body.system;
+      const cambio = /cambiar|cambio/i.test(txt);
+      return json(200, { content: [{ type: 'text', text: JSON.stringify({ mensajes: cambio ? [{ texto: 'Ya le aviso a tu asesora para que lo revise 💕' }] : [{ texto: 'Mide 95 cm de largo 😊', archivo: null }, { texto: 'Tu pedido ya está separado 💕' }], caso: cambio ? 'cambio' : null, datos: {} }) }], usage: { input_tokens: 900, output_tokens: 40 } });
+    }
     if (/sobrecarga/i.test(txt) && !globalThis.__sobre) { globalThis.__sobre = 1; return json(529, { error: { message: 'Overloaded' } }); }
     if (/falla/i.test(txt)) return json(500, { error: { message: 'overloaded' } });
     if (/lento/i.test(txt)) await new Promise((r) => setTimeout(r, 2500)); // la IA demora: la clienta escribe mientras piensa
@@ -874,6 +880,60 @@ try {
     assert.equal(f.stats.precios.sent, 1);
     assert.equal(f.stats.talla.replied, 1);
     assert.ok(f.stats.reconocer.entered >= 1);
+  });
+  await step('postventa: ya agendada y con el bot en pausa, la IA responde sus dudas y recuerda su pedido', async () => {
+    const c = await chatOf('51911111111');
+    const esPv = (m) => m.sender === 'ia' && /95 cm|ya está separado|Ya le aviso a tu asesora/.test(m.body || '');
+    assert.equal(c.bot_paused, 1);
+    const ped = (await call('GET', `/api/chats/${c.id}/pedidos`)).pedidos[0];
+    assert.ok(ped, 'la IA dejó el pedido');
+    // Todavía «Yape por validar»: no está agendado, la IA no se mete
+    await inbound('51911111111', 'wamid.POSV0', '¿Cuánto mide de largo?');
+    await wait(800);
+    await call('POST', '/__test/jobs?shift=' + 3 * 60e3);
+    assert.ok(!(await msgsOf(c.id)).some(esPv), 'sin agendar no responde');
+    // La asesora la agenda (✅ = Validado); «ok gracias» no despierta a la IA
+    await call('PATCH', `/api/pedidos/${ped.id}`, { status: 'validado' });
+    await call('POST', `/api/chats/${c.id}/messages`, { text: 'AGENDADO ✅ Sale hoy por Shalom' });
+    await inbound('51911111111', 'wamid.POSV1', 'ok gracias 🙏');
+    await wait(800);
+    await call('POST', '/__test/jobs?shift=' + 3 * 60e3);
+    assert.ok(!(await msgsOf(c.id)).some(esPv), '«ok gracias» no se responde');
+    // Pregunta una medida: a los 2 min responde la IA con su pedido y cuándo llega
+    await inbound('51911111111', 'wamid.POSV2', 'Amiga y cuánto mide de largo?');
+    await wait(800);
+    await call('POST', '/__test/jobs?shift=' + 3 * 60e3);
+    let pv = (await msgsOf(c.id)).filter(esPv);
+    assert.equal(pv.length, 2, 'responde la duda');
+    assert.match(pv[0].body, /95 cm/);
+    assert.match(globalThis.__pvSystem, /PEDIDO #\d+[\s\S]*ENTREGA \(calculado por el sistema\): Su pedido está separado y sale por Shalom/);
+    assert.equal((await chatOf('51911111111')).bot_paused, 1, 'el bot sigue en pausa');
+    // Si la asesora contesta antes de los 2 min, la IA no se mete
+    await inbound('51911111111', 'wamid.POSV3', '¿Y es de tela gruesa?');
+    await wait(800);
+    await call('POST', `/api/chats/${c.id}/messages`, { text: 'Es suplex, fresquita 😊' });
+    await call('POST', '/__test/jobs?shift=' + 3 * 60e3);
+    assert.equal((await msgsOf(c.id)).filter(esPv).length, 2, 'ya le respondió la asesora');
+    // Quiere cambiar algo: no cambia nada, avisa a la asesora
+    await inbound('51911111111', 'wamid.POSV4', 'Quiero cambiar la talla a M por favor');
+    await wait(800);
+    await call('POST', '/__test/jobs?shift=' + 3 * 60e3);
+    pv = (await msgsOf(c.id)).filter(esPv);
+    assert.match(pv[pv.length - 1].body, /asesora/);
+    const av = await call('GET', `/api/stores/${store.id}/avisos`);
+    assert.ok(av.events.some((e) => /quiere cambiar algo/.test(e.title)), 'aviso a la asesora');
+    // Se puede apagar
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { postventa_on: false });
+    await inbound('51911111111', 'wamid.POSV5', '¿A qué hora llega?');
+    await wait(800);
+    await call('POST', '/__test/jobs?shift=' + 3 * 60e3);
+    assert.equal((await msgsOf(c.id)).filter(esPv).length, pv.length, 'apagado no responde');
+    await call('PATCH', `/api/stores/${store.id}/bot/settings`, { postventa_on: true });
+    await call('PATCH', `/api/pedidos/${ped.id}`, { status: 'por_pagar' }); // como estaba (lo revisa otra prueba)
+    const { esTrivial } = await import('../src/bot.js');
+    assert.equal(esTrivial('Ok muchas gracias 🙏'), true);
+    assert.equal(esTrivial('ya, gracias, que medida es?'), false);
+    assert.equal(esTrivial('Por favor talla S'), false);
   });
   await step('seguimiento: si no responde sale el mensaje de 15 min; falta el audio y avisa', async () => {
     await call('PATCH', `/api/stores/${store.id}/bot/settings`, { test_numbers: '911111111, 911111112' });

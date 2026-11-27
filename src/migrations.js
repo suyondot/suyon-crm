@@ -734,6 +734,11 @@ export const MIGRATIONS = [
       )`,
     ],
   },
+  {
+    id: 36,
+    name: 'postventa: la IA responde dudas de clientas ya agendadas con el bot en pausa',
+    sql: ['ALTER TABLE bot_settings ADD COLUMN postventa_on INTEGER'],
+  },
 ];
 
 let ready = null;

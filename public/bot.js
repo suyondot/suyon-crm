@@ -986,6 +986,7 @@ function drawIA() {
       <div class="field"><label for="bf">Si no contesta, seguir a los (min, 0 = no)</label><input id="bf" name="ia_follow_min" type="number" min="0" value="${s.ia_follow_min}"></div></div>
       <label class="bswitch" style="margin:4px 0 10px"><input type="checkbox" name="ia_follow_auto" ${Number(s.ia_follow_auto) !== 0 ? 'checked' : ''}><span>Seguimiento según el paso: pregunta lo que falta (talla, colores, distrito, datos o adelanto)</span></label>
       <div class="field"><label for="bft">Mensaje fijo (si lo apagas, o si ya dio todo)</label><input id="bft" name="ia_follow_text" value="${e(s.ia_follow_text || '')}"></div>
+      <label class="bswitch" style="margin:10px 0 4px"><input type="checkbox" name="postventa_on" ${Number(s.postventa_on) !== 0 ? 'checked' : ''}><span>Responder dudas después de agendar: si la clienta ya agendada pregunta algo (medidas, talla, cuándo llega) y nadie le contesta en 2 minutos, la IA le responde y le recuerda su pedido. No cambia nada del pedido: si quiere cambiar algo, te avisa.</span></label>
       <p class="note" style="margin:6px 0 0">La IA manda cada mensaje por separado, como en tu prompt («3 mensajes separados»). Ve las fotos de la clienta y, si está encendido abajo, entiende sus notas de voz.</p></div>
     <div class="card"><h3>Notas de voz a texto</h3>
       <label class="bswitch"><input type="checkbox" name="voz_on" ${s.voz_on ? 'checked' : ''}><span>Pasar las notas de voz a texto</span></label>
@@ -1011,6 +1012,7 @@ function drawIA() {
     d.entrega_dom = !!d.entrega_dom;
     d.voz_on = !!d.voz_on;
     d.ia_follow_auto = !!d.ia_follow_auto;
+    d.postventa_on = !!d.postventa_on;
     await saveSettings(d, 'IA Suyon guardada');
   };
 }
